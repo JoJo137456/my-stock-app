@@ -9,7 +9,7 @@ import pytz
 st.set_page_config(page_title="遠東集團戰情中心", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-# 強制 CSS
+# 強制 CSS：微軟正黑體 + 數字放大 + 去除圖表留白
 st.markdown("""
     <style>
         html, body, [class*="css"] {
@@ -39,26 +39,25 @@ stock_map = {
     "1710 東聯": "1710.TW"
 }
 
-# === 3. 核心數據引擎 (修正快取錯誤) ===
+# === 3. 核心數據引擎 (解決快取報錯 + 官方數據優先) ===
 
 @st.cache_data(ttl=5)
 def get_stock_data(symbol):
     try:
         stock = yf.Ticker(symbol)
         
-        # 1. 取得官方資訊 (info)
-        # 這裡有時候會回傳 None，做個防呆
+        # 1. 取得官方資訊 (info) - 轉成字典避免報錯
         info = stock.info if stock.info else {}
         
-        # 2. 取得 Fast Info (解決報錯的關鍵)
-        # 我們不能直接回傳 stock.fast_info 物件，要把它轉成簡單的字典
-        fast_info_obj = stock.fast_info
+        # 2. 取得 Fast Info (關鍵修正：轉成字典！)
+        # 直接回傳 fast_info 物件會導致 Streamlit 報錯，所以我們要手動拆解
+        fi = stock.fast_info
         fast_info_dict = {
-            'last_price': fast_info_obj.last_price,
-            'previous_close': fast_info_obj.previous_close,
-            'last_volume': fast_info_obj.last_volume,
-            'day_high': fast_info_obj.day_high,
-            'day_low': fast_info_obj.day_low
+            'last_price': fi.last_price,
+            'previous_close': fi.previous_close,
+            'last_volume': fi.last_volume,
+            'day_high': fi.day_high,
+            'day_low': fi.day_low
         }
         
         # 3. 抓分鐘線 (純粹為了畫圖)
@@ -72,7 +71,6 @@ def get_stock_data(symbol):
 
         return info, fast_info_dict, df_minute
     except Exception as e:
-        # print(f"Error fetching data for {symbol}: {e}") # Debug用
         return {}, {}, pd.DataFrame()
 
 def calculate_metrics_official(info, fast_info, df_minute):
@@ -82,7 +80,9 @@ def calculate_metrics_official(info, fast_info, df_minute):
     if df_minute.empty: return None
 
     # === A. 昨收價 (Previous Close) ===
+    # 優先從 info 拿 (Yahoo 網頁顯示值)
     prev_close = info.get('previousClose')
+    # 如果 info 沒給，從 fast_info 字典拿
     if prev_close is None: prev_close = fast_info.get('previous_close')
 
     # === B. 目前股價 (Current Price) ===
@@ -92,27 +92,28 @@ def calculate_metrics_official(info, fast_info, df_minute):
     if current_price is None: current_price = df_minute['Close'].iloc[-1]
 
     # === C. 總成交量 (Volume) ===
-    total_volume = info.get('volume')
-    if total_volume is None: total_volume = fast_info.get('last_volume')
-    # 防呆
-    if total_volume is None or total_volume == 0:
-        total_volume = df_minute['Volume'].sum()
+    # 這是「股數」，顯示時要除以 1000
+    total_volume_shares = info.get('volume')
+    if total_volume_shares is None: total_volume_shares = fast_info.get('last_volume')
+    
+    # 如果 info 的 volume 是 0 (盤中可能)，回退用分鐘線加總
+    if total_volume_shares is None or total_volume_shares == 0:
+        total_volume_shares = df_minute['Volume'].sum()
 
     # === D. 漲跌 ===
     change = current_price - prev_close
     pct_change = (change / prev_close) * 100
 
     # === E. 成交金額 (估算) ===
-    # 優先使用 fast_info 的高低點
     day_high = fast_info.get('day_high', df_minute['High'].max())
     day_low = fast_info.get('day_low', df_minute['Low'].min())
     
-    # 如果 fast_info 是 nan (有時候會發生)，回退用分鐘線
+    # 處理 NaN
     if pd.isna(day_high): day_high = df_minute['High'].max()
     if pd.isna(day_low): day_low = df_minute['Low'].min()
 
     avg_p = (day_high + day_low + current_price) / 3
-    turnover_est = total_volume * avg_p
+    turnover_est = total_volume_shares * avg_p
 
     return {
         "current": current_price,
@@ -122,12 +123,12 @@ def calculate_metrics_official(info, fast_info, df_minute):
         "high": day_high,
         "low": day_low,
         "open": info.get('open', df_minute['Open'].iloc[0]),
-        "volume": total_volume,
+        "volume_shares": total_volume_shares, # 這是股數
         "amount_e": turnover_est / 100000000, # 億
     }
 
 def draw_chart_combo(df, color, prev_close):
-    """繪製圖表：價格 + 成交量"""
+    """繪製圖表：價格(上) + 成交量(下)"""
     if df.empty: return None
     
     df = df.reset_index()
@@ -141,9 +142,10 @@ def draw_chart_combo(df, color, prev_close):
     buffer = 0.05 if diff < 0.1 else diff * 0.1
     y_domain = [y_min - buffer, y_max + buffer]
     
+    # X軸設定 (共用)
     x_axis = alt.X('Time:T', axis=alt.Axis(title='', format='%H:%M', grid=False))
     
-    # 價格圖
+    # === 上圖：價格走勢 ===
     area = alt.Chart(df).mark_area(color=color, opacity=0.1).encode(
         x=x_axis, y=alt.Y('Close:Q', scale=alt.Scale(domain=y_domain), axis=alt.Axis(title='股價', grid=True))
     )
@@ -157,13 +159,15 @@ def draw_chart_combo(df, color, prev_close):
     
     price_chart = (area + line + rule).properties(height=300)
     
-    # 成交量圖
+    # === 下圖：成交量柱狀圖 ===
+    # 使用獨立的 Y 軸，避免跟股價混在一起
     vol_chart = alt.Chart(df).mark_bar(color=color, opacity=0.5).encode(
-        x=alt.X('Time:T', axis=None),
-        y=alt.Y('Volume:Q', axis=alt.Axis(title='量', tickCount=3)),
+        x=alt.X('Time:T', axis=None), # 隱藏 X 軸文字，對齊上方
+        y=alt.Y('Volume:Q', axis=alt.Axis(title='成交量', tickCount=3)),
         tooltip=['Time', 'Volume']
-    ).properties(height=80)
+    ).properties(height=80) # 高度設為 80px
     
+    # 垂直組合 (VConcat)
     return alt.vconcat(price_chart, vol_chart, spacing=0).resolve_scale(x='shared')
 
 def draw_mini_chart(df, color, prev_close):
@@ -228,7 +232,8 @@ else:
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("💰 目前股價", f"{m['current']:.2f}", f"{m['change']:+.2f} ({m['pct_change']:+.2f}%)", delta_color="inverse")
         c2.metric("💎 成交金額 (估)", f"{m['amount_e']:.2f} 億")
-        c3.metric("📦 總成交量", f"{m['volume']:,.0f} 張")
+        # 修正重點：這裡除以 1000，把「股」變成「張」
+        c3.metric("📦 總成交量", f"{m['volume_shares']/1000:,.0f} 張")
         c4.metric("⚖️ 昨收價", f"{m['prev_close']:.2f}")
         
         st.divider()
@@ -242,6 +247,7 @@ else:
 
     # === 7. 圖表 ===
     st.markdown("##### 📈 今日走勢 (Trend & Volume)")
+    # 這裡會畫出 價格(上) + 成交量(下)
     st.altair_chart(draw_chart_combo(df_m, main_color, m['prev_close']), use_container_width=True)
 
 # === 頁尾 ===
