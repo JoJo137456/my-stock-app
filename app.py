@@ -11,14 +11,14 @@ tw_tz = pytz.timezone('Asia/Taipei')
 # === 1. 網頁基本設定 ===
 st.set_page_config(page_title="遠東集團戰情中心", layout="wide")
 
-# === ⚠️ CSS 全站字體優化 ===
+# === ⚠️ CSS 優化：微軟正黑體 + 數據字體放大 ===
 st.markdown("""
     <style>
         html, body, [class*="css"] {
             font-family: 'Microsoft JhengHei', '微軟正黑體', sans-serif !important;
         }
         div[data-testid="stMetricValue"] {
-            font-size: 1.8rem !important; 
+            font-size: 1.6rem !important; 
             font-weight: 700;
         }
     </style>
@@ -37,19 +37,14 @@ stock_map = {
 
 # === 3. 數據核心函數 ===
 
-@st.cache_data(ttl=30) # 縮短快取時間以確保數據新鮮
+@st.cache_data(ttl=30)
 def get_data(symbol):
-    """
-    抓取數據邏輯：
-    1. info: 用來拿最準確的「昨收」和「現價」(收盤後這最準)
-    2. history(1m): 用來畫走勢圖
-    """
     try:
         stock = yf.Ticker(symbol)
-        # 1. 抓走勢圖用的分鐘資料
+        # 1. 抓取今日分鐘線 (畫圖、算即時均價用)
         df_intraday = stock.history(period="1d", interval="1m")
         
-        # 2. 抓官方資訊 (收盤後這個最準)
+        # 2. 抓取官方 Info (拿昨收、總成交量、總市值等結算數據)
         info = stock.info
         
         return df_intraday, info
@@ -57,69 +52,77 @@ def get_data(symbol):
         return pd.DataFrame(), {}
 
 def calculate_metrics(df, info):
-    """
-    計算指標：優先使用官方 info，若無則從 dataframe 推算
-    """
     if df.empty: return None
     
-    # --- 關鍵修正：優先使用 info 的數據 ---
-    # 昨收價 (Previous Close)
+    # --- A. 價格與漲跌 (優先信任 Info，若無則用分鐘線推算) ---
+    
+    # 1. 昨收價
     prev_close = info.get('previousClose')
-    if prev_close is None:
-        # 如果真的沒有，才用第一筆開盤價充當
-        prev_close = df['Open'].iloc[0]
+    if prev_close is None: prev_close = df['Open'].iloc[0] # 防呆
 
-    # 目前股價 (Current Price)
-    # 收盤後 info['currentPrice'] 通常是最後定價，比 1m 線的最後一筆準
+    # 2. 目前股價 (收盤後 info['currentPrice'] 最準)
     current_price = info.get('currentPrice')
-    if current_price is None:
-        current_price = df['Close'].iloc[-1]
+    if current_price is None: current_price = df['Close'].iloc[-1]
 
-    # 計算漲跌
-    change = current_price - prev_close
-    pct_change = (change / prev_close) * 100
+    # 3. 漲跌價差 (User 要求：要看到多少元)
+    change_amount = current_price - prev_close
+    change_pct = (change_amount / prev_close) * 100
+
+    # --- B. 成交量與金額 (User 要求：成交量要準，要有成交金額) ---
     
-    # 其他統計數據 (這些從分鐘線算沒問題)
-    high = df['High'].max()
-    low = df['Low'].min()
-    open_price = df['Open'].iloc[0]
-    volume = df['Volume'].sum()
+    # 1. 總成交量 (優先抓 info['volume']，這是整日結算值)
+    total_volume_shares = info.get('volume')
+    # 如果 info 沒更新 (盤中常見)，改用分鐘線加總
+    if total_volume_shares is None or total_volume_shares == 0:
+        total_volume_shares = df['Volume'].sum()
     
-    # VWAP (當日均價)
-    total_val = (df['Close'] * df['Volume']).sum()
-    total_vol = df['Volume'].sum()
-    avg_price = total_val / total_vol if total_vol > 0 else current_price
+    # 2. 成交金額 (Turnover) - 估算值
+    # 因為 info 通常不給台股成交金額，我們用 分鐘線 Price * Volume 加總
+    # 這會比實際值略低一點點 (因為沒算到盤後定價)，但已是最接近的
+    turnover_est = (df['Close'] * df['Volume']).sum()
+
+    # --- C. 均價 (VWAP) ---
+    # 公式：總成交金額 / 總成交股數
+    avg_price = turnover_est / total_volume_shares if total_volume_shares > 0 else current_price
 
     return {
-        "current": current_price, "prev_close": prev_close, "change": change,
-        "pct_change": pct_change, "high": high, "low": low,
-        "open": open_price, "volume": volume, "avg_price": avg_price
+        "current": current_price,
+        "prev_close": prev_close,
+        "change_amount": change_amount, # 漲跌金額
+        "change_pct": change_pct,       # 漲跌趴數
+        "high": df['High'].max(),
+        "low": df['Low'].min(),
+        "open": df['Open'].iloc[0],
+        "volume_lots": total_volume_shares / 1000, # 換算成「張」
+        "turnover_亿": turnover_est / 100000000,   # 換算成「億」
+        "avg_price": avg_price
     }
 
 def draw_dynamic_chart(df, color, prev_close):
     """
-    繪製動態縮放圖表 (解決躺平問題)
+    繪製動態縮放圖表 (強制放大波動)
     """
     df = df.reset_index()
     col_name = "Date" if "Date" in df.columns else "Datetime"
     df.rename(columns={col_name: "Time"}, inplace=True)
 
-    # === 關鍵算法：計算 Y 軸範圍 ===
-    # 找出數據中的最大值與最小值
+    # === 關鍵：Y 軸範圍計算 (解決一直線問題) ===
     y_min = df['Close'].min()
     y_max = df['Close'].max()
     
-    # 如果波動太小 (例如整天只有一個價格)，強制給一點緩衝，不然圖會壞掉
-    if y_max == y_min:
-        buffer = 0.1
-    else:
-        # 上下各留 10% 空間，讓線條不要頂到天花板
-        buffer = (y_max - y_min) * 0.1
+    # 計算波動幅度
+    diff = y_max - y_min
     
-    # 設定顯示範圍 (Domain)
+    # 如果波動極小 (例如只動 0.05)，我們強制給一個非常小的緩衝，讓線條看起來有動
+    # 之前給 10% 太大，現在改給 0.05 或 5% 取小值，逼近線條
+    if diff == 0:
+        buffer = 0.05
+    else:
+        buffer = diff * 0.05 # 只留 5% 邊界
+    
     y_domain = [y_min - buffer, y_max + buffer]
 
-    # 1. 面積圖 (背景)
+    # 1. 面積圖
     area = alt.Chart(df).mark_area(
         color=color, opacity=0.1, line=False
     ).encode(
@@ -127,7 +130,7 @@ def draw_dynamic_chart(df, color, prev_close):
         y=alt.Y('Close:Q', scale=alt.Scale(domain=y_domain), axis=alt.Axis(title='', grid=True))
     )
 
-    # 2. 線圖 (主走勢) - 注意這裡也套用了 domain
+    # 2. 線圖
     line = alt.Chart(df).mark_line(
         color=color, strokeWidth=2
     ).encode(
@@ -136,7 +139,7 @@ def draw_dynamic_chart(df, color, prev_close):
         tooltip=['Time', 'Close', 'Volume']
     )
     
-    # 3. 昨收基準線 (虛線)
+    # 3. 昨收基準線
     rule = alt.Chart(pd.DataFrame({'y': [prev_close]})).mark_rule(
         strokeDash=[4, 4], color='gray', opacity=0.5
     ).encode(y='y')
@@ -170,14 +173,13 @@ with st.container(border=True):
                 st.metric(
                     "加權指數", 
                     f"{idx_m['current']:,.0f}", 
-                    f"{idx_m['change']:+.0f} ({idx_m['pct_change']:+.2f}%)",
+                    f"{idx_m['change_amount']:+.0f} ({idx_m['change_pct']:+.2f}%)", # 補上漲跌點數
                     delta_color="inverse"
                 )
     
     with col_idx_chart:
         if not idx_df.empty and idx_m:
-            idx_color = '#d62728' if idx_m['change'] >= 0 else '#2ca02c'
-            # 大盤小圖也套用動態縮放
+            idx_color = '#d62728' if idx_m['change_amount'] >= 0 else '#2ca02c'
             st.altair_chart(
                 draw_dynamic_chart(idx_df, idx_color, idx_m['prev_close']).properties(height=60), 
                 use_container_width=True
@@ -193,28 +195,41 @@ else:
     metrics = calculate_metrics(df_stock, stock_info)
     
     # 顏色邏輯
-    chart_color = '#d62728' if metrics['change'] >= 0 else '#2ca02c' 
+    chart_color = '#d62728' if metrics['change_amount'] >= 0 else '#2ca02c' 
 
     with st.container(border=True):
+        # 第一排：核心價格數據
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("💰 目前股價", f"{metrics['current']:.2f}", f"{metrics['change']:+.2f} ({metrics['pct_change']:+.2f}%)", delta_color="inverse")
-        c2.metric("📊 當日均價", f"{metrics['avg_price']:.2f}")
-        c3.metric("📦 總成交量", f"{metrics['volume']/1000:,.0f} 張")
-        c4.metric("⚖️ 昨收價", f"{metrics['prev_close']:.2f}")
+        
+        # 1. 目前股價 + 漲跌金額 (User 要求)
+        c1.metric(
+            "💰 目前股價", 
+            f"{metrics['current']:.2f}", 
+            f"{metrics['change_amount']:+.2f} ({metrics['change_pct']:+.2f}%)", 
+            delta_color="inverse"
+        )
+        
+        # 2. 當日均價
+        c2.metric("📊 當日均價 (VWAP)", f"{metrics['avg_price']:.2f}")
+        
+        # 3. 總成交量 (修正後數據)
+        c3.metric("📦 總成交量", f"{metrics['volume_lots']:,.0f} 張")
+        
+        # 4. 成交金額 (新功能)
+        c4.metric("💎 成交金額", f"{metrics['turnover_亿']:.2f} 億")
         
         st.divider()
         
+        # 第二排：OHLC 數據
         c5, c6, c7, c8 = st.columns(4)
         c5.metric("🔔 開盤價", f"{metrics['open']:.2f}")
         c6.metric("🔺 最高價", f"{metrics['high']:.2f}")
         c7.metric("🔻 最低價", f"{metrics['low']:.2f}")
-        amp = ((metrics['high'] - metrics['low']) / metrics['prev_close']) * 100
-        c8.metric("〰️ 當日振幅", f"{amp:.2f}%")
+        c8.metric("⚖️ 昨收價", f"{metrics['prev_close']:.2f}")
 
-    # === 7. Google Style 動態縮放走勢圖 ===
+    # === 7. Google Style 走勢圖 ===
     st.subheader("📈 今日即時走勢 (1分K)")
     
-    # 這裡呼叫新的 draw_dynamic_chart 函數
     final_chart = draw_dynamic_chart(df_stock, chart_color, metrics['prev_close'])
     st.altair_chart(final_chart, use_container_width=True)
 
