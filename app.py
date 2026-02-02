@@ -39,59 +39,62 @@ stock_map = {
     "1710 東聯": "1710.TW"
 }
 
-# === 3. 核心數據引擎 (Info 優先策略) ===
+# === 3. 核心數據引擎 (修正快取錯誤) ===
 
 @st.cache_data(ttl=5)
 def get_stock_data(symbol):
     try:
         stock = yf.Ticker(symbol)
         
-        # 1. 取得官方資訊看板 (這是最準的，對應 Yahoo 網頁數據)
-        # force=True 強制重新抓取，避免快取舊資料
-        info = stock.fast_info 
-        # 備註: fast_info 比 info 更快且通常包含最新的 open/close/prev_close
-        # 但 volume 有時要看 info，我們混合使用
-        full_info = stock.info
+        # 1. 取得官方資訊 (info)
+        # 這裡有時候會回傳 None，做個防呆
+        info = stock.info if stock.info else {}
         
-        # 2. 抓分鐘線 (純粹為了畫圖)
+        # 2. 取得 Fast Info (解決報錯的關鍵)
+        # 我們不能直接回傳 stock.fast_info 物件，要把它轉成簡單的字典
+        fast_info_obj = stock.fast_info
+        fast_info_dict = {
+            'last_price': fast_info_obj.last_price,
+            'previous_close': fast_info_obj.previous_close,
+            'last_volume': fast_info_obj.last_volume,
+            'day_high': fast_info_obj.day_high,
+            'day_low': fast_info_obj.day_low
+        }
+        
+        # 3. 抓分鐘線 (純粹為了畫圖)
         df_minute = stock.history(period="1d", interval="1m", auto_adjust=False)
         
-        # 過濾分鐘線：只留 13:30 以前的 (為了畫圖好看，不畫盤後定價的那一條直線)
+        # 過濾分鐘線：只留 13:35 以前的 (避免盤後定價拉出一條直線)
         if not df_minute.empty:
             df_minute.index = df_minute.index.tz_convert(tw_tz)
-            # 這裡我們只過濾「圖表數據」，不影響儀表板數字
             market_close_time = time(13, 35) 
             df_minute = df_minute[df_minute.index.time < market_close_time]
 
-        return full_info, stock.fast_info, df_minute
-    except:
+        return info, fast_info_dict, df_minute
+    except Exception as e:
+        # print(f"Error fetching data for {symbol}: {e}") # Debug用
         return {}, {}, pd.DataFrame()
 
 def calculate_metrics_official(info, fast_info, df_minute):
     """
-    完全依照官方 Info 呈現數據
+    計算邏輯：接收簡單字典，不再接收複雜物件
     """
     if df_minute.empty: return None
 
     # === A. 昨收價 (Previous Close) ===
-    # 優先從 info 拿，這就是 Yahoo 網頁上的「昨收」
     prev_close = info.get('previousClose')
-    # 如果 info 沒給，試試 fast_info
-    if prev_close is None: prev_close = fast_info.previous_close
+    if prev_close is None: prev_close = fast_info.get('previous_close')
 
     # === B. 目前股價 (Current Price) ===
-    # 優先從 info 拿，這會包含最後一盤 (13:30) 的定價
     current_price = info.get('currentPrice')
-    if current_price is None: current_price = fast_info.last_price
-    
-    # 防呆：如果真的都抓不到 (極少見)，才回退用分鐘線
+    if current_price is None: current_price = fast_info.get('last_price')
+    # 防呆
     if current_price is None: current_price = df_minute['Close'].iloc[-1]
 
     # === C. 總成交量 (Volume) ===
-    # 這是關鍵！一定要拿 info['volume']，這才包含「最後一盤」的大量
     total_volume = info.get('volume')
-    if total_volume is None: total_volume = fast_info.last_volume # 有時 fast_info 只有單筆量，小心
-    # 如果 info 的 volume 是 0 (盤中可能)，回退用分鐘線加總
+    if total_volume is None: total_volume = fast_info.get('last_volume')
+    # 防呆
     if total_volume is None or total_volume == 0:
         total_volume = df_minute['Volume'].sum()
 
@@ -100,11 +103,14 @@ def calculate_metrics_official(info, fast_info, df_minute):
     pct_change = (change / prev_close) * 100
 
     # === E. 成交金額 (估算) ===
-    # 既然 yfinance 不給金額，我們用 (總量 * 收盤價) 做估算
-    # 雖然不完全精確，但比亂算好。台股 App 的成交金額通常也是估算值。
-    # 更精確是用 (High+Low+Close)/3 * Volume
-    day_high = info.get('dayHigh', df_minute['High'].max())
-    day_low = info.get('dayLow', df_minute['Low'].min())
+    # 優先使用 fast_info 的高低點
+    day_high = fast_info.get('day_high', df_minute['High'].max())
+    day_low = fast_info.get('day_low', df_minute['Low'].min())
+    
+    # 如果 fast_info 是 nan (有時候會發生)，回退用分鐘線
+    if pd.isna(day_high): day_high = df_minute['High'].max()
+    if pd.isna(day_low): day_low = df_minute['Low'].min()
+
     avg_p = (day_high + day_low + current_price) / 3
     turnover_est = total_volume * avg_p
 
