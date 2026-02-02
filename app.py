@@ -34,4 +34,5 @@ try:
 except Exception as e:
     st.error(f"找不到股票代號或發生錯誤: {e}")
 
+
 # 提示：在終端機輸入 `streamlit run app.py` 來啟動網頁
