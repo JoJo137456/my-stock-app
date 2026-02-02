@@ -39,77 +39,85 @@ stock_map = {
     "1710 東聯": "1710.TW"
 }
 
-# === 3. 核心數據引擎 (嚴格過濾盤後) ===
+# === 3. 核心數據引擎 (Info 優先策略) ===
 
 @st.cache_data(ttl=5)
 def get_stock_data(symbol):
     try:
         stock = yf.Ticker(symbol)
         
-        # 1. 抓日線 (5天)：設定 auto_adjust=False 以確保拿到「原始價格」(跟 Yahoo 網頁一致)
-        df_daily = stock.history(period="5d", interval="1d", auto_adjust=False)
+        # 1. 取得官方資訊看板 (這是最準的，對應 Yahoo 網頁數據)
+        # force=True 強制重新抓取，避免快取舊資料
+        info = stock.fast_info 
+        # 備註: fast_info 比 info 更快且通常包含最新的 open/close/prev_close
+        # 但 volume 有時要看 info，我們混合使用
+        full_info = stock.info
         
-        # 2. 抓分鐘線 (1天)：設定 auto_adjust=False
+        # 2. 抓分鐘線 (純粹為了畫圖)
         df_minute = stock.history(period="1d", interval="1m", auto_adjust=False)
         
-        # === 關鍵修正：時區轉換與盤後過濾 ===
+        # 過濾分鐘線：只留 13:30 以前的 (為了畫圖好看，不畫盤後定價的那一條直線)
         if not df_minute.empty:
-            # 轉成台北時間
             df_minute.index = df_minute.index.tz_convert(tw_tz)
-            
-            # 過濾：只保留 13:30 (含) 以前的數據
-            # 這樣可以剔除 14:00 後的盤後定價交易，確保成交量跟 Yahoo 網頁一致
-            market_close_time = time(13, 31) # 設定 13:31 是為了包含 13:30 整的那一筆
+            # 這裡我們只過濾「圖表數據」，不影響儀表板數字
+            market_close_time = time(13, 35) 
             df_minute = df_minute[df_minute.index.time < market_close_time]
-            
-        return df_daily, df_minute
-    except:
-        return pd.DataFrame(), pd.DataFrame()
 
-def calculate_metrics_strict(df_daily, df_minute):
+        return full_info, stock.fast_info, df_minute
+    except:
+        return {}, {}, pd.DataFrame()
+
+def calculate_metrics_official(info, fast_info, df_minute):
     """
-    計算邏輯：完全依賴「過濾後的盤中數據」
+    完全依照官方 Info 呈現數據
     """
     if df_minute.empty: return None
-    
-    # === A. 鎖定「昨收價」 ===
-    # 從日線抓，因為日線包含完整的歷史
-    # 邏輯：找日期「嚴格小於」今天日期的最後一筆
-    today_date = df_minute.index[-1].date()
-    past_daily = df_daily[df_daily.index.date < today_date]
-    
-    if not past_daily.empty:
-        prev_close = past_daily['Close'].iloc[-1]
-    else:
-        prev_close = df_minute['Open'].iloc[0] # 防呆
 
-    # === B. 鎖定「目前股價」 ===
-    # 拿過濾後分鐘線的最後一筆 (這就是 13:30 收盤價，不含盤後)
-    current_price = df_minute['Close'].iloc[-1]
-    
-    # === C. 鎖定「成交量」 (Yahoo 網頁顯示的量) ===
-    # 直接加總過濾後的分鐘線成交量
-    # 這樣就排除了盤後定價的量
-    total_volume = df_minute['Volume'].sum()
-    
-    # === D. 估算「成交金額」 (不含盤後) ===
-    # 累加 (每分鐘收盤價 * 每分鐘成交量)
-    turnover_est = (df_minute['Close'] * df_minute['Volume']).sum()
+    # === A. 昨收價 (Previous Close) ===
+    # 優先從 info 拿，這就是 Yahoo 網頁上的「昨收」
+    prev_close = info.get('previousClose')
+    # 如果 info 沒給，試試 fast_info
+    if prev_close is None: prev_close = fast_info.previous_close
 
-    # === E. 漲跌 ===
+    # === B. 目前股價 (Current Price) ===
+    # 優先從 info 拿，這會包含最後一盤 (13:30) 的定價
+    current_price = info.get('currentPrice')
+    if current_price is None: current_price = fast_info.last_price
+    
+    # 防呆：如果真的都抓不到 (極少見)，才回退用分鐘線
+    if current_price is None: current_price = df_minute['Close'].iloc[-1]
+
+    # === C. 總成交量 (Volume) ===
+    # 這是關鍵！一定要拿 info['volume']，這才包含「最後一盤」的大量
+    total_volume = info.get('volume')
+    if total_volume is None: total_volume = fast_info.last_volume # 有時 fast_info 只有單筆量，小心
+    # 如果 info 的 volume 是 0 (盤中可能)，回退用分鐘線加總
+    if total_volume is None or total_volume == 0:
+        total_volume = df_minute['Volume'].sum()
+
+    # === D. 漲跌 ===
     change = current_price - prev_close
     pct_change = (change / prev_close) * 100
+
+    # === E. 成交金額 (估算) ===
+    # 既然 yfinance 不給金額，我們用 (總量 * 收盤價) 做估算
+    # 雖然不完全精確，但比亂算好。台股 App 的成交金額通常也是估算值。
+    # 更精確是用 (High+Low+Close)/3 * Volume
+    day_high = info.get('dayHigh', df_minute['High'].max())
+    day_low = info.get('dayLow', df_minute['Low'].min())
+    avg_p = (day_high + day_low + current_price) / 3
+    turnover_est = total_volume * avg_p
 
     return {
         "current": current_price,
         "prev_close": prev_close,
         "change": change,
         "pct_change": pct_change,
-        "high": df_minute['High'].max(),
-        "low": df_minute['Low'].min(),
-        "open": df_minute['Open'].iloc[0],
+        "high": day_high,
+        "low": day_low,
+        "open": info.get('open', df_minute['Open'].iloc[0]),
         "volume": total_volume,
-        "amount_e": turnover_est / 100000000, # 換算億
+        "amount_e": turnover_est / 100000000, # 億
     }
 
 def draw_chart_combo(df, color, prev_close):
@@ -120,7 +128,7 @@ def draw_chart_combo(df, color, prev_close):
     col_name = "Date" if "Date" in df.columns else "Datetime"
     df.rename(columns={col_name: "Time"}, inplace=True)
     
-    # Y 軸動態範圍 (強制放大波動)
+    # 強制放大波動
     y_min = df['Close'].min()
     y_max = df['Close'].max()
     diff = y_max - y_min
@@ -189,10 +197,10 @@ with st.container(border=True):
         st.title("🏢 遠東集團戰情中心")
         st.markdown(f"### 🔥 目前監控：**{selected_name}**")
         
-    # 大盤 (也要套用嚴格計算)
-    idx_daily, idx_min = get_stock_data("^TWII")
+    # 大盤
+    info, fast_info, idx_min = get_stock_data("^TWII")
     if not idx_min.empty:
-        idx_m = calculate_metrics_strict(idx_daily, idx_min)
+        idx_m = calculate_metrics_official(info, fast_info, idx_min)
         if idx_m:
             idx_color = '#d62728' if idx_m['change'] >= 0 else '#2ca02c'
             with col_idx_text:
@@ -202,19 +210,19 @@ with st.container(border=True):
                 st.altair_chart(draw_mini_chart(idx_min, idx_color, idx_m['prev_close']), use_container_width=True)
 
 # === 6. 個股數據 ===
-df_d, df_m = get_stock_data(ticker)
+info, fast_info, df_m = get_stock_data(ticker)
 
 if df_m.empty:
-    st.error("⚠️ 暫無數據 (請確認開盤時間)")
+    st.error("⚠️ 暫無數據")
 else:
-    m = calculate_metrics_strict(df_d, df_m)
+    m = calculate_metrics_official(info, fast_info, df_m)
     main_color = '#d62728' if m['change'] >= 0 else '#2ca02c'
     
     with st.container(border=True):
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("💰 目前股價", f"{m['current']:.2f}", f"{m['change']:+.2f} ({m['pct_change']:+.2f}%)", delta_color="inverse")
         c2.metric("💎 成交金額 (估)", f"{m['amount_e']:.2f} 億")
-        c3.metric("📦 總成交量", f"{m['volume']/1000:,.0f} 張")
+        c3.metric("📦 總成交量", f"{m['volume']:,.0f} 張")
         c4.metric("⚖️ 昨收價", f"{m['prev_close']:.2f}")
         
         st.divider()
@@ -223,7 +231,6 @@ else:
         c5.metric("🔔 開盤價", f"{m['open']:.2f}")
         c6.metric("🔺 最高價", f"{m['high']:.2f}")
         c7.metric("🔻 最低價", f"{m['low']:.2f}")
-        # 當日振幅
         amp = ((m['high'] - m['low']) / m['prev_close']) * 100
         c8.metric("〰️ 當日振幅", f"{amp:.2f}%")
 
