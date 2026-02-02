@@ -4,6 +4,8 @@ import pandas as pd
 import altair as alt
 from datetime import datetime, time
 import pytz
+import requests
+import json
 
 # === 1. 系統初始化 ===
 st.set_page_config(page_title="遠東集團戰情中心", layout="wide")
@@ -39,21 +41,43 @@ stock_map = {
     "1710 東聯": "1710.TW"
 }
 
-# === 3. 核心數據引擎 (最穩固版) ===
+# === 新增：抓取大盤即時成交量與成交金額（證交所官方 API）===
+@st.cache_data(ttl=10)  # 每10秒更新一次
+def get_market_stats():
+    try:
+        url = "https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&type=ALL"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        if data.get('stat') == 'OK':
+            for row in data.get('data9', []):
+                if row[0] == '發行量加權股價指數':
+                    current = float(row[1].replace(',', ''))
+                    change = float(row[2].replace(',', ''))
+                    pct = float(row[3].replace('%', ''))
+                    vol_str = row[4].replace(',', '')
+                    vol = float(vol_str) / 1000 if vol_str != '--' else 0  # 轉為「張」
+                    amount_str = row[5].replace(',', '')
+                    amount_e = float(amount_str) / 100000000 if amount_str != '--' else 0  # 轉為「億」
+                    return {
+                        'current': current,
+                        'change': change,
+                        'pct_change': pct,
+                        'volume': vol,
+                        'amount_e': amount_e
+                    }
+        return None
+    except Exception:
+        return None
 
+# === 3. 核心數據引擎 ===
 @st.cache_data(ttl=5)
 def get_stock_data(symbol):
     try:
         stock = yf.Ticker(symbol)
-        
-        # 1. 抓取官方 Info (轉字典，防止快取報錯)
         info = stock.info if stock.info else {}
-        
-        # 2. 抓取 Fast Info (轉字典，防止快取報錯)
         fi = stock.fast_info
         fast_info_dict = {}
         try:
-            # 針對大盤指數，某些屬性可能不存在，用 get 保護
             fast_info_dict = {
                 'last_price': getattr(fi, 'last_price', None),
                 'previous_close': getattr(fi, 'previous_close', None),
@@ -63,102 +87,72 @@ def get_stock_data(symbol):
             }
         except:
             pass
-
-        # 3. 抓分鐘線 (畫圖用)
         df_minute = stock.history(period="1d", interval="1m", auto_adjust=False)
-        
-        # 4. 抓日線 (備用，萬一分鐘線掛掉，至少有東西看)
         df_daily = stock.history(period="5d", interval="1d", auto_adjust=False)
-
-        # 時間過濾：只留 13:35 以前 (避免盤後定價拉直線)
         if not df_minute.empty:
             df_minute.index = df_minute.index.tz_convert(tw_tz)
-            market_close_time = time(13, 35) 
+            market_close_time = time(13, 35)
             df_minute = df_minute[df_minute.index.time < market_close_time]
-
         return info, fast_info_dict, df_minute, df_daily
-    except Exception as e:
-        # 發生錯誤時回傳空值，但不讓程式崩潰
+    except Exception:
         return {}, {}, pd.DataFrame(), pd.DataFrame()
 
 def calculate_metrics_safe(info, fast_info, df_minute, df_daily):
-    """
-    計算邏輯：安全模式，確保永遠有數字回傳
-    """
-    # 預設值
     res = {
         "current": 0.0, "prev_close": 0.0, "change": 0.0, "pct_change": 0.0,
         "high": 0.0, "low": 0.0, "open": 0.0, "volume": 0, "amount_e": 0.0
     }
-    
-    # === 1. 價格來源 (優先順序: Info > FastInfo > Minute > Daily) ===
-    # 昨收
     prev = info.get('previousClose')
     if prev is None: prev = fast_info.get('previous_close')
-    if prev is None and not df_daily.empty: prev = df_daily['Close'].iloc[-2] # 拿昨日
-    
-    # 現價
+    if prev is None and not df_daily.empty: prev = df_daily['Close'].iloc[-2]
+
     curr = info.get('currentPrice')
     if curr is None: curr = fast_info.get('last_price')
     if curr is None and not df_minute.empty: curr = df_minute['Close'].iloc[-1]
     if curr is None and not df_daily.empty: curr = df_daily['Close'].iloc[-1]
-    
-    # 防呆
+
     if prev is None or curr is None: return res
 
-    # === 2. 成交量 (Volume) ===
-    # 優先抓 regularMarketVolume (常規交易量，不含盤後)
     vol = info.get('regularMarketVolume')
     if vol is None: vol = info.get('volume')
     if vol is None: vol = fast_info.get('last_volume')
     if (vol is None or vol == 0) and not df_minute.empty: vol = df_minute['Volume'].sum()
-    
-    # === 3. 成交金額 (估算) ===
-    # Yahoo 不直接提供成交金額，我們用 (均價 * 總量) 估算
-    # 取得當日高低
+
     h = fast_info.get('day_high')
     if h is None and not df_minute.empty: h = df_minute['High'].max()
     l = fast_info.get('day_low')
     if l is None and not df_minute.empty: l = df_minute['Low'].min()
-    
-    # 如果還是拿不到高低 (例如剛開盤)，就用現價
     if h is None: h = curr
     if l is None: l = curr
-    
+
     avg_p = (h + l + curr) / 3
     amount = vol * avg_p if vol else 0
 
-    # === 4. 填入結果 ===
     res['current'] = curr
     res['prev_close'] = prev
     res['change'] = curr - prev
     res['pct_change'] = (res['change'] / prev) * 100
     res['high'] = h
     res['low'] = l
-    res['open'] = info.get('open', curr) # 沒開盤價就用現價頂著
+    res['open'] = info.get('open', curr)
     res['volume'] = vol
-    res['amount_e'] = amount / 100000000 # 億
-
+    res['amount_e'] = amount / 100000000
     return res
 
 def draw_chart_combo(df, color, prev_close):
-    """繪製圖表：價格(上) + 成交量(下)"""
     if df.empty: return None
-    
     df = df.reset_index()
     col_name = "Date" if "Date" in df.columns else "Datetime"
     df.rename(columns={col_name: "Time"}, inplace=True)
-    
-    # Y 軸動態範圍 (強制放大波動)
+
     y_min = df['Close'].min()
     y_max = df['Close'].max()
     diff = y_max - y_min
     buffer = 0.05 if diff < 0.1 else diff * 0.1
     y_domain = [y_min - buffer, y_max + buffer]
-    
+
     x_axis = alt.X('Time:T', axis=alt.Axis(title='', format='%H:%M', grid=False))
-    
-    # === 上圖：價格走勢 ===
+
     area = alt.Chart(df).mark_area(color=color, opacity=0.1).encode(
         x=x_axis, y=alt.Y('Close:Q', scale=alt.Scale(domain=y_domain), axis=alt.Axis(title='股價', grid=True))
     )
@@ -169,30 +163,26 @@ def draw_chart_combo(df, color, prev_close):
     rule = alt.Chart(pd.DataFrame({'y': [prev_close]})).mark_rule(
         strokeDash=[4, 4], color='gray', opacity=0.8
     ).encode(y='y')
-    
+
     price_chart = (area + line + rule).properties(height=300)
-    
-    # === 下圖：成交量柱狀圖 (不透明) ===
-    vol_chart = alt.Chart(df).mark_bar(color=color, opacity=1.0).encode(
-        x=alt.X('Time:T', axis=None), 
+
+    vol_chart = alt.Chart(df).mark_bar(color=color, opacity=0.9, width=8).encode(  # 柱狀更明顯
+        x=alt.X('Time:T', axis=None),
         y=alt.Y('Volume:Q', axis=alt.Axis(title='成交量', tickCount=3)),
         tooltip=['Time', 'Volume']
     ).properties(height=100)
-    
-    # 垂直組合
+
     return alt.vconcat(price_chart, vol_chart, spacing=0).resolve_scale(x='shared')
 
 def draw_mini_chart(df, color, prev_close):
-    """大盤迷你圖"""
     if df.empty: return None
     df = df.reset_index()
     col_name = "Date" if "Date" in df.columns else "Datetime"
     df.rename(columns={col_name: "Time"}, inplace=True)
-    
+
     y_min = df['Close'].min()
     y_max = df['Close'].max()
     y_domain = [y_min, y_max]
-
     line = alt.Chart(df).mark_line(color=color, strokeWidth=2).encode(
         x=alt.X('Time:T', axis=None),
         y=alt.Y('Close:Q', scale=alt.Scale(domain=y_domain, zero=False), axis=None),
@@ -201,7 +191,7 @@ def draw_mini_chart(df, color, prev_close):
     rule = alt.Chart(pd.DataFrame({'y': [prev_close]})).mark_rule(
         strokeDash=[2, 2], color='gray', opacity=0.5
     ).encode(y='y')
-    
+
     return (line + rule).properties(height=60)
 
 # === 4. 側邊欄 ===
@@ -214,25 +204,35 @@ st.sidebar.caption(f"✅ 系統連線正常 | 開發者：李宗念")
 # === 5. 戰情儀表板 ===
 with st.container(border=True):
     col_head, col_idx_text, col_idx_chart = st.columns([2, 0.8, 1.2])
-    
+
     with col_head:
         st.title("🏢 遠東集團戰情中心")
         st.markdown(f"### 🔥 目前監控：**{selected_name}**")
-        
-    # 大盤
+
+    # 大盤資料
     info, fast_info, idx_min, idx_d = get_stock_data("^TWII")
-    
-    # 計算數據 (即使沒抓到分鐘線，也會嘗試用日線計算，防止空白)
     idx_m = calculate_metrics_safe(info, fast_info, idx_min, idx_d)
-    
+
+    # 覆蓋證交所官方大盤成交量與金額
+    market_stats = get_market_stats()
+    if market_stats:
+        idx_m.update({
+            'current': market_stats['current'],
+            'change': market_stats['change'],
+            'pct_change': market_stats['pct_change'],
+            'volume': market_stats['volume'],
+            'amount_e': market_stats['amount_e']
+        })
+
     if idx_m['current'] != 0:
         idx_color = '#d62728' if idx_m['change'] >= 0 else '#2ca02c'
         with col_idx_text:
             st.markdown("##### 🇹🇼 加權指數")
-            st.metric("Index", f"{idx_m['current']:,.0f}", f"{idx_m['change']:+.0f} ({idx_m['pct_change']:+.2f}%)", delta_color="inverse", label_visibility="collapsed")
-            # 顯示大盤成交金額
+            st.metric("Index", f"{idx_m['current']:,.0f}", 
+                      f"{idx_m['change']:+.0f} ({idx_m['pct_change']:+.2f}%)", 
+                      delta_color="inverse", label_visibility="collapsed")
             st.markdown(f"**成交金額：** {idx_m['amount_e']:.2f} 億")
-
+            st.markdown(f"**成交量：** {idx_m['volume']:,.0f} 張")  # 新增
         with col_idx_chart:
             if not idx_min.empty:
                 st.altair_chart(draw_mini_chart(idx_min, idx_color, idx_m['prev_close']), use_container_width=True)
@@ -241,22 +241,20 @@ with st.container(border=True):
 
 # === 6. 個股數據 ===
 info, fast_info, df_m, df_d = get_stock_data(ticker)
-
-# 計算數據 (安全模式)
 m = calculate_metrics_safe(info, fast_info, df_m, df_d)
 
 if m['current'] != 0:
     main_color = '#d62728' if m['change'] >= 0 else '#2ca02c'
-    
+
     with st.container(border=True):
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("💰 目前股價", f"{m['current']:.2f}", f"{m['change']:+.2f} ({m['pct_change']:+.2f}%)", delta_color="inverse")
         c2.metric("💎 成交金額 (估)", f"{m['amount_e']:.2f} 億")
         c3.metric("📦 總成交量", f"{m['volume']/1000:,.0f} 張")
         c4.metric("⚖️ 昨收價", f"{m['prev_close']:.2f}")
-        
+
         st.divider()
-        
+
         c5, c6, c7, c8 = st.columns(4)
         c5.metric("🔔 開盤價", f"{m['open']:.2f}")
         c6.metric("🔺 最高價", f"{m['high']:.2f}")
@@ -264,7 +262,7 @@ if m['current'] != 0:
         amp = ((m['high'] - m['low']) / m['prev_close']) * 100 if m['prev_close'] != 0 else 0
         c8.metric("〰️ 當日振幅", f"{amp:.2f}%")
 
-    # === 7. 圖表 ===
+    # === 7. 圖表（價格 + 成交量）===
     st.markdown("##### 📈 今日走勢 (Trend & Volume)")
     if not df_m.empty:
         st.altair_chart(draw_chart_combo(df_m, main_color, m['prev_close']), use_container_width=True)
