@@ -2,7 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import altair as alt
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 # 設定台灣時區
@@ -11,21 +11,15 @@ tw_tz = pytz.timezone('Asia/Taipei')
 # === 1. 網頁基本設定 ===
 st.set_page_config(page_title="遠東集團戰情中心", layout="wide")
 
-# === ⚠️ CSS 設計師風格注入 (仿 Google Finance) ===
+# === ⚠️ CSS 全站字體優化 ===
 st.markdown("""
     <style>
-        /* 強制全站字體 */
         html, body, [class*="css"] {
             font-family: 'Microsoft JhengHei', '微軟正黑體', sans-serif !important;
         }
-        /* 調整 Metric 數字大小 */
         div[data-testid="stMetricValue"] {
             font-size: 1.8rem !important; 
             font-weight: 700;
-        }
-        /* 讓圖表背景更乾淨 */
-        canvas {
-            border-radius: 10px;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -41,97 +35,104 @@ stock_map = {
     "1710 東聯": "1710.TW"
 }
 
-# === 3. 數據核心函數 ===
+# === 3. 數據核心函數 (修正版) ===
 
 @st.cache_data(ttl=60)
 def get_quote_data(symbol):
-    """抓取即時數據"""
+    """
+    抓取數據的核心邏輯：
+    為了確保漲跌幅計算正確，我們必須自己算 'Prev Close'，不能依賴 info
+    """
     try:
         stock = yf.Ticker(symbol)
-        # 抓取 1 分鐘線，這是畫出平滑曲線的關鍵
-        df_intraday = stock.history(period="1d", interval="1m") 
-        df_daily = stock.history(period="5d") 
-        return df_intraday, df_daily, stock.info
+        
+        # 1. 抓取今日即時 (1分K) -> 用來看現在價格
+        df_intraday = stock.history(period="1d", interval="1m")
+        
+        # 2. 抓取過去 5 天日線 -> 用來找昨收
+        df_daily = stock.history(period="5d", interval="1d")
+        
+        return df_intraday, df_daily
     except Exception:
-        return pd.DataFrame(), pd.DataFrame(), {}
+        return pd.DataFrame(), pd.DataFrame()
 
-@st.cache_data(ttl=300)
-def get_chart_data(symbol, time_range):
-    """抓取歷史圖表數據"""
-    stock = yf.Ticker(symbol)
-    if "今日" in time_range:
-        return stock.history(period="1d", interval="1m")
-    elif "5 天" in time_range:
-        return stock.history(period="5d", interval="15m") # 5天用15分線比較順
-    elif "1 個月" in time_range:
-        return stock.history(period="1mo", interval="1d")
-    elif "6 個月" in time_range:
-        return stock.history(period="6mo", interval="1d")
-    else:
-        return stock.history(period="1d", interval="1m")
-
-def calculate_metrics(df_intraday, df_daily, info):
-    """計算指標"""
+def calculate_metrics(df_intraday, df_daily):
+    """
+    精密計算指標函數
+    """
     if df_intraday.empty: return None
     
+    # === A. 取得目前價格 ===
     current_price = df_intraday['Close'].iloc[-1]
-    prev_close = info.get('previousClose')
-    if prev_close is None and len(df_daily) >= 2:
-        prev_close = df_daily['Close'].iloc[-2]
-    if prev_close is None: prev_close = df_intraday['Open'].iloc[0]
+    current_date = df_intraday.index[-1].date()
+    
+    # === B. 尋找正確的「昨收價」 ===
+    # 邏輯：從日線資料中，找到日期比「今天」小的那一筆，就是昨收
+    # 這樣可以避免 yfinance 資料包含今日日線導致抓錯
+    
+    # 先把日線 index 轉成 date 物件方便比較
+    df_daily_clean = df_daily.copy()
+    df_daily_clean['DateObj'] = df_daily_clean.index.date
+    
+    # 篩選出日期小於今天的資料
+    past_data = df_daily_clean[df_daily_clean['DateObj'] < current_date]
+    
+    if not past_data.empty:
+        prev_close = past_data['Close'].iloc[-1]
+    else:
+        # 萬一真的抓不到 (例如週一剛開盤資料延遲)，用今日開盤價暫代防錯
+        prev_close = df_intraday['Open'].iloc[0]
 
+    # === C. 計算漲跌 ===
     change = current_price - prev_close
     pct_change = (change / prev_close) * 100
     
-    # VWAP
+    # === D. 其他數據 ===
+    high = df_intraday['High'].max()
+    low = df_intraday['Low'].min()
+    open_price = df_intraday['Open'].iloc[0]
+    volume = df_intraday['Volume'].sum()
+    
+    # VWAP (當日均價)
     total_val = (df_intraday['Close'] * df_intraday['Volume']).sum()
     total_vol = df_intraday['Volume'].sum()
     avg_price = total_val / total_vol if total_vol > 0 else current_price
 
     return {
         "current": current_price, "prev_close": prev_close, "change": change,
-        "pct_change": pct_change, "high": df_intraday['High'].max(),
-        "low": df_intraday['Low'].min(), "open": df_intraday['Open'].iloc[0],
-        "volume": total_vol, "avg_price": avg_price
+        "pct_change": pct_change, "high": high, "low": low,
+        "open": open_price, "volume": volume, "avg_price": avg_price
     }
 
-def draw_google_style_chart(df, color, prev_close=None):
-    """繪製 Google Finance 風格圖表 (Area Chart + 基準線)"""
+def draw_google_style_chart(df, color, prev_close):
+    """繪製 1分K 的 Google 風格圖表"""
     df = df.reset_index()
-    # 處理欄位名稱
     col_name = "Date" if "Date" in df.columns else "Datetime"
     df.rename(columns={col_name: "Time"}, inplace=True)
 
-    # 1. 面積圖 (Area) - 下方的漸層填充
+    # 1. 面積圖 (背景色)
     area = alt.Chart(df).mark_area(
-        color=color,
-        opacity=0.1,  # 淡淡的顏色
-        line=False
+        color=color, opacity=0.1, line=False
     ).encode(
-        x=alt.X('Time:T', axis=alt.Axis(title='', format='%H:%M', grid=False)), # X軸不顯示網格
-        y=alt.Y('Close:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='', grid=True, tickCount=5)) # Y軸顯示主要網格
+        x=alt.X('Time:T', axis=alt.Axis(title='', format='%H:%M', grid=False)),
+        y=alt.Y('Close:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='', grid=True))
     )
 
-    # 2. 線圖 (Line) - 主走勢
+    # 2. 線圖 (主走勢)
     line = alt.Chart(df).mark_line(
-        color=color,
-        strokeWidth=2
+        color=color, strokeWidth=2
     ).encode(
         x='Time:T',
         y=alt.Y('Close:Q', scale=alt.Scale(zero=False)),
         tooltip=['Time', 'Close', 'Volume']
     )
     
-    # 3. 基準線 (Reference Line) - 昨收價虛線
-    if prev_close:
-        rule = alt.Chart(pd.DataFrame({'y': [prev_close]})).mark_rule(
-            strokeDash=[4, 4], # 虛線樣式
-            color='gray',
-            opacity=0.6
-        ).encode(y='y')
-        return (area + line + rule).properties(height=350)
-    else:
-        return (area + line).properties(height=350)
+    # 3. 昨收基準線 (虛線)
+    rule = alt.Chart(pd.DataFrame({'y': [prev_close]})).mark_rule(
+        strokeDash=[4, 4], color='gray', opacity=0.6
+    ).encode(y='y')
+
+    return (area + line + rule).properties(height=300) # 高度調整
 
 # === 4. 側邊欄 ===
 st.sidebar.header("🎯 監控標的選擇")
@@ -149,13 +150,14 @@ with st.container(border=True):
         st.title("🏢 遠東集團戰情中心")
         st.markdown(f"#### 目前監控：**{selected_name}**")
     
-    # 大盤
-    idx_intra, idx_daily, idx_info = get_quote_data("^TWII")
+    # --- 大盤數據處理 ---
+    idx_intra, idx_daily = get_quote_data("^TWII")
     
     with col_idx_data:
         st.markdown("##### 🇹🇼 台灣加權指數")
         if not idx_intra.empty:
-            idx_m = calculate_metrics(idx_intra, idx_daily, idx_info)
+            # 使用修正後的計算邏輯
+            idx_m = calculate_metrics(idx_intra, idx_daily)
             st.metric(
                 "加權指數", 
                 f"{idx_m['current']:,.0f}", 
@@ -165,22 +167,24 @@ with st.container(border=True):
     
     with col_idx_chart:
         if not idx_intra.empty:
-            idx_color = '#d62728' if idx_m['change'] >= 0 else '#2ca02c' # 台股紅漲綠跌
-            # 大盤也用 Google 風格小圖
-            idx_chart = draw_google_style_chart(idx_intra, idx_color, idx_m['prev_close'])
-            st.altair_chart(idx_chart.properties(height=60), use_container_width=True)
+            idx_color = '#d62728' if idx_m['change'] >= 0 else '#2ca02c'
+            # 大盤也用 1分K 畫圖
+            st.altair_chart(
+                draw_google_style_chart(idx_intra, idx_color, idx_m['prev_close']).properties(height=60), 
+                use_container_width=True
+            )
 
-# === 6. 主數據區塊 ===
+# === 6. 主數據區塊 (個股) ===
 
-df_1m, df_1d, info = get_quote_data(ticker)
+df_1m, df_daily = get_quote_data(ticker)
 
 if df_1m.empty:
     st.error(f"⚠️ 無法取得 {selected_name} 數據。")
 else:
-    metrics = calculate_metrics(df_1m, df_1d, info)
+    # 計算個股指標
+    metrics = calculate_metrics(df_1m, df_daily)
     
-    # 決定顏色 (台股習慣：漲是紅，跌是綠)
-    # Google Finance 的邏輯：如果現在價格 > 昨收，整張圖就是紅色；反之綠色
+    # 決定顏色 (紅漲綠跌)
     chart_color = '#d62728' if metrics['change'] >= 0 else '#2ca02c' 
 
     with st.container(border=True):
@@ -199,24 +203,12 @@ else:
         amp = ((metrics['high'] - metrics['low']) / metrics['prev_close']) * 100
         c8.metric("〰️ 當日振幅", f"{amp:.2f}%")
 
-    # === 7. Google Style 走勢圖 ===
-    st.subheader("📈 股價走勢")
+    # === 7. 走勢圖 (1分K Google Style) ===
+    st.subheader("📈 今日即時走勢 (1分K)")
     
-    # 時間選單
-    time_options = ["⚡ 今日即時", "📅 近 5 天", "🗓️ 近 1 個月", "📆 近 6 個月"]
-    selected_time = st.radio("區間：", time_options, horizontal=True, label_visibility="collapsed")
-
-    chart_df = get_chart_data(ticker, selected_time)
-
-    if not chart_df.empty:
-        # 如果是「今日」，一定要畫昨收基準線
-        ref_price = metrics['prev_close'] if "今日" in selected_time else None
-        
-        # 繪圖
-        final_chart = draw_google_style_chart(chart_df, chart_color, ref_price)
-        st.altair_chart(final_chart, use_container_width=True)
-    else:
-        st.info("尚無資料")
+    # 這裡直接畫圖，因為我們就是要看 1分K
+    final_chart = draw_google_style_chart(df_1m, chart_color, metrics['prev_close'])
+    st.altair_chart(final_chart, use_container_width=True)
 
 # === 頁尾 ===
 st.divider()
