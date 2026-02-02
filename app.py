@@ -130,4 +130,108 @@ def draw_chart_combo(df, color, prev_close):
     x_axis = alt.X('Time:T', axis=alt.Axis(title='', format='%H:%M', grid=False))
     
     # 價格圖
-    area = alt.Chart(df).mark_area(color=
+    area = alt.Chart(df).mark_area(color=color, opacity=0.1).encode(
+        x=x_axis, y=alt.Y('Close:Q', scale=alt.Scale(domain=y_domain), axis=alt.Axis(title='股價', grid=True))
+    )
+    line = alt.Chart(df).mark_line(color=color, strokeWidth=2).encode(
+        x=x_axis, y=alt.Y('Close:Q', scale=alt.Scale(domain=y_domain)),
+        tooltip=['Time', 'Close', 'Volume']
+    )
+    rule = alt.Chart(pd.DataFrame({'y': [prev_close]})).mark_rule(
+        strokeDash=[4, 4], color='gray', opacity=0.8
+    ).encode(y='y')
+    
+    price_chart = (area + line + rule).properties(height=300)
+    
+    # 成交量圖
+    vol_chart = alt.Chart(df).mark_bar(color=color, opacity=0.5).encode(
+        x=alt.X('Time:T', axis=None),
+        y=alt.Y('Volume:Q', axis=alt.Axis(title='量', tickCount=3)),
+        tooltip=['Time', 'Volume']
+    ).properties(height=80)
+    
+    return alt.vconcat(price_chart, vol_chart, spacing=0).resolve_scale(x='shared')
+
+def draw_mini_chart(df, color, prev_close):
+    """大盤迷你圖"""
+    if df.empty: return None
+    df = df.reset_index()
+    col_name = "Date" if "Date" in df.columns else "Datetime"
+    df.rename(columns={col_name: "Time"}, inplace=True)
+    
+    y_min = df['Close'].min()
+    y_max = df['Close'].max()
+    y_domain = [y_min, y_max]
+
+    line = alt.Chart(df).mark_line(color=color, strokeWidth=2).encode(
+        x=alt.X('Time:T', axis=None),
+        y=alt.Y('Close:Q', scale=alt.Scale(domain=y_domain, zero=False), axis=None),
+        tooltip=['Time', 'Close']
+    )
+    rule = alt.Chart(pd.DataFrame({'y': [prev_close]})).mark_rule(
+        strokeDash=[2, 2], color='gray', opacity=0.5
+    ).encode(y='y')
+    
+    return (line + rule).properties(height=60)
+
+# === 4. 側邊欄 ===
+st.sidebar.header("🎯 監控標的選擇")
+selected_name = st.sidebar.radio("請選擇公司：", list(stock_map.keys()))
+ticker = stock_map[selected_name]
+st.sidebar.markdown("---")
+st.sidebar.caption(f"✅ 系統連線正常 | 開發者：李宗念")
+
+# === 5. 戰情儀表板 ===
+with st.container(border=True):
+    col_head, col_idx_text, col_idx_chart = st.columns([2, 0.8, 1.2])
+    
+    with col_head:
+        st.title("🏢 遠東集團戰情中心")
+        st.markdown(f"### 🔥 目前監控：**{selected_name}**")
+        
+    # 大盤 (也要套用嚴格計算)
+    idx_daily, idx_min = get_stock_data("^TWII")
+    if not idx_min.empty:
+        idx_m = calculate_metrics_strict(idx_daily, idx_min)
+        if idx_m:
+            idx_color = '#d62728' if idx_m['change'] >= 0 else '#2ca02c'
+            with col_idx_text:
+                st.markdown("##### 🇹🇼 加權指數")
+                st.metric("Index", f"{idx_m['current']:,.0f}", f"{idx_m['change']:+.0f} ({idx_m['pct_change']:+.2f}%)", delta_color="inverse", label_visibility="collapsed")
+            with col_idx_chart:
+                st.altair_chart(draw_mini_chart(idx_min, idx_color, idx_m['prev_close']), use_container_width=True)
+
+# === 6. 個股數據 ===
+df_d, df_m = get_stock_data(ticker)
+
+if df_m.empty:
+    st.error("⚠️ 暫無數據 (請確認開盤時間)")
+else:
+    m = calculate_metrics_strict(df_d, df_m)
+    main_color = '#d62728' if m['change'] >= 0 else '#2ca02c'
+    
+    with st.container(border=True):
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("💰 目前股價", f"{m['current']:.2f}", f"{m['change']:+.2f} ({m['pct_change']:+.2f}%)", delta_color="inverse")
+        c2.metric("💎 成交金額 (估)", f"{m['amount_e']:.2f} 億")
+        c3.metric("📦 總成交量", f"{m['volume']/1000:,.0f} 張")
+        c4.metric("⚖️ 昨收價", f"{m['prev_close']:.2f}")
+        
+        st.divider()
+        
+        c5, c6, c7, c8 = st.columns(4)
+        c5.metric("🔔 開盤價", f"{m['open']:.2f}")
+        c6.metric("🔺 最高價", f"{m['high']:.2f}")
+        c7.metric("🔻 最低價", f"{m['low']:.2f}")
+        # 當日振幅
+        amp = ((m['high'] - m['low']) / m['prev_close']) * 100
+        c8.metric("〰️ 當日振幅", f"{amp:.2f}%")
+
+    # === 7. 圖表 ===
+    st.markdown("##### 📈 今日走勢 (Trend & Volume)")
+    st.altair_chart(draw_chart_combo(df_m, main_color, m['prev_close']), use_container_width=True)
+
+# === 頁尾 ===
+st.divider()
+t_str = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
+st.markdown(f"<div style='text-align: center; color: gray;'>遠東集團_聯稽一處戰情指揮中心 | 開發者：李宗念 | 更新時間：{t_str}</div>", unsafe_allow_html=True)
