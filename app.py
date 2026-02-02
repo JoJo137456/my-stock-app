@@ -30,7 +30,7 @@ def get_history_data(symbol, period="6mo"):
     except Exception:
         return pd.DataFrame(), {}
 
-# B. 抓今日即時數據 (1分鐘線)
+# B. 抓今日即時數據 (1分鐘線) - 這是畫出「你截圖那種走勢」的關鍵
 @st.cache_data(ttl=60) # 60秒更新一次
 def get_intraday_data(symbol):
     try:
@@ -104,11 +104,12 @@ else:
         vol = history_df['Volume'].iloc[-1] / 1000
         st.metric("成交量 (張)", f"{vol:,.0f}")
 
-    # --- B. ⚡ 今日即時走勢 ---
+    # --- B. ⚡ 今日即時走勢 (重點更新！) ---
     st.subheader("⚡ 今日即時走勢 (1分鐘 K線)")
     
     if not intraday_df.empty:
-        st.line_chart(intraday_df['Close'], color="#FF4B4B")
+        # 這裡設定 color=["#FF0000"] 讓線條變成紅色，更有台股上漲的感覺
+        st.line_chart(intraday_df['Close'], color=["#FF0000"])
     else:
         st.info("🕒 目前無即時分鐘數據 (可能是盤前或休市中)，請參考下方日線。")
 
@@ -116,8 +117,10 @@ else:
     with st.expander("查看 近半年歷史趨勢 & 月線 (點擊展開)", expanded=True):
         st.subheader("📈 歷史走勢 (半年)")
         history_df['月線 (20MA)'] = history_df['Close'].rolling(window=20).mean()
+        # 灰色股價，藍色月線
         st.line_chart(history_df[['Close', '月線 (20MA)']], color=["#AAAAAA", "#0068C9"])
 
 # === 頁尾資訊 (修改處) ===
 st.markdown("---")
+# 這裡已經改成你的名字了！
 st.caption("資料來源：Yahoo Finance | 即時數據更新頻率：60秒 | 開發者：李宗念")
