@@ -10,7 +10,7 @@ import numpy as np
 # === 1. 系統初始化 ===
 st.set_page_config(page_title="遠東集團_聯合稽核總部_一處戰情室", layout="wide")
 
-# 定義台灣時區 (確保時間顯示正確)
+# 定義台灣時區
 tw_tz = pytz.timezone('Asia/Taipei')
 
 # CSS：Apple風格設計
@@ -197,11 +197,10 @@ def make_candlestick_chart(df, prev_close, height=500, show_volume=True):
     return fig
 
 # === 4. 主 UI 邏輯 ===
-# 【更新】加入 2845 遠銀
 stock_map = {
     "1402 遠東新": "1402.TW",
     "1102 亞泥": "1102.TW",
-    "2845 遠銀": "2845.TW",  # 新增此行
+    "2845 遠銀": "2845.TW",
     "2606 裕民": "2606.TW",
     "1460 宏遠": "1460.TW",
     "2903 遠百": "2903.TW",
@@ -216,7 +215,14 @@ ticker = stock_map[selected_name]
 if st.sidebar.button("🔄 立即更新數據"):
     st.cache_data.clear()
 
-st.sidebar.caption("資料來源：Yahoo Finance（延遲約15-20分鐘）")
+# 【新增】 免責聲明區塊
+st.sidebar.markdown("---")
+st.sidebar.info(
+    "ℹ️ **內部測試聲明**\n\n"
+    "目前的版本主要用於展示系統架構與視覺化效果，"
+    "數據來源為公開的 Yahoo Finance（延遲報價），"
+    "僅供內部參考。"
+)
 
 s_data = get_data(ticker)
 idx_data = get_data("^TWII")
