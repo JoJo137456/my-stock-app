@@ -10,7 +10,7 @@ import numpy as np
 # === 1. 系統初始化 ===
 st.set_page_config(page_title="遠東集團_聯合稽核總部_一處戰情室", layout="wide")
 
-# 【關鍵修正在此】定義台灣時區變數，解決 NameError
+# 定義台灣時區 (確保時間顯示正確)
 tw_tz = pytz.timezone('Asia/Taipei')
 
 # CSS：Apple風格設計
@@ -197,9 +197,16 @@ def make_candlestick_chart(df, prev_close, height=500, show_volume=True):
     return fig
 
 # === 4. 主 UI 邏輯 ===
+# 【更新】加入 2845 遠銀
 stock_map = {
-    "1402 遠東新": "1402.TW", "1102 亞泥": "1102.TW", "2606 裕民": "2606.TW",
-    "1460 宏遠": "1460.TW", "2903 遠百": "2903.TW", "4904 遠傳": "4904.TW", "1710 東聯": "1710.TW"
+    "1402 遠東新": "1402.TW",
+    "1102 亞泥": "1102.TW",
+    "2845 遠銀": "2845.TW",  # 新增此行
+    "2606 裕民": "2606.TW",
+    "1460 宏遠": "1460.TW",
+    "2903 遠百": "2903.TW",
+    "4904 遠傳": "4904.TW",
+    "1710 東聯": "1710.TW"
 }
 
 st.sidebar.header("🎯 遠東集團監控")
@@ -274,12 +281,10 @@ with st.container():
         else:
             st.warning("大盤資料讀取中...")
 
-# 頁腳邏輯：確保 tw_tz 存在
+# 頁腳邏輯
 try:
-    # 這裡會用到上面定義的 tw_tz
     update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
 except NameError:
-    # 雙重保險
     update_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 st.markdown(f"""
