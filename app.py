@@ -1,146 +1,107 @@
 import streamlit as st
 import yfinance as yf
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import pandas as pd
-import altair as alt
-import numpy as np  # 新增：用於顏色判斷
-from datetime import datetime, time, timedelta
 import pytz
+from datetime import datetime
 
 # === 1. 系統初始化 ===
 st.set_page_config(page_title="遠東集團戰情中心", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-# CSS 優化：強化戰情室風格 + 讓圖表更舒適
+# CSS 強化：更大字體、更好間距、戰情室風格
 st.markdown("""
     <style>
-        html, body, [class*="css"] { font-family: 'Microsoft JhengHei', sans-serif !important; }
-        div[data-testid="stMetricValue"] { font-size: 2rem !important; font-weight: 800; color: #333; }
-        div[data-testid="stMetricLabel"] { font-size: 1rem !important; }
-        .stAlert { font-size: 0.9rem; }
+        .big-metric { font-size: 2.2rem !important; font-weight: 900; }
+        .metric-label { font-size: 1rem !important; }
+        .stPlotlyChart { margin-top: 10px; }
+        .block-container { padding-top: 1rem; }
     </style>
 """, unsafe_allow_html=True)
 
-# === 2. 核心邏輯與計算 ===
-def get_market_progress():
-    now = datetime.now(tw_tz)
-    market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
-    market_close = now.replace(hour=13, minute=30, second=0, microsecond=0)
-   
-    if now < market_open:
-        return 0.0
-    elif now > market_close:
-        return 1.0
-    else:
-        total_minutes = 270
-        elapsed = (now - market_open).seconds / 60
-        return max(0.01, elapsed / total_minutes)
-
+# === 2. 資料取得（1分鐘K棒 + fast_info）===
 @st.cache_data(ttl=30)
-def get_data_yf(symbol):
+def get_data(symbol):
     try:
-        stock = yf.Ticker(symbol)
-        df = stock.history(period="1d", interval="1m", auto_adjust=False)
-        fi = stock.fast_info
-        last_price = fi.last_price
-        prev_close = fi.previous_close
-       
-        if last_price is None and not df.empty:
-            last_price = df['Close'].iloc[-1]
-           
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period="1d", interval="1m", auto_adjust=False)
+        info = ticker.fast_info
+        
+        last_price = info.get('lastPrice') or (df['Close'].iloc[-1] if not df.empty else None)
+        prev_close = info.get('previousClose') or (df['Close'].iloc[-2] if len(df) > 1 else None)
+        volume = info.get('lastVolume') or df['Volume'].sum()
+        
         return {
-            "symbol": symbol,
+            "df": df,
             "current": last_price,
             "prev_close": prev_close,
-            "df": df,
-            "volume": fi.last_volume if fi.last_volume else (df['Volume'].sum() if not df.empty else 0)
+            "volume": volume
         }
-    except Exception as e:
-        st.error(f"載入 {symbol} 失敗：{e}")
+    except:
         return None
 
-# === 3. 新增：Candlestick + Volume 圖表 (更接近 Yahoo Finance) ===
-def draw_candlestick_combo(df, prev_close, price_height=350, vol_height=100):
+# === 3. Plotly Candlestick + Volume 圖表（清晰版）===
+def make_candlestick_chart(df, prev_close, title, height=500):
     if df.empty:
         return None
     
-    df = df.reset_index().copy()
-    
-    # 時間欄位統一處理
-    if 'Datetime' in df.columns:
-        df.rename(columns={'Datetime': 'Time'}, inplace=True)
-    elif 'Date' in df.columns:
-        df.rename(columns={'Date': 'Time'}, inplace=True)
-    else:
-        df.rename(columns={'index': 'Time'}, inplace=True)
-    
-    # 時區處理
-    if df['Time'].dt.tz is None:
-        df['Time'] = df['Time'].dt.tz_localize('UTC').dt.tz_convert(tw_tz)
-    else:
-        df['Time'] = df['Time'].dt.tz_convert(tw_tz)
-    
-    # 台灣慣例：漲紅跌綠
-    df['color'] = np.where(df['Close'] >= df['Open'], '#d62728', '#2ca02c')  # 紅漲綠跌
-    
-    base = alt.Chart(df).encode(
-        x=alt.X('Time:T', axis=alt.Axis(title='', format='%H:%M', tickCount=8))
+    fig = make_subplots(
+        rows=2, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.05,
+        subplot_titles=(title, "成交量"),
+        row_heights=[0.7, 0.3]
     )
     
-    # 高低價線
-    high_low = base.mark_rule(strokeWidth=1).encode(
-        y='Low:Q',
-        y2='High:Q',
-        color=alt.Color('color:N', scale=None, legend=None)
-    )
-    
-    # 陰陽燭實體
-    candle_body = base.mark_bar(width=8).encode(
-        y='Open:Q',
-        y2='Close:Q',
-        color=alt.Color('color:N', scale=None, legend=None)
-    )
+    # 台灣風格：紅漲綠跌
+    fig.add_trace(go.Candlestick(
+        x=df.index,
+        open=df['Open'],
+        high=df['High'],
+        low=df['Low'],
+        close=df['Close'],
+        increasing_line_color='#d62728', increasing_fillcolor='#d62728',
+        decreasing_line_color='#2ca02c', decreasing_fillcolor='#2ca02c',
+        name="K線"
+    ), row=1, col=1)
     
     # 昨收參考線
-    rule = alt.Chart(pd.DataFrame({'y': [prev_close]})).mark_rule(
-        strokeDash=[6,4], strokeWidth=2, color='#888888'
-    ).encode(y='y')
-    
-    price_chart = (high_low + candle_body + rule).properties(
-        height=price_height,
-        title=alt.TitleParams(text="股價走勢", anchor='middle')
-    )
+    fig.add_hline(y=prev_close, line_dash="dash", line_color="#888888", row=1, col=1)
     
     # 成交量（同色）
-    vol_chart = base.mark_bar().encode(
-        y=alt.Y('Volume:Q', axis=alt.Axis(title='成交量')),
-        color=alt.Color('color:N', scale=None, legend=None)
-    ).properties(height=vol_height)
+    colors = ['#d62728' if row['Close'] >= row['Open'] else '#2ca02c' for i, row in df.iterrows()]
+    fig.add_trace(go.Bar(
+        x=df.index,
+        y=df['Volume'],
+        marker_color=colors,
+        name="成交量"
+    ), row=2, col=1)
     
-    return alt.vconcat(price_chart, vol_chart, spacing=5).resolve_scale(x='shared')
+    fig.update_layout(
+        height=height,
+        xaxis_rangeslider_visible=False,
+        showlegend=False,
+        margin=dict(l=40, r=40, t=60, b=40),
+        title_text=title,
+        title_x=0.5
+    )
+    
+    fig.update_xaxes(
+        title_text="時間",
+        tickformat='%H:%M',
+        row=2, col=1
+    )
+    
+    return fig
 
-# 小型 sparkline（用於大盤）
-def draw_mini_sparkline(df, prev_close):
-    if df.empty: return None
-    df = df.reset_index().copy()
-    
-    if 'Datetime' in df.columns:
-        df.rename(columns={'Datetime': 'Time'}, inplace=True)
-    elif 'Date' in df.columns:
-        df.rename(columns={'Date': 'Time'}, inplace=True)
-    else:
-        df.rename(columns={'index': 'Time'}, inplace=True)
-    
-    last_price = df['Close'].iloc[-1]
-    line_color = '#d62728' if last_price >= prev_close else '#2ca02c'
-    
-    chart = alt.Chart(df).mark_line(strokeWidth=2.5, color=line_color).encode(
-        x=alt.X('Time:T', axis=None),
-        y=alt.Y('Close:Q', axis=None)
-    ).properties(height=70, width=200)
-    
-    return chart
+# 小型大盤圖（也用 Candlestick，更清楚）
+def make_mini_index_chart(df, prev_close):
+    if df.empty:
+        return None
+    return make_candlestick_chart(df, prev_close, "加權指數當日走勢", height=300)
 
-# === 4. 主程式 UI（調整版：個股大圖左側，大盤小圖右側，符合你「右上角大盤對比」需求）===
+# === 4. 主 UI ===
 stock_map = {
     "1402 遠東新": "1402.TW", "1102 亞泥": "1102.TW", "2606 裕民": "2606.TW",
     "1460 宏遠": "1460.TW", "2903 遠百": "2903.TW", "4904 遠傳": "4904.TW", "1710 東聯": "1710.TW"
@@ -149,72 +110,67 @@ stock_map = {
 st.sidebar.header("🎯 遠東集團監控")
 selected_name = st.sidebar.radio("選擇公司", list(stock_map.keys()))
 ticker = stock_map[selected_name]
-st.sidebar.caption("資料來源：Yahoo Finance（延遲約15-20分鐘）")
+st.sidebar.caption("資料來源：Yahoo Finance（延遲約15-20分鐘）｜每30秒自動更新")
 
-# 先載入大盤資料（共用）
-idx_data = get_data_yf("^TWII")
+# 載入資料
+s_data = get_data(ticker)
+idx_data = get_data("^TWII")
 
 with st.container(border=True):
-    # 左大右小：個股主要走勢在大左側，大盤在右側（類似 Yahoo Finance 右上角小圖概念）
-    col_main, col_index = st.columns([4, 1.3])
+    col_main, col_index = st.columns([4, 1.5])  # 左大右中
     
-    # === 左側：選定個股（大圖 + 詳細指標）===
+    # === 左側：個股主圖 ===
     with col_main:
-        st.markdown(f"### 🔥 {selected_name}　當日走勢")
-        s_data = get_data_yf(ticker)
-        
         if s_data and s_data['current'] is not None:
             curr = s_data['current']
-            prev = s_data['prev_close']
+            prev = s_data['prev_close'] or curr
             change = curr - prev
-            pct = (change / prev) * 100 if prev else 0
+            pct = (change / prev) * 100
             
-            # 計算成交金額（億）
+            # 成交金額估計
             avg_price = s_data['df']['Close'].mean() if not s_data['df'].empty else curr
-            amount_est = (s_data['volume'] * avg_price) / 1e8
+            amount_billion = (s_data['volume'] * avg_price) / 1e8
             
-            # 與大盤比較（如果大盤資料可用）
+            # 相對大盤
             rel_to_index = None
             if idx_data and idx_data['current'] is not None:
                 idx_pct = ((idx_data['current'] - idx_data['prev_close']) / idx_data['prev_close']) * 100
                 rel_to_index = pct - idx_pct
             
             # 指標列
-            mcols = st.columns([2, 1.5, 1.5, 1.5, 1.5])
-            mcols[0].metric("最新股價", f"{curr:.2f}", f"{change:+.2f} ({pct:+.2f}%)", delta_color="inverse")
-            mcols[1].metric("成交金額 (億)", f"{amount_est:.1f}")
-            mcols[2].metric("總量 (張)", f"{s_data['volume']/1000:,.0f}")
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("最新股價", f"{curr:.2f}", f"{change:+.2f} ({pct:+.2f}%)", delta_color="inverse")
+            m2.metric("成交金額 (億)", f"{amount_billion:.1f}")
+            m3.metric("總量 (張)", f"{int(s_data['volume']/1000):,}")
             if rel_to_index is not None:
-                color = "normal" if rel_to_index >= 0 else "inverse"
-                mcols[3].metric("相對大盤", f"{rel_to_index:+.2f}%", delta_color=color)
-            mcols[4].metric("昨收", f"{prev:.2f}")
+                rel_color = "normal" if rel_to_index >= 0 else "inverse"
+                m4.metric("相對大盤", f"{rel_to_index:+.2f}%", delta_color=rel_color)
+            m5.metric("昨收", f"{prev:.2f}")
             
-            st.divider()
+            st.markdown(f"### {selected_name}　當日走勢")
             
-            # 大 Candlestick 圖
             if not s_data['df'].empty:
-                chart = draw_candlestick_combo(s_data['df'], prev, price_height=380, vol_height=120)
-                st.altair_chart(chart, use_container_width=True)
+                fig = make_candlestick_chart(s_data['df'], prev, f"{selected_name} 當日走勢", height=550)
+                st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("今日尚未開盤或無盤中資料")
+                st.info("尚未開盤或無盤中資料")
         else:
-            st.error("無法取得個股資料，請稍後重試")
+            st.error("無法載入個股資料")
     
-    # === 右側：加權指數（小圖 + 簡要指標）===
+    # === 右側：大盤對比（中型 Candlestick）===
     with col_index:
         st.markdown("### 🇹🇼 加權指數")
-        
         if idx_data and idx_data['current'] is not None:
             i_curr = idx_data['current']
-            i_prev = idx_data['prev_close']
+            i_prev = idx_data['prev_close'] or i_curr
             i_change = i_curr - i_prev
-            i_pct = (i_change / i_prev) * 100 if i_prev else 0
+            i_pct = (i_change / i_prev) * 100
             
             st.metric("點數", f"{i_curr:,.0f}", f"{i_change:+.0f} ({i_pct:+.2f}%)", delta_color="inverse")
             
-            # 小 sparkline
             if not idx_data['df'].empty:
-                st.altair_chart(draw_mini_sparkline(idx_data['df'], i_prev), use_container_width=True)
+                mini_fig = make_mini_index_chart(idx_data['df'], i_prev)
+                st.plotly_chart(mini_fig, use_container_width=True)
             else:
                 st.caption("無今日資料")
         else:
