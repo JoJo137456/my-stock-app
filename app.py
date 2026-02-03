@@ -5,6 +5,7 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import pytz
 from datetime import datetime
+import numpy as np
 
 # === 1. 系統初始化 ===
 st.set_page_config(page_title="遠東集團戰情中心", layout="wide")
@@ -38,12 +39,10 @@ def get_data(symbol):
         
         volume = df['Volume'].sum() if not df.empty else 0
         
-        # 額外指標
         if not df.empty:
             open_price = df['Open'].iloc[0]
             high = df['High'].max()
             low = df['Low'].min()
-            # VWAP（台灣常見均價）
             typical_price = (df['High'] + df['Low'] + df['Close']) / 3
             vwap = (typical_price * df['Volume']).sum() / df['Volume'].sum() if volume > 0 else df['Close'].mean()
         else:
@@ -66,14 +65,14 @@ def get_data(symbol):
         st.error(f"載入 {symbol} 失敗：{str(e)}")
         return None
 
-# === 3. Plotly 折線圖（模仿台灣券商即時走勢風格）===
-def make_line_chart(df, prev_close, height=500, show_volume=True):
+# === 3. Plotly K線圖（恢復 K線 + 新增灰白交替水平色塊）===
+def make_candlestick_chart(df, prev_close, height=500, show_volume=True):
     if df.empty:
         return None
     
-    # 整體背景色塊：漲淡紅、跌淡綠
+    # 整體漲跌背景（淡紅/淡綠）
     current_price = df['Close'].iloc[-1]
-    bg_color = "rgba(255, 182, 193, 0.2)" if current_price >= prev_close else "rgba(144, 238, 144, 0.2)"
+    bg_color = "rgba(255, 182, 193, 0.15)" if current_price >= prev_close else "rgba(144, 238, 144, 0.15)"
     
     rows = 2 if show_volume else 1
     row_heights = [0.7, 0.3] if show_volume else [1.0]
@@ -85,35 +84,72 @@ def make_line_chart(df, prev_close, height=500, show_volume=True):
         row_heights=row_heights
     )
     
-    # 價格折線（藍色）
-    fig.add_trace(go.Scatter(
+    # K線（紅漲綠跌實心）
+    fig.add_trace(go.Candlestick(
         x=df.index,
-        y=df['Close'],
-        mode='lines',
-        line=dict(color='#1f77b4', width=2),
-        name="價格"
+        open=df['Open'],
+        high=df['High'],
+        low=df['Low'],
+        close=df['Close'],
+        increasing_line_color='#d62728', increasing_fillcolor='#d62728',
+        decreasing_line_color='#2ca02c', decreasing_fillcolor='#2ca02c',
+        name="K線"
     ), row=1, col=1)
     
-    # 昨收虛線（灰色）
+    # 昨收虛線
     fig.add_hline(y=prev_close, line_dash="dash", line_color="#888888", row=1, col=1)
     
-    # 背景色塊
+    # === 新增：灰白交替水平色塊（方便閱讀價格區間）===
+    y_min = df['Low'].min()
+    y_max = df['High'].max()
+    padding = (y_max - y_min) * 0.05
+    y_range = [y_min - padding, y_max + padding]
+    
+    # 計算合適的價格間隔（類似券商自動格線）
+    price_range = y_max - y_min
+    if price_range == 0:
+        interval = 0.1
+    else:
+        interval = 10 ** np.floor(np.log10(price_range / 5))
+        interval = max(0.05, round(interval, 2))
+    
+    # 從下往上取整開始
+    start_y = np.floor(y_min / interval) * interval
+    end_y = np.ceil(y_max / interval) * interval
+    
+    prices = np.arange(start_y, end_y + interval, interval)
+    
+    for i, price in enumerate(prices[:-1]):
+        color = "rgba(240, 240, 240, 0.6)" if i % 2 == 0 else "rgba(255, 255, 255, 0.8)"
+        fig.add_shape(
+            type="rect",
+            x0=df.index[0], x1=df.index[-1],
+            y0=price, y1=prices[i+1],
+            fillcolor=color,
+            line_width=0,
+            layer="below",
+            row=1, col=1
+        )
+    
+    # 整體漲跌淡色覆蓋在上層（讓交替格仍可見）
     fig.add_shape(
         type="rect",
         x0=df.index[0], x1=df.index[-1],
-        y0=df['Close'].min() * 0.999, y1=df['Close'].max() * 1.001,
+        y0=y_range[0], y1=y_range[1],
         fillcolor=bg_color,
-        layer="below",
         line_width=0,
+        layer="below",
+        opacity=0.4,
         row=1, col=1
     )
     
-    # 成交量（統一紅柱，僅個股顯示）
+    # 成交量（個股顯示，同色）
     if show_volume:
+        colors = ['#d62728' if row['Close'] >= row['Open'] else '#2ca02c' for _, row in df.iterrows()]
         fig.add_trace(go.Bar(
             x=df.index,
             y=df['Volume'],
-            marker_color='#ff3333',
+            marker_color=colors,
             name="成交量"
         ), row=2, col=1)
     
@@ -122,13 +158,10 @@ def make_line_chart(df, prev_close, height=500, show_volume=True):
         xaxis_rangeslider_visible=False,
         showlegend=False,
         plot_bgcolor='white',
-        margin=dict(l=40, r=60, t=40, b=40),  # 右側留空間給 Y 軸
+        margin=dict(l=40, r=40, t=40, b=40),
+        yaxis=dict(range=y_range)
     )
     
-    # 價格 Y 軸放在右側（模仿券商）
-    fig.update_yaxes(side="right", row=1, col=1)
-    
-    # 時間格式
     fig.update_xaxes(
         tickformat='%H:%M',
         title_text="時間" if show_volume else "",
@@ -190,10 +223,10 @@ with st.container(border=True):
             st.divider()
             
             if not s_data['df'].empty:
-                fig = make_line_chart(s_data['df'], prev, height=550, show_volume=True)
+                fig = make_candlestick_chart(s_data['df'], prev, height=550, show_volume=True)
                 st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("今日尚無走勢資料，但價格已更新")
+                st.info("今日尚無K線資料，但價格已更新")
         else:
             st.error("個股資料載入失敗")
     
@@ -208,7 +241,7 @@ with st.container(border=True):
             st.metric("點數", f"{i_curr:,.0f}", f"{i_change:+.0f} ({i_pct:+.2f}%)", delta_color="inverse")
             
             if not idx_data['df'].empty:
-                mini_fig = make_line_chart(idx_data['df'], i_prev, height=350, show_volume=False)
+                mini_fig = make_candlestick_chart(idx_data['df'], i_prev, height=350, show_volume=False)
                 st.plotly_chart(mini_fig, use_container_width=True)
 
 # 頁腳
