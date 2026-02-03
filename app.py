@@ -8,18 +8,62 @@ from datetime import datetime
 import numpy as np
 
 # === 1. 系統初始化 ===
-st.set_page_config(page_title="遠東集團戰情中心", layout="wide")
-tw_tz = pytz.timezone('Asia/Taipei')
+st.set_page_config(page_title="遠東集團_聯合稽核總部_一處戰情室", layout="wide")
 
-# CSS 美化 + 確保指標完整顯示
+# CSS：Apple風格設計 - 極簡、優雅、大白空間、圓角、輕陰影、微軟正黑體
 st.markdown("""
     <style>
-        .block-container { padding-top: 3rem !important; padding-bottom: 2rem; }
-        .stMetric { margin-top: 10px !important; }
-        .stPlotlyChart { margin-top: 20px; }
-        div[data-testid="metric-container"] { padding-top: 10px; }
+        /* 全局字體：微軟正黑體 */
+        html, body, [class*="css"]  { font-family: 'Microsoft JhengHei', -apple-system, BlinkMacSystemFont, sans-serif !important; }
+        
+        /* 主背景：純白 + 輕微質感 */
+        .stApp { background-color: #f9f9f9; }
+        
+        /* 大標題：Apple風格，極簡大字、居中、輕盈 */
+        .main-title {
+            font-size: 2.8rem !important;
+            font-weight: 600;
+            color: #1d1d1f;
+            text-align: center;
+            margin-top: 2rem;
+            margin-bottom: 3rem;
+            letter-spacing: 0.5px;
+        }
+        
+        /* Container：圓角 + 輕陰影（Apple卡片風） */
+        div[data-testid="stVerticalBlock"] > div[class*="css-1d391kg"] {
+            background: white;
+            border-radius: 18px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        /* Metric：更大更優雅 */
+        div[data-testid="stMetricValue"] { font-size: 2.2rem !important; font-weight: 700; color: #1d1d1f; }
+        div[data-testid="stMetricLabel"] { font-size: 1rem !important; color: #555; }
+        div[data-testid="metric-container"] { padding: 0.8rem 0; }
+        
+        /* Sidebar：Apple風格，乾淨透明感 */
+        section[data-testid="stSidebar"] {
+            background-color: rgba(255,255,255,0.95);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid #eee;
+            border-radius: 18px;
+            margin: 1rem;
+            padding-top: 2rem;
+        }
+        
+        /* 圖表區間 */
+        .stPlotlyChart { margin-top: 20px; border-radius: 12px; overflow: hidden; }
+        
+        /* 頁腳 */
+        .footer { text-align: center; color: #888; font-size: 0.9rem; margin-top: 4rem; }
     </style>
 """, unsafe_allow_html=True)
+
+# 大標題（Apple風極簡居中）
+st.markdown('<div class="main-title">遠東集團<br>聯合稽核總部 一處戰情室</div>', unsafe_allow_html=True)
 
 # === 2. 資料取得 ===
 @st.cache_data(ttl=30)
@@ -65,12 +109,11 @@ def get_data(symbol):
         st.error(f"載入 {symbol} 失敗：{str(e)}")
         return None
 
-# === 3. Plotly K線圖（恢復 K線 + 新增灰白交替水平色塊）===
+# === 3. Plotly K線圖（保留灰白格線 + 漲跌淡色）===
 def make_candlestick_chart(df, prev_close, height=500, show_volume=True):
     if df.empty:
         return None
     
-    # 整體漲跌背景（淡紅/淡綠）
     current_price = df['Close'].iloc[-1]
     bg_color = "rgba(255, 182, 193, 0.15)" if current_price >= prev_close else "rgba(144, 238, 144, 0.15)"
     
@@ -84,7 +127,6 @@ def make_candlestick_chart(df, prev_close, height=500, show_volume=True):
         row_heights=row_heights
     )
     
-    # K線（紅漲綠跌實心）
     fig.add_trace(go.Candlestick(
         x=df.index,
         open=df['Open'],
@@ -96,16 +138,14 @@ def make_candlestick_chart(df, prev_close, height=500, show_volume=True):
         name="K線"
     ), row=1, col=1)
     
-    # 昨收虛線
     fig.add_hline(y=prev_close, line_dash="dash", line_color="#888888", row=1, col=1)
     
-    # === 新增：灰白交替水平色塊（方便閱讀價格區間）===
+    # 灰白交替格線
     y_min = df['Low'].min()
     y_max = df['High'].max()
     padding = (y_max - y_min) * 0.05
     y_range = [y_min - padding, y_max + padding]
     
-    # 計算合適的價格間隔（類似券商自動格線）
     price_range = y_max - y_min
     if price_range == 0:
         interval = 0.1
@@ -113,10 +153,8 @@ def make_candlestick_chart(df, prev_close, height=500, show_volume=True):
         interval = 10 ** np.floor(np.log10(price_range / 5))
         interval = max(0.05, round(interval, 2))
     
-    # 從下往上取整開始
     start_y = np.floor(y_min / interval) * interval
     end_y = np.ceil(y_max / interval) * interval
-    
     prices = np.arange(start_y, end_y + interval, interval)
     
     for i, price in enumerate(prices[:-1]):
@@ -131,7 +169,7 @@ def make_candlestick_chart(df, prev_close, height=500, show_volume=True):
             row=1, col=1
         )
     
-    # 整體漲跌淡色覆蓋在上層（讓交替格仍可見）
+    # 整體漲跌淡色
     fig.add_shape(
         type="rect",
         x0=df.index[0], x1=df.index[-1],
@@ -143,7 +181,6 @@ def make_candlestick_chart(df, prev_close, height=500, show_volume=True):
         row=1, col=1
     )
     
-    # 成交量（個股顯示，同色）
     if show_volume:
         colors = ['#d62728' if row['Close'] >= row['Open'] else '#2ca02c' for _, row in df.iterrows()]
         fig.add_trace(go.Bar(
@@ -184,7 +221,7 @@ st.sidebar.caption("資料來源：Yahoo Finance（延遲約15-20分鐘）｜每
 s_data = get_data(ticker)
 idx_data = get_data("^TWII")
 
-with st.container(border=True):
+with st.container(border=False):  # 移除舊border，靠CSS卡片風格
     col_main, col_index = st.columns([4, 1.5])
     
     with col_main:
@@ -203,7 +240,6 @@ with st.container(border=True):
                 idx_pct = ((idx_data['current'] - idx_data['prev_close']) / idx_data['prev_close']) * 100
                 rel_to_index = pct - idx_pct
             
-            # 第一排
             m1, m2, m3, m4, m5 = st.columns(5)
             m1.metric("最新股價", f"{curr:.2f}", f"{change:+.2f} ({pct:+.2f}%)", delta_color="inverse")
             m2.metric("開盤", f"{s_data['open']:.2f}")
@@ -211,7 +247,6 @@ with st.container(border=True):
             m4.metric("最低", f"{s_data['low']:.2f}")
             m5.metric("均價", f"{s_data['vwap']:.2f}")
             
-            # 第二排
             m6, m7, m8, m9 = st.columns(4)
             m6.metric("成交金額 (億)", f"{amount_billion:.1f}")
             m7.metric("總量 (張)", f"{int(s_data['volume']/1000):,}")
@@ -244,11 +279,10 @@ with st.container(border=True):
                 mini_fig = make_candlestick_chart(idx_data['df'], i_prev, height=350, show_volume=False)
                 st.plotly_chart(mini_fig, use_container_width=True)
 
-# 頁腳
-st.markdown("---")
-st.markdown(
-    f"<div style='text-align: center; color: #888; font-size: 0.9rem;'>"
-    f"遠東集團戰情中心｜更新時間：{datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')} (台灣時間)"
-    f"</div>",
-    unsafe_allow_html=True
-)
+# 頁腳 + 開發者
+st.markdown("""
+    <div class="footer">
+        遠東集團 聯合稽核總部 一處戰情室<br>
+        開發者：李宗念｜更新時間：{{update_time}} (台灣時間)
+    </div>
+""".replace("{{update_time}}", datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')), unsafe_allow_html=True)
