@@ -221,7 +221,7 @@ st.sidebar.caption("資料來源：Yahoo Finance（延遲約15-20分鐘）｜每
 s_data = get_data(ticker)
 idx_data = get_data("^TWII")
 
-with st.container(border=False):  # 移除舊border，靠CSS卡片風格
+with st.container(border=False):
     col_main, col_index = st.columns([4, 1.5])
     
     with col_main:
@@ -279,10 +279,11 @@ with st.container(border=False):  # 移除舊border，靠CSS卡片風格
                 mini_fig = make_candlestick_chart(idx_data['df'], i_prev, height=350, show_volume=False)
                 st.plotly_chart(mini_fig, use_container_width=True)
 
-# 頁腳 + 開發者
-st.markdown("""
+# 頁腳 + 開發者（修正語法）
+update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
+st.markdown(f"""
     <div class="footer">
         遠東集團 聯合稽核總部 一處戰情室<br>
-        開發者：李宗念｜更新時間：{{update_time}} (台灣時間)
+        開發者：李宗念｜更新時間：{update_time} (台灣時間)
     </div>
-""".replace("{{update_time}}", datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')), unsafe_allow_html=True)
+""", unsafe_allow_html=True)
