@@ -10,38 +10,31 @@ from datetime import datetime
 st.set_page_config(page_title="遠東集團戰情中心", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-# CSS 美化
+# CSS 美化 + 解決切掉問題（增加頂部空間 + metric 完整顯示）
 st.markdown("""
     <style>
-        .big-metric { font-size: 2.2rem !important; font-weight: 900; }
-        .metric-label { font-size: 1rem !important; }
-        .stPlotlyChart { margin-top: 10px; }
-        .block-container { padding-top: 1rem; }
+        .block-container { padding-top: 3rem !important; padding-bottom: 2rem; }
+        .stMetric { margin-top: 10px !important; }
+        .stPlotlyChart { margin-top: 20px; }
+        div[data-testid="metric-container"] { padding-top: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
-# === 2. 強化版資料取得（更穩健）===
+# === 2. 資料取得（保持穩定 5m K線）===
 @st.cache_data(ttl=30)
 def get_data(symbol):
     try:
         ticker = yf.Ticker(symbol)
-        
-        # 先取基本資訊（昨收、最新價）
         info = ticker.info
         prev_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
         current = info.get('currentPrice') or info.get('regularMarketPrice')
         
-        # 嘗試取 5m K棒（最穩定）
         df = ticker.history(period="1d", interval="5m")
         if df.empty:
-            # fallback 15m
             df = ticker.history(period="1d", interval="15m")
         
-        # 如果 info 沒最新價，用 df 補
         if current is None and not df.empty:
             current = df['Close'].iloc[-1]
-            if prev_close is None:
-                prev_close = df['Open'].iloc[0]  # 或用前一天，但簡化
         
         volume = df['Volume'].sum() if not df.empty else 0
         
@@ -58,7 +51,7 @@ def get_data(symbol):
         st.error(f"載入 {symbol} 失敗：{str(e)}")
         return None
 
-# === 3. Plotly K線圖 ===
+# === 3. Plotly K線圖（保持不變）===
 def make_candlestick_chart(df, prev_close, title, height=500):
     if df.empty:
         return None
@@ -109,7 +102,7 @@ def make_candlestick_chart(df, prev_close, title, height=500):
     
     return fig
 
-# === 4. 主 UI ===
+# === 4. 主 UI（調整順序 + 空間）===
 stock_map = {
     "1402 遠東新": "1402.TW", "1102 亞泥": "1102.TW", "2606 裕民": "2606.TW",
     "1460 宏遠": "1460.TW", "2903 遠百": "2903.TW", "4904 遠傳": "4904.TW", "1710 東聯": "1710.TW"
@@ -120,15 +113,16 @@ selected_name = st.sidebar.radio("選擇公司", list(stock_map.keys()))
 ticker = stock_map[selected_name]
 st.sidebar.caption("資料來源：Yahoo Finance（延遲約15-20分鐘）｜每30秒自動更新")
 
-# 載入資料
 s_data = get_data(ticker)
 idx_data = get_data("^TWII")
 
 with st.container(border=True):
     col_main, col_index = st.columns([4, 1.5])
     
-    # 左側：個股
     with col_main:
+        # 先顯示大標題（避免壓到指標）
+        st.markdown(f"## 🔥 {selected_name}　當日走勢")
+        
         if s_data:
             curr = s_data['current']
             prev = s_data['prev_close']
@@ -143,6 +137,7 @@ with st.container(border=True):
                 idx_pct = ((idx_data['current'] - idx_data['prev_close']) / idx_data['prev_close']) * 100
                 rel_to_index = pct - idx_pct
             
+            # 指標列（5欄，完整顯示）
             m1, m2, m3, m4, m5 = st.columns(5)
             m1.metric("最新股價", f"{curr:.2f}", f"{change:+.2f} ({pct:+.2f}%)", delta_color="inverse")
             m2.metric("成交金額 (億)", f"{amount_billion:.1f}")
@@ -152,20 +147,16 @@ with st.container(border=True):
                 m4.metric("相對大盤", f"{rel_to_index:+.2f}%", delta_color=rel_color)
             m5.metric("昨收", f"{prev:.2f}")
             
-            st.markdown(f"### {selected_name}　當日走勢")
+            st.divider()
             
             if not s_data['df'].empty:
-                fig = make_candlestick_chart(s_data['df'], prev, f"{selected_name} 當日走勢", height=550)
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.info("無K線資料，但價格已更新")
+                fig = make_candlestick_chart(s_data['df'], prev, "", height=550)  # 標題留空，避免重複
+                st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("今日尚無K線資料（可能尚未開盤或資料延遲），但最新價格已顯示")
+                st.info("今日尚無K線資料，但價格已更新")
         else:
-            st.error("個股資料載入失敗，請稍後重試或檢查網路")
+            st.error("個股資料載入失敗")
     
-    # 右側：大盤
     with col_index:
         st.markdown("### 🇹🇼 加權指數")
         if idx_data:
@@ -177,11 +168,8 @@ with st.container(border=True):
             st.metric("點數", f"{i_curr:,.0f}", f"{i_change:+.0f} ({i_pct:+.2f}%)", delta_color="inverse")
             
             if not idx_data['df'].empty:
-                mini_fig = make_candlestick_chart(idx_data['df'], i_prev, "加權指數當日走勢", height=350)
-                if mini_fig:
-                    st.plotly_chart(mini_fig, use_container_width=True)
-        else:
-            st.warning("大盤資料載入中...")
+                mini_fig = make_candlestick_chart(idx_data['df'], i_prev, "", height=350)
+                st.plotly_chart(mini_fig, use_container_width=True)
 
 # 頁腳
 st.markdown("---")
