@@ -2,13 +2,14 @@ import streamlit as st
 import twstock
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime, time as dt_time
+from datetime import datetime, timedelta, time as dt_time
 import pytz
 import requests
 import urllib3
-import json
+import yfinance as yf # 重新引入 yfinance 用於畫分時圖
 
-# === 0. 關鍵修復 A: SSL 憑證補丁 ===
+# === 0. 系統層級修復 ===
+# SSL 憑證補丁 (強制過證交所安檢)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 original_request = requests.Session.request
 def patched_request(self, method, url, *args, **kwargs):
@@ -16,66 +17,25 @@ def patched_request(self, method, url, *args, **kwargs):
     return original_request(self, method, url, *args, **kwargs)
 requests.Session.request = patched_request
 
-# === 0. 關鍵修復 B: 手動抓取歷史資料 (繞過 twstock 的 Bug) ===
-def fetch_twse_history_proxy(stock_code):
-    try:
-        # 建立證交所 API 網址 (抓取本月資料)
-        month_str = datetime.now().strftime('%Y%m01')
-        url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date={month_str}&stockNo={stock_code}"
-        
-        # 直接請求 (已包含 SSL patch)
-        r = requests.get(url)
-        data = r.json()
-        
-        if data['stat'] != 'OK':
-            return None
-            
-        # 手動清洗資料 (完全不理會 twstock 的 Data 結構)
-        # 證交所格式: [日期, 成交股數, 成交金額, 開盤, 最高, 最低, 收盤, 漲跌, 筆數]
-        # 我們自己解析，這樣就算它多欄位也不會報錯
-        clean_data = []
-        for row in data['data']:
-            # 處理民國年: 112/01/01 -> 2023-01-01
-            date_parts = row[0].split('/')
-            ad_year = int(date_parts[0]) + 1911
-            date_str = f"{ad_year}-{date_parts[1]}-{date_parts[2]}"
-            
-            # 處理數字 (移除逗號)
-            def to_float(s):
-                try:
-                    return float(s.replace(',', ''))
-                except:
-                    return 0.0
-            
-            clean_data.append({
-                'date': date_str,
-                'open': to_float(row[3]),
-                'high': to_float(row[4]),
-                'low': to_float(row[5]),
-                'close': to_float(row[6]),
-            })
-            
-        return clean_data
-    except Exception as e:
-        st.write(f"Proxy fetch error: {e}")
-        return None
-
 # === 1. 戰情室初始化 ===
 st.set_page_config(page_title="遠東集團_戰情室", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei') 
 
-# CSS
+# CSS 美化 (Apple 風格)
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-family: 'Microsoft JhengHei', sans-serif !important; }
-        .main-title { font-size: 3rem; font-weight: 700; color: #1d1d1f; text-align: center; margin: 2rem 0; }
-        .footer { text-align: center; color: #888; font-size: 0.8rem; margin-top: 5rem; }
+        .main-title { font-size: 2.5rem; font-weight: 700; color: #1d1d1f; text-align: center; margin: 1rem 0; }
+        .chart-container { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .footer { text-align: center; color: #888; font-size: 0.8rem; margin-top: 3rem; }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-title">遠東集團<br>聯合稽核總部 一處戰情室</div>', unsafe_allow_html=True)
 
-# === 2. 核心邏輯 ===
+# === 2. 核心功能模組 ===
+
+# 判斷市場狀態
 def check_market_status():
     now = datetime.now(tw_tz)
     current_time = now.time()
@@ -90,88 +50,140 @@ def check_market_status():
     else:
         return "closed", "🌙 盤後 (日結資料)"
 
-# === 3. 資料獲取策略 (混合模式) ===
-def get_stock_data(code, status):
+# [升級版] 抓取歷史資料 (自動跨月，確保數據足夠)
+@st.cache_data(ttl=3600) # 歷史資料快取 1 小時
+def fetch_twse_history_proxy(stock_code):
     try:
-        # --- A. 嘗試抓即時資料 (盤中優先) ---
-        latest_price = 0.0
-        realtime_success = False
+        data_list = []
         
-        if status == "open":
-            try:
-                real = twstock.realtime.get(code)
-                if real['success']:
-                    info = real['realtime']
-                    latest = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else 0.0
-                    if latest == 0.0:
-                        latest = float(info['open']) if info['open'] != '-' else 0.0
+        # 抓取 "本月" 和 "上個月" 的資料，確保 K 線圖夠長
+        now = datetime.now()
+        dates_to_fetch = [now.strftime('%Y%m01')] # 本月
+        
+        # 計算上個月
+        first_day_this_month = now.replace(day=1)
+        last_month = first_day_this_month - timedelta(days=1)
+        dates_to_fetch.insert(0, last_month.strftime('%Y%m01')) # 插入上個月到最前面
+        
+        for date_str in dates_to_fetch:
+            url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date={date_str}&stockNo={stock_code}"
+            r = requests.get(url) # SSL patch 會自動生效
+            json_data = r.json()
+            
+            if json_data['stat'] == 'OK':
+                for row in json_data['data']:
+                    # 民國轉西元
+                    date_parts = row[0].split('/')
+                    ad_year = int(date_parts[0]) + 1911
+                    date_iso = f"{ad_year}-{date_parts[1]}-{date_parts[2]}"
                     
-                    if latest > 0:
-                        latest_price = latest
-                        realtime_success = True
-                        
-                    high = float(info['high']) if info['high'] != '-' else 0
-                    low = float(info['low']) if info['low'] != '-' else 0
-            except:
-                pass
-
-        # --- B. 抓歷史資料 (改用我們自己寫的 fetch_twse_history_proxy) ---
-        # 這裡不再呼叫 stock.fetch_31()，避開那個 Bug
-        hist_data = fetch_twse_history_proxy(code)
+                    def to_float(s):
+                        try:
+                            return float(s.replace(',', ''))
+                        except:
+                            return 0.0
+                    
+                    data_list.append({
+                        'date': date_iso,
+                        'open': to_float(row[3]),
+                        'high': to_float(row[4]),
+                        'low': to_float(row[5]),
+                        'close': to_float(row[6]),
+                    })
         
-        if not hist_data:
-            return {"error": "無法獲取歷史資料 (證交所連線失敗)"}
-            
-        # 整理數據
-        df = pd.DataFrame(hist_data)
-        today_data = hist_data[-1]
-        yesterday_data = hist_data[-2] if len(hist_data) > 1 else today_data
-        
-        # 決定顯示價格
-        if realtime_success:
-            current = latest_price
-            # 如果是盤中，今天的高低要用即時的
-            disp_high = max(high, today_data['high'])
-            disp_low = min(low if low > 0 else 99999, today_data['low'])
-        else:
-            current = today_data['close']
-            disp_high = today_data['high']
-            disp_low = today_data['low']
-            
-        prev_close = yesterday_data['close']
-        
-        return {
-            "current": current,
-            "prev_close": prev_close,
-            "high": disp_high,
-            "low": disp_low,
-            "df": df,
-            "source": "Realtime API" if realtime_success else "Historical DB (Proxy)",
-            "error": None
-        }
-
+        return data_list
     except Exception as e:
-        return {"error": str(e)}
+        return None
 
-# === 4. 繪圖 ===
-def plot_chart(df):
-    if df.empty: return None
+# [新增功能] 抓取當日分時走勢 (Intraday)
+@st.cache_data(ttl=300) # 關鍵：快取 5 分鐘，避免被 Yahoo 封鎖
+def get_intraday_chart_data(stock_code):
     try:
-        df['Date'] = pd.to_datetime(df['date'])
-        df.set_index('Date', inplace=True)
-        
-        fig = go.Figure(data=[go.Candlestick(
-            x=df.index,
-            open=df['open'], high=df['high'], low=df['low'], close=df['close'],
-            increasing_line_color='#ef4444', increasing_fillcolor='#ef4444',
-            decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e'
-        )])
-        fig.update_layout(height=400, margin=dict(l=10, r=10, t=30, b=10), title="本月日線走勢")
-        return fig
+        # yfinance 需要加上 .TW
+        ticker = yf.Ticker(f"{stock_code}.TW")
+        # 抓取當天 1 分鐘線
+        df = ticker.history(period="1d", interval="1m")
+        if df.empty:
+            return None
+        return df
     except:
         return None
 
-# === 5. UI ===
+# === 3. 繪圖模組 ===
+
+# 繪製 K 線圖 (日線)
+def plot_daily_k(df):
+    if df.empty: return None
+    df['Date'] = pd.to_datetime(df['date'])
+    df.set_index('Date', inplace=True)
+    
+    # 只取最近 60 天，避免圖表太擠
+    df = df.tail(60)
+    
+    fig = go.Figure(data=[go.Candlestick(
+        x=df.index,
+        open=df['open'], high=df['high'], low=df['low'], close=df['close'],
+        increasing_line_color='#ef4444', increasing_fillcolor='#ef4444',
+        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e',
+        name="日K"
+    )])
+    
+    fig.update_layout(
+        title="<b>📅 近兩個月日線走勢 (Trend)</b>",
+        xaxis_rangeslider_visible=False,
+        height=350,
+        margin=dict(l=10, r=10, t=40, b=10),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=True, gridcolor='#eee')
+    )
+    return fig
+
+# 繪製分時圖 (即時)
+def plot_intraday_line(df):
+    if df is None or df.empty: return None
+    
+    # 轉換 index 為台灣時間 (如果 yfinance 給的是 UTC)
+    # yfinance history 已經是當地的 timezone usually
+    
+    fig = go.Figure()
+    
+    # 價格線
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['Close'],
+        mode='lines',
+        line=dict(color='#007AFF', width=2),
+        fill='tozeroy', # 填滿下方顏色，更有質感
+        fillcolor='rgba(0, 122, 255, 0.1)',
+        name='股價'
+    ))
+    
+    # 抓取昨收 (用第一筆 Open 當作參考，或 yfinance info)
+    ref_price = df['Open'].iloc[0]
+    
+    fig.add_hline(y=ref_price, line_dash="dot", line_color="gray", annotation_text="開盤參考")
+    
+    fig.update_layout(
+        title="<b>⚡ 當日即時走勢 (Intraday)</b>",
+        height=300,
+        margin=dict(l=10, r=10, t=40, b=10),
+        hovermode="x unified",
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(
+            tickformat='%H:%M',
+            showgrid=False
+        ),
+        yaxis=dict(
+            showgrid=True, 
+            gridcolor='#eee',
+            tickformat='.2f'
+        )
+    )
+    return fig
+
+# === 4. 主控台邏輯 ===
 stock_map = {
     "1402 遠東新": "1402", "1102 亞泥": "1102", "2606 裕民": "2606",
     "1460 宏遠": "1460", "2903 遠百": "2903", "4904 遠傳": "4904", "1710 東聯": "1710"
@@ -184,51 +196,97 @@ with st.sidebar:
     
     st.divider()
     status_code, status_text = check_market_status()
-    st.info(f"系統狀態：{status_text}")
+    st.info(f"狀態：{status_text}")
         
-    if st.button("🔄 強制刷新"):
+    if st.button("🔄 刷新情報"):
         st.cache_data.clear()
         st.rerun()
 
-data = get_stock_data(code, status_code)
-
-if data and data.get("error"):
-    st.error(f"❌ 發生錯誤: {data['error']}")
-    st.caption("SSL 錯誤與資料格式錯誤已透過程式碼修復。")
-    
-elif data:
-    curr = data['current']
-    prev = data['prev_close']
-    change = curr - prev
-    pct = (change / prev) * 100 if prev != 0 else 0
-    
-    bg_color = "#e6fffa" if change >= 0 else "#fff5f5"
-    font_color = "#d0021b" if change >= 0 else "#009944"
-    
-    st.markdown(f"""
-    <div style="background-color: {bg_color}; padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #eee;">
-        <h2 style="margin:0; color:#555;">{option}</h2>
-        <div style="display: flex; align-items: baseline; gap: 15px;">
-            <span style="font-size: 3.5rem; font-weight: bold; color: #333;">{curr}</span>
-            <span style="font-size: 1.5rem; font-weight: bold; color: {font_color};">
-                {change:+.2f} ({pct:+.2f}%)
-            </span>
-        </div>
-        <div style="margin-top: 10px; color: #666; font-size: 0.9rem;">
-            資料來源: {data['source']} | 狀態: {status_text}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("最高價", f"{data['high']}")
-    c2.metric("最低價", f"{data['low']}")
-    c3.metric("參考昨收", f"{prev}")
-    
-    if not data['df'].empty:
-        st.plotly_chart(plot_chart(data['df']), use_container_width=True)
+# === 5. 資料處理與顯示 ===
+# 1. 抓取主要價格 (twstock Realtime)
+real_data = {}
+try:
+    real = twstock.realtime.get(code)
+    if real['success']:
+        info = real['realtime']
+        latest = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else 0.0
+        if latest == 0.0: latest = float(info['open']) if info['open'] != '-' else 0.0
+        
+        real_data['price'] = latest
+        real_data['high'] = info['high']
+        real_data['low'] = info['low']
 else:
-    st.error("⚠️ 未知錯誤，請檢查網路連線。")
+    real_data['price'] = 0
 
+# 2. 抓取歷史資料 (Proxy) - 用來算昨收和畫日K
+hist_data = fetch_twse_history_proxy(code)
+df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
+
+# 3. 抓取即時分時資料 (Yfinance)
+df_intra = get_intraday_chart_data(code)
+
+# 計算數據
+current_price = real_data['price']
+# 如果即時抓不到 (例如盤後很久)，就用歷史資料最新一筆
+if current_price == 0 and not df_daily.empty:
+    current_price = df_daily.iloc[-1]['close']
+
+# 昨收與漲跌
+prev_close = 0
+if not df_daily.empty:
+    # 如果歷史資料包含今天，那倒數第二筆才是昨收
+    # 簡單判斷：看最後一筆日期是否等於今天
+    last_date = df_daily.iloc[-1]['date']
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    
+    if last_date == today_str and len(df_daily) > 1:
+        prev_close = df_daily.iloc[-2]['close']
+    else:
+        prev_close = df_daily.iloc[-1]['close'] # 若今天資料還沒進歷史庫
+
+change = current_price - prev_close
+pct = (change / prev_close) * 100 if prev_close != 0 else 0
+
+# === 6. UI 呈現 ===
+bg_color = "#e6fffa" if change >= 0 else "#fff5f5"
+font_color = "#d0021b" if change >= 0 else "#009944"
+
+# 頂部價格卡片
+st.markdown(f"""
+<div style="background-color: {bg_color}; padding: 20px; border-radius: 12px; margin-bottom: 25px; border: 1px solid rgba(0,0,0,0.05);">
+    <h2 style="margin:0; color:#555; font-size: 1.2rem;">{option}</h2>
+    <div style="display: flex; align-items: baseline; gap: 15px; margin-top: 5px;">
+        <span style="font-size: 3.8rem; font-weight: 800; color: #1d1d1f; letter-spacing: -1px;">{current_price}</span>
+        <span style="font-size: 1.6rem; font-weight: 600; color: {font_color};">
+            {change:+.2f} ({pct:+.2f}%)
+        </span>
+    </div>
+    <div style="color: #666; font-size: 0.9rem; margin-top: 5px;">
+        參考昨收: {prev_close} | 最高: {real_data.get('high', '-')} | 最低: {real_data.get('low', '-')}
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# 圖表區 (兩欄佈局)
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+    if df_intra is not None and not df_intra.empty:
+        st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
+    else:
+        st.warning("⚠️ 無法取得即時分時圖 (API 限制或盤前)")
+        st.caption("提示：分時圖使用 Yahoo 數據，每 5 分鐘更新一次以避免封鎖。")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col2:
+    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+    if not df_daily.empty:
+        st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
+    else:
+        st.error("無法取得歷史 K 線資料")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# 頁腳
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
 st.markdown(f'<div class="footer">更新時間：{update_time}</div>', unsafe_allow_html=True)
