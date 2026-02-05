@@ -14,7 +14,6 @@ st.markdown("""
     <style>
         html, body, [class*="css"]  { font-family: 'Microsoft JhengHei', sans-serif !important; }
         .main-title { font-size: 3rem; font-weight: 700; color: #1d1d1f; text-align: center; margin: 2rem 0; }
-        .status-badge { padding: 5px 10px; border-radius: 5px; font-weight: bold; font-size: 0.9rem; }
         .footer { text-align: center; color: #888; font-size: 0.8rem; margin-top: 5rem; }
     </style>
 """, unsafe_allow_html=True)
@@ -28,7 +27,7 @@ def check_market_status():
     
     # 定義開盤時間 (09:00 ~ 13:30)
     market_open = dt_time(9, 0)
-    market_close = dt_time(13, 35) # 多給5分鐘緩衝
+    market_close = dt_time(13, 35) 
     
     is_weekend = now.weekday() >= 5 # 5=週六, 6=週日
     
@@ -39,7 +38,7 @@ def check_market_status():
     else:
         return "closed", "🌙 盤後 (日結資料)"
 
-# === 3. 資料獲取策略 ===
+# === 3. 資料獲取策略 (含錯誤追蹤) ===
 def get_stock_data(code, status):
     try:
         stock = twstock.Stock(code)
@@ -50,62 +49,70 @@ def get_stock_data(code, status):
             if real['success']:
                 info = real['realtime']
                 
-                # 價格清洗
                 latest = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else 0.0
-                # 如果剛開盤還沒成交價，抓開盤價或昨收
                 if latest == 0.0:
                     latest = float(info['open']) if info['open'] != '-' else 0.0
                 
-                # 為了算漲跌，我們還是需要昨收價 (從歷史抓最準)
-                hist = stock.fetch_31()
-                prev_close = hist[-1].close if hist else latest
+                # 嘗試抓歷史資料 (若失敗則忽略)
+                try:
+                    hist = stock.fetch_31()
+                    prev_close = hist[-1].close if hist else latest
+                    df = pd.DataFrame(hist)
+                except Exception as e:
+                    # 如果盤中抓不到歷史，就只顯示當前價格，不讓程式崩潰
+                    prev_close = latest
+                    df = pd.DataFrame()
                 
                 return {
                     "current": latest,
                     "prev_close": prev_close,
                     "high": float(info['high']) if info['high'] != '-' else 0,
                     "low": float(info['low']) if info['low'] != '-' else 0,
-                    "df": pd.DataFrame(hist), # 用歷史資料畫K線
-                    "source": "Realtime API"
+                    "df": df,
+                    "source": "Realtime API",
+                    "error": None
                 }
 
         # --- 策略 B: 盤後/休市模式 (抓 fetch_31 歷史數據) ---
-        # 這會穩定非常多，因為它讀取的是靜態資料庫，不會被鎖 IP
-        hist = stock.fetch_31()
+        hist = stock.fetch_31() # 這一步如果沒有 lxml 會直接報錯
         
         if not hist:
-            return None
+            return {"error": "無法獲取歷史資料 (可能是證交所連線問題)"}
             
-        today_data = hist[-1]      # 最新一筆 (今天或週五)
-        yesterday_data = hist[-2]  # 前一筆 (昨天或週四)
+        today_data = hist[-1]      
+        yesterday_data = hist[-2] if len(hist) > 1 else today_data
         
         return {
             "current": today_data.close,
-            "prev_close": yesterday_data.close, # 用前一天的收盤當作基準
+            "prev_close": yesterday_data.close,
             "high": today_data.high,
             "low": today_data.low,
             "df": pd.DataFrame(hist),
-            "source": "Historical DB"
+            "source": "Historical DB",
+            "error": None
         }
 
     except Exception as e:
-        print(f"Error: {e}")
-        return None
+        # 捕捉所有錯誤並回傳，顯示在畫面上
+        return {"error": str(e)}
 
 # === 4. 繪圖模組 ===
 def plot_chart(df):
     if df.empty: return None
-    df['Date'] = pd.to_datetime(df['date'])
-    df.set_index('Date', inplace=True)
-    
-    fig = go.Figure(data=[go.Candlestick(
-        x=df.index,
-        open=df['open'], high=df['high'], low=df['low'], close=df['close'],
-        increasing_line_color='#ef4444', increasing_fillcolor='#ef4444',
-        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e'
-    )])
-    fig.update_layout(height=400, margin=dict(l=10, r=10, t=30, b=10), title="近月日線走勢")
-    return fig
+    try:
+        df['Date'] = pd.to_datetime(df['date'])
+        df.set_index('Date', inplace=True)
+        
+        fig = go.Figure(data=[go.Candlestick(
+            x=df.index,
+            open=df['open'], high=df['high'], low=df['low'], close=df['close'],
+            increasing_line_color='#ef4444', increasing_fillcolor='#ef4444',
+            decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e'
+        )])
+        fig.update_layout(height=400, margin=dict(l=10, r=10, t=30, b=10), title="近月日線走勢")
+        return fig
+    except:
+        return None
 
 # === 5. 主控台 ===
 stock_map = {
@@ -121,7 +128,6 @@ with st.sidebar:
     st.divider()
     status_code, status_text = check_market_status()
     
-    # 狀態顯示燈
     if status_code == "open":
         st.success(f"系統狀態：{status_text}")
     else:
@@ -134,21 +140,26 @@ with st.sidebar:
 # === 6. 數據展示區 ===
 data = get_stock_data(code, status_code)
 
-if data:
+# 檢查是否有錯誤回傳
+if data and data.get("error"):
+    st.error(f"❌ 發生錯誤: {data['error']}")
+    st.warning("建議檢查：GitHub 的 requirements.txt 是否已加入 'lxml'？")
+    
+elif data:
     curr = data['current']
     prev = data['prev_close']
     change = curr - prev
     pct = (change / prev) * 100 if prev != 0 else 0
     
-    # 根據狀態顯示不同顏色的卡片
     bg_color = "#e6fffa" if change >= 0 else "#fff5f5"
+    font_color = "#d0021b" if change >= 0 else "#009944"
     
     st.markdown(f"""
     <div style="background-color: {bg_color}; padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #eee;">
         <h2 style="margin:0; color:#555;">{option}</h2>
         <div style="display: flex; align-items: baseline; gap: 15px;">
             <span style="font-size: 3.5rem; font-weight: bold; color: #333;">{curr}</span>
-            <span style="font-size: 1.5rem; font-weight: bold; color: {'#d0021b' if change >= 0 else '#009944'};">
+            <span style="font-size: 1.5rem; font-weight: bold; color: {font_color};">
                 {change:+.2f} ({pct:+.2f}%)
             </span>
         </div>
@@ -163,15 +174,10 @@ if data:
     c2.metric("最低價", f"{data['low']}")
     c3.metric("參考昨收", f"{prev}")
     
-    st.plotly_chart(plot_chart(data['df']), use_container_width=True)
-
+    if not data['df'].empty:
+        st.plotly_chart(plot_chart(data['df']), use_container_width=True)
 else:
-    # 錯誤處理
-    st.error(f"⚠️ 無法取得數據 ({code})")
-    if status_code == "open":
-        st.warning("盤中連線不穩定，請稍後刷新。")
-    else:
-        st.info("檢查 requirements.txt 是否包含 lxml，或是證交所網站維護中。")
+    st.error("⚠️ 未知錯誤，請檢查網路連線。")
 
 # 頁腳
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
