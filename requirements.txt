@@ -1,4 +1,7 @@
 streamlit
 yfinance
-pandas
 plotly
+pandas
+numpy
+requests
+twstock
