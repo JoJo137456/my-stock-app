@@ -20,13 +20,21 @@ requests.Session.request = patched_request
 st.set_page_config(page_title="遠東集團_戰情室", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei') 
 
-# CSS
+# CSS 美化
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-family: 'Microsoft JhengHei', sans-serif !important; }
         .main-title { font-size: 2.5rem; font-weight: 700; color: #1d1d1f; text-align: center; margin: 1rem 0; }
         .chart-container { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; }
         .footer { text-align: center; color: #888; font-size: 0.8rem; margin-top: 3rem; }
+        /* 指標卡片樣式 */
+        div[data-testid="metric-container"] {
+            background-color: #f8f9fa;
+            border: 1px solid #eee;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -71,8 +79,13 @@ def fetch_twse_history_proxy(stock_code):
                     def to_float(s):
                         try: return float(s.replace(',', ''))
                         except: return 0.0
+                    
+                    # row[1] 是成交股數 (Volume in shares)
+                    vol_shares = to_float(row[1])
+                    
                     data_list.append({
                         'date': date_iso,
+                        'volume': vol_shares, 
                         'open': to_float(row[3]),
                         'high': to_float(row[4]),
                         'low': to_float(row[5]),
@@ -82,25 +95,15 @@ def fetch_twse_history_proxy(stock_code):
     except Exception as e:
         return None
 
-# [重要升級] 增強版抓取邏輯：確保盤後也能看到今天早上的走勢
 @st.cache_data(ttl=300) 
 def get_intraday_chart_data(stock_code):
     try:
         ticker = yf.Ticker(f"{stock_code}.TW")
-        
-        # A計畫：嘗試抓今天 1 分鐘線 (最精細)
         df = ticker.history(period="1d", interval="1m")
-        
-        # 如果 A計畫 失敗 (由你提供的截圖看來，下午常會變成空的)
         if df.empty:
-            # B計畫：抓最近 5 天的 5 分鐘線 (這招通常很穩)
             df = ticker.history(period="5d", interval="5m")
-            
-            # 關鍵步驟：只切出「最後一個交易日」的資料
             if not df.empty:
-                # 取得資料中最後一天的日期
                 last_day = df.index[-1].date()
-                # 篩選該日期的資料
                 df = df[df.index.date == last_day]
         
         if df.empty:
@@ -109,7 +112,7 @@ def get_intraday_chart_data(stock_code):
     except:
         return None
 
-# === 3. 繪圖模組 ===
+# === 3. 繪圖模組 (關鍵修改：動態 Y 軸) ===
 
 def plot_daily_k(df):
     if df.empty: return None
@@ -139,9 +142,16 @@ def plot_daily_k(df):
 def plot_intraday_line(df):
     if df is None or df.empty: return None
     
-    # 判斷一下資料頻率，改標題
+    # 判斷時間頻率
     interval_str = "1分K" if (df.index[1] - df.index[0]).seconds == 60 else "5分K"
     
+    # [關鍵修正] 計算 Y 軸範圍，讓波動看起來更明顯
+    y_min = df['Close'].min()
+    y_max = df['Close'].max()
+    # 上下各留 10% 緩衝空間，避免線貼著邊框
+    padding = (y_max - y_min) * 0.1 if y_max != y_min else y_max * 0.01
+    y_range = [y_min - padding, y_max + padding]
+
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=df.index, y=df['Close'],
@@ -163,7 +173,8 @@ def plot_intraday_line(df):
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(tickformat='%H:%M', showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor='#eee', tickformat='.2f')
+        # 強制設定 Y 軸範圍，達成「放大鏡」效果
+        yaxis=dict(showgrid=True, gridcolor='#eee', tickformat='.2f', range=y_range) 
     )
     return fig
 
@@ -184,7 +195,7 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-# === 5. 資料處理與顯示 ===
+# === 5. 資料處理 ===
 real_data = {}
 try:
     real = twstock.realtime.get(code)
@@ -192,9 +203,13 @@ try:
         info = real['realtime']
         latest = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else 0.0
         if latest == 0.0: latest = float(info['open']) if info['open'] != '-' else 0.0
+        
         real_data['price'] = latest
-        real_data['high'] = info['high']
-        real_data['low'] = info['low']
+        real_data['high'] = info.get('high', '-')
+        real_data['low'] = info.get('low', '-')
+        real_data['open'] = info.get('open', '-')
+        # 證交所即時 API 的 accumulate_trade_volume 通常是 "張數" (Lots)
+        real_data['volume'] = info.get('accumulate_trade_volume', '0') 
     else:
         real_data['price'] = 0
 except:
@@ -203,12 +218,18 @@ except:
 hist_data = fetch_twse_history_proxy(code)
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 
-# 這裡會呼叫新的 B計畫 邏輯
+# 獲取當日走勢
 df_intra = get_intraday_chart_data(code)
 
+# 數據整合 (Fallback 機制)
 current_price = real_data['price']
 if current_price == 0 and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
+    real_data['high'] = df_daily.iloc[-1]['high']
+    real_data['low'] = df_daily.iloc[-1]['low']
+    real_data['open'] = df_daily.iloc[-1]['open']
+    # 歷史資料的 volume 是股數，要除以 1000 變張數
+    real_data['volume'] = f"{int(df_daily.iloc[-1]['volume'] / 1000):,}"
 
 prev_close = 0
 if not df_daily.empty:
@@ -226,8 +247,9 @@ pct = (change / prev_close) * 100 if prev_close != 0 else 0
 bg_color = "#e6fffa" if change >= 0 else "#fff5f5"
 font_color = "#d0021b" if change >= 0 else "#009944"
 
+# A. 大張價格卡片
 st.markdown(f"""
-<div style="background-color: {bg_color}; padding: 20px; border-radius: 12px; margin-bottom: 25px; border: 1px solid rgba(0,0,0,0.05);">
+<div style="background-color: {bg_color}; padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 1px solid rgba(0,0,0,0.05);">
     <h2 style="margin:0; color:#555; font-size: 1.2rem;">{option}</h2>
     <div style="display: flex; align-items: baseline; gap: 15px; margin-top: 5px;">
         <span style="font-size: 3.8rem; font-weight: 800; color: #1d1d1f; letter-spacing: -1px;">{current_price}</span>
@@ -235,12 +257,22 @@ st.markdown(f"""
             {change:+.2f} ({pct:+.2f}%)
         </span>
     </div>
-    <div style="color: #666; font-size: 0.9rem; margin-top: 5px;">
-        參考昨收: {prev_close} | 最高: {real_data.get('high', '-')} | 最低: {real_data.get('low', '-')}
-    </div>
 </div>
 """, unsafe_allow_html=True)
 
+# B. 關鍵指標列 (新增：開盤、成交量)
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("開盤價", real_data.get('open', '-'))
+c2.metric("最高價", real_data.get('high', '-'))
+c3.metric("最低價", real_data.get('low', '-'))
+c4.metric("昨收價", prev_close)
+# 成交量顯示處理
+vol_str = str(real_data.get('volume', '-'))
+c5.metric("成交量 (張)", vol_str)
+
+st.divider()
+
+# C. 圖表區
 col1, col2 = st.columns([1, 1])
 
 with col1:
@@ -248,8 +280,8 @@ with col1:
     if df_intra is not None and not df_intra.empty:
         st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
     else:
-        st.warning("⚠️ 無法取得即時分時圖 (Yahoo API 限制)")
-        st.caption("建議：稍等幾分鐘後再按刷新，或檢查網路。")
+        st.warning("⚠️ 無法取得即時分時圖")
+        st.caption("可能原因：盤前試搓中、或 Yahoo API 短暫限流")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
