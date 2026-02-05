@@ -6,29 +6,65 @@ from datetime import datetime, time as dt_time
 import pytz
 import requests
 import urllib3
+import json
 
-# === 0. 關鍵修復：SSL 憑證補丁 ===
-# 這一區塊是專門用來解決「SSLError」的
-# 它會強制告訴系統：忽略證交所的憑證檢查，直接連線
+# === 0. 關鍵修復 A: SSL 憑證補丁 ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-# 備份原始的請求功能
 original_request = requests.Session.request
-
-# 定義新的請求功能 (強制關閉驗證)
 def patched_request(self, method, url, *args, **kwargs):
-    kwargs['verify'] = False  # 關鍵：關閉 SSL 驗證
+    kwargs['verify'] = False
     return original_request(self, method, url, *args, **kwargs)
-
-# 替換掉系統原本的請求功能
 requests.Session.request = patched_request
 
+# === 0. 關鍵修復 B: 手動抓取歷史資料 (繞過 twstock 的 Bug) ===
+def fetch_twse_history_proxy(stock_code):
+    try:
+        # 建立證交所 API 網址 (抓取本月資料)
+        month_str = datetime.now().strftime('%Y%m01')
+        url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date={month_str}&stockNo={stock_code}"
+        
+        # 直接請求 (已包含 SSL patch)
+        r = requests.get(url)
+        data = r.json()
+        
+        if data['stat'] != 'OK':
+            return None
+            
+        # 手動清洗資料 (完全不理會 twstock 的 Data 結構)
+        # 證交所格式: [日期, 成交股數, 成交金額, 開盤, 最高, 最低, 收盤, 漲跌, 筆數]
+        # 我們自己解析，這樣就算它多欄位也不會報錯
+        clean_data = []
+        for row in data['data']:
+            # 處理民國年: 112/01/01 -> 2023-01-01
+            date_parts = row[0].split('/')
+            ad_year = int(date_parts[0]) + 1911
+            date_str = f"{ad_year}-{date_parts[1]}-{date_parts[2]}"
+            
+            # 處理數字 (移除逗號)
+            def to_float(s):
+                try:
+                    return float(s.replace(',', ''))
+                except:
+                    return 0.0
+            
+            clean_data.append({
+                'date': date_str,
+                'open': to_float(row[3]),
+                'high': to_float(row[4]),
+                'low': to_float(row[5]),
+                'close': to_float(row[6]),
+            })
+            
+        return clean_data
+    except Exception as e:
+        st.write(f"Proxy fetch error: {e}")
+        return None
 
 # === 1. 戰情室初始化 ===
 st.set_page_config(page_title="遠東集團_戰情室", layout="wide")
-tw_tz = pytz.timezone('Asia/Taipei') # 設定台灣時區
+tw_tz = pytz.timezone('Asia/Taipei') 
 
-# CSS 美化
+# CSS
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-family: 'Microsoft JhengHei', sans-serif !important; }
@@ -39,16 +75,13 @@ st.markdown("""
 
 st.markdown('<div class="main-title">遠東集團<br>聯合稽核總部 一處戰情室</div>', unsafe_allow_html=True)
 
-# === 2. 核心邏輯：判斷盤中/盤後 ===
+# === 2. 核心邏輯 ===
 def check_market_status():
     now = datetime.now(tw_tz)
     current_time = now.time()
-    
-    # 定義開盤時間 (09:00 ~ 13:30)
     market_open = dt_time(9, 0)
     market_close = dt_time(13, 35) 
-    
-    is_weekend = now.weekday() >= 5 # 5=週六, 6=週日
+    is_weekend = now.weekday() >= 5
     
     if is_weekend:
         return "closed", "🌙 休市 (週末)"
@@ -57,67 +90,70 @@ def check_market_status():
     else:
         return "closed", "🌙 盤後 (日結資料)"
 
-# === 3. 資料獲取策略 (含錯誤追蹤) ===
+# === 3. 資料獲取策略 (混合模式) ===
 def get_stock_data(code, status):
     try:
-        stock = twstock.Stock(code)
+        # --- A. 嘗試抓即時資料 (盤中優先) ---
+        latest_price = 0.0
+        realtime_success = False
         
-        # --- 策略 A: 盤中模式 (抓 Realtime) ---
         if status == "open":
             try:
                 real = twstock.realtime.get(code)
                 if real['success']:
                     info = real['realtime']
                     latest = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else 0.0
-                    # 如果剛開盤無成交價，改抓開盤價
                     if latest == 0.0:
                         latest = float(info['open']) if info['open'] != '-' else 0.0
                     
-                    # 嘗試抓歷史資料做昨收參考
-                    try:
-                        hist = stock.fetch_31()
-                        prev_close = hist[-1].close if hist else latest
-                        df = pd.DataFrame(hist)
-                    except:
-                        prev_close = latest
-                        df = pd.DataFrame()
-                    
-                    return {
-                        "current": latest,
-                        "prev_close": prev_close,
-                        "high": float(info['high']) if info['high'] != '-' else 0,
-                        "low": float(info['low']) if info['low'] != '-' else 0,
-                        "df": df,
-                        "source": "Realtime API",
-                        "error": None
-                    }
-            except Exception as e:
-                # 盤中抓取失敗，自動降級去抓歷史資料
-                pass 
+                    if latest > 0:
+                        latest_price = latest
+                        realtime_success = True
+                        
+                    high = float(info['high']) if info['high'] != '-' else 0
+                    low = float(info['low']) if info['low'] != '-' else 0
+            except:
+                pass
 
-        # --- 策略 B: 盤後/休市模式 (抓 fetch_31 歷史數據) ---
-        hist = stock.fetch_31()
+        # --- B. 抓歷史資料 (改用我們自己寫的 fetch_twse_history_proxy) ---
+        # 這裡不再呼叫 stock.fetch_31()，避開那個 Bug
+        hist_data = fetch_twse_history_proxy(code)
         
-        if not hist:
-            return {"error": "無法獲取歷史資料 (可能是證交所連線問題)"}
+        if not hist_data:
+            return {"error": "無法獲取歷史資料 (證交所連線失敗)"}
             
-        today_data = hist[-1]      
-        yesterday_data = hist[-2] if len(hist) > 1 else today_data
+        # 整理數據
+        df = pd.DataFrame(hist_data)
+        today_data = hist_data[-1]
+        yesterday_data = hist_data[-2] if len(hist_data) > 1 else today_data
+        
+        # 決定顯示價格
+        if realtime_success:
+            current = latest_price
+            # 如果是盤中，今天的高低要用即時的
+            disp_high = max(high, today_data['high'])
+            disp_low = min(low if low > 0 else 99999, today_data['low'])
+        else:
+            current = today_data['close']
+            disp_high = today_data['high']
+            disp_low = today_data['low']
+            
+        prev_close = yesterday_data['close']
         
         return {
-            "current": today_data.close,
-            "prev_close": yesterday_data.close,
-            "high": today_data.high,
-            "low": today_data.low,
-            "df": pd.DataFrame(hist),
-            "source": "Historical DB",
+            "current": current,
+            "prev_close": prev_close,
+            "high": disp_high,
+            "low": disp_low,
+            "df": df,
+            "source": "Realtime API" if realtime_success else "Historical DB (Proxy)",
             "error": None
         }
 
     except Exception as e:
         return {"error": str(e)}
 
-# === 4. 繪圖模組 ===
+# === 4. 繪圖 ===
 def plot_chart(df):
     if df.empty: return None
     try:
@@ -130,12 +166,12 @@ def plot_chart(df):
             increasing_line_color='#ef4444', increasing_fillcolor='#ef4444',
             decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e'
         )])
-        fig.update_layout(height=400, margin=dict(l=10, r=10, t=30, b=10), title="近月日線走勢")
+        fig.update_layout(height=400, margin=dict(l=10, r=10, t=30, b=10), title="本月日線走勢")
         return fig
     except:
         return None
 
-# === 5. 主控台 ===
+# === 5. UI ===
 stock_map = {
     "1402 遠東新": "1402", "1102 亞泥": "1102", "2606 裕民": "2606",
     "1460 宏遠": "1460", "2903 遠百": "2903", "4904 遠傳": "4904", "1710 東聯": "1710"
@@ -148,22 +184,17 @@ with st.sidebar:
     
     st.divider()
     status_code, status_text = check_market_status()
-    
-    if status_code == "open":
-        st.success(f"系統狀態：{status_text}")
-    else:
-        st.info(f"系統狀態：{status_text}")
+    st.info(f"系統狀態：{status_text}")
         
     if st.button("🔄 強制刷新"):
         st.cache_data.clear()
         st.rerun()
 
-# === 6. 數據展示區 ===
 data = get_stock_data(code, status_code)
 
 if data and data.get("error"):
     st.error(f"❌ 發生錯誤: {data['error']}")
-    st.caption("SSL 錯誤已透過程式碼修復，若仍有問題請檢查 requirements.txt")
+    st.caption("SSL 錯誤與資料格式錯誤已透過程式碼修復。")
     
 elif data:
     curr = data['current']
@@ -199,6 +230,5 @@ elif data:
 else:
     st.error("⚠️ 未知錯誤，請檢查網路連線。")
 
-# 頁腳
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
 st.markdown(f'<div class="footer">更新時間：{update_time}</div>', unsafe_allow_html=True)
