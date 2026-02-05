@@ -2,132 +2,115 @@ import streamlit as st
 import twstock
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime
-import time
+from datetime import datetime, time as dt_time
+import pytz
 
-# === 1. 系統設定 ===
+# === 1. 戰情室初始化 ===
 st.set_page_config(page_title="遠東集團_戰情室", layout="wide")
+tw_tz = pytz.timezone('Asia/Taipei') # 設定台灣時區
 
-# CSS 美化 (保持戰情室風格)
+# CSS 美化
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-family: 'Microsoft JhengHei', sans-serif !important; }
-        .main-title {
-            font-size: 3rem; font-weight: 700; color: #1d1d1f; text-align: center;
-            margin-top: 2rem; margin-bottom: 2rem;
-        }
-        .metric-card {
-            background: #ffffff; padding: 20px; border-radius: 15px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.05); text-align: center;
-        }
-        .stMetric { text-align: center; }
+        .main-title { font-size: 3rem; font-weight: 700; color: #1d1d1f; text-align: center; margin: 2rem 0; }
+        .status-badge { padding: 5px 10px; border-radius: 5px; font-weight: bold; font-size: 0.9rem; }
         .footer { text-align: center; color: #888; font-size: 0.8rem; margin-top: 5rem; }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-title">遠東集團<br>聯合稽核總部 一處戰情室</div>', unsafe_allow_html=True)
 
-# === 2. 核心情報函數 (改用 twstock) ===
-def get_stock_data(code):
+# === 2. 核心邏輯：判斷盤中/盤後 ===
+def check_market_status():
+    now = datetime.now(tw_tz)
+    current_time = now.time()
+    
+    # 定義開盤時間 (09:00 ~ 13:30)
+    market_open = dt_time(9, 0)
+    market_close = dt_time(13, 35) # 多給5分鐘緩衝
+    
+    is_weekend = now.weekday() >= 5 # 5=週六, 6=週日
+    
+    if is_weekend:
+        return "closed", "🌙 休市 (週末)"
+    elif market_open <= current_time <= market_close:
+        return "open", "🟢 盤中 (即時連線)"
+    else:
+        return "closed", "🌙 盤後 (日結資料)"
+
+# === 3. 資料獲取策略 ===
+def get_stock_data(code, status):
     try:
-        # A. 獲取即時報價 (Realtime)
-        # twstock 直接抓證交所，速度快且準
-        real = twstock.realtime.get(code)
+        stock = twstock.Stock(code)
         
-        if not real['success']:
+        # --- 策略 A: 盤中模式 (抓 Realtime) ---
+        if status == "open":
+            real = twstock.realtime.get(code)
+            if real['success']:
+                info = real['realtime']
+                
+                # 價格清洗
+                latest = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else 0.0
+                # 如果剛開盤還沒成交價，抓開盤價或昨收
+                if latest == 0.0:
+                    latest = float(info['open']) if info['open'] != '-' else 0.0
+                
+                # 為了算漲跌，我們還是需要昨收價 (從歷史抓最準)
+                hist = stock.fetch_31()
+                prev_close = hist[-1].close if hist else latest
+                
+                return {
+                    "current": latest,
+                    "prev_close": prev_close,
+                    "high": float(info['high']) if info['high'] != '-' else 0,
+                    "low": float(info['low']) if info['low'] != '-' else 0,
+                    "df": pd.DataFrame(hist), # 用歷史資料畫K線
+                    "source": "Realtime API"
+                }
+
+        # --- 策略 B: 盤後/休市模式 (抓 fetch_31 歷史數據) ---
+        # 這會穩定非常多，因為它讀取的是靜態資料庫，不會被鎖 IP
+        hist = stock.fetch_31()
+        
+        if not hist:
             return None
             
-        info = real['realtime']
-        
-        # 資料清洗：證交所給的都是字串，要轉成數字
-        # 如果是 '-' 代表還沒成交 (例如剛開盤)，改抓最佳買入價
-        def safe_float(val, fallback):
-            try:
-                return float(val)
-            except:
-                return fallback
-
-        # 嘗試取得當前價格
-        latest_price_str = info['latest_trade_price']
-        best_bid_str = info['best_bid_price'][0]
-        
-        if latest_price_str != '-' and latest_price_str != '':
-             current_price = float(latest_price_str)
-        elif best_bid_str != '-' and best_bid_str != '':
-             current_price = float(best_bid_str)
-        else:
-             # 如果真的什麼都抓不到，用昨收暫代
-             current_price = 0.0
-
-        open_price = safe_float(info['open'], current_price)
-        high_price = safe_float(info['high'], current_price)
-        low_price = safe_float(info['low'], current_price)
-        
-        # B. 抓取歷史資料 (用來算昨收和畫圖)
-        stock = twstock.Stock(code)
-        # 抓近 31 天歷史資料
-        history = stock.fetch_31()
-        
-        # 取得昨收 (歷史資料的最後一筆)
-        if len(history) > 0:
-            prev_close = history[-1].close
-            # 如果 current_price 還是 0 (例如盤前)，就用昨收
-            if current_price == 0.0:
-                current_price = prev_close
-        else:
-            prev_close = current_price # 防呆
-
-        # C. 整理 K 線資料 (歷史日線)
-        df = pd.DataFrame(history)
-        if not df.empty:
-            df['Date'] = pd.to_datetime(df['date'])
-            df.set_index('Date', inplace=True)
+        today_data = hist[-1]      # 最新一筆 (今天或週五)
+        yesterday_data = hist[-2]  # 前一筆 (昨天或週四)
         
         return {
-            "current": current_price,
-            "prev_close": prev_close,
-            "open": open_price,
-            "high": high_price,
-            "low": low_price,
-            "df": df, # 這是日線資料
-            "update_time": info['latest_trade_price'] # 最後成交時間
+            "current": today_data.close,
+            "prev_close": yesterday_data.close, # 用前一天的收盤當作基準
+            "high": today_data.high,
+            "low": today_data.low,
+            "df": pd.DataFrame(hist),
+            "source": "Historical DB"
         }
 
     except Exception as e:
         print(f"Error: {e}")
         return None
 
-# === 3. 繪圖模組 ===
-def plot_chart(data):
-    df = data['df']
-    if df.empty:
-        return None
-        
+# === 4. 繪圖模組 ===
+def plot_chart(df):
+    if df.empty: return None
+    df['Date'] = pd.to_datetime(df['date'])
+    df.set_index('Date', inplace=True)
+    
     fig = go.Figure(data=[go.Candlestick(
         x=df.index,
         open=df['open'], high=df['high'], low=df['low'], close=df['close'],
-        increasing_line_color='#ef4444', increasing_fillcolor='#ef4444', # 台股紅漲
-        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e'  # 台股綠跌
+        increasing_line_color='#ef4444', increasing_fillcolor='#ef4444',
+        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e'
     )])
-    
-    fig.update_layout(
-        title="近 31 日走勢圖 (日線)",
-        xaxis_rangeslider_visible=False,
-        height=400,
-        margin=dict(l=20, r=20, t=40, b=20)
-    )
+    fig.update_layout(height=400, margin=dict(l=10, r=10, t=30, b=10), title="近月日線走勢")
     return fig
 
-# === 4. 戰情室控制台 ===
-# 股票清單 (左邊是顯示名稱，右邊是代碼)
+# === 5. 主控台 ===
 stock_map = {
-    "1402 遠東新": "1402", 
-    "1102 亞泥": "1102", 
-    "2606 裕民": "2606",
-    "1460 宏遠": "1460", 
-    "2903 遠百": "2903", 
-    "4904 遠傳": "4904", 
-    "1710 東聯": "1710"
+    "1402 遠東新": "1402", "1102 亞泥": "1102", "2606 裕民": "2606",
+    "1460 宏遠": "1460", "2903 遠百": "2903", "4904 遠傳": "4904", "1710 東聯": "1710"
 }
 
 with st.sidebar:
@@ -135,43 +118,61 @@ with st.sidebar:
     option = st.radio("選擇公司", list(stock_map.keys()))
     code = stock_map[option]
     
-    st.markdown("---")
-    if st.button("🔄 刷新情報"):
+    st.divider()
+    status_code, status_text = check_market_status()
+    
+    # 狀態顯示燈
+    if status_code == "open":
+        st.success(f"系統狀態：{status_text}")
+    else:
+        st.info(f"系統狀態：{status_text}")
+        
+    if st.button("🔄 強制刷新"):
         st.cache_data.clear()
         st.rerun()
-    st.caption("資料來源：台灣證券交易所 (Twstock)")
 
-# === 5. 顯示數據 ===
-data = get_stock_data(code)
+# === 6. 數據展示區 ===
+data = get_stock_data(code, status_code)
 
 if data:
-    # 計算漲跌
-    change = data['current'] - data['prev_close']
-    # 防呆：如果昨收是 0，避免除以零錯誤
-    if data['prev_close'] != 0:
-        pct = (change / data['prev_close']) * 100
-    else:
-        pct = 0.0
+    curr = data['current']
+    prev = data['prev_close']
+    change = curr - prev
+    pct = (change / prev) * 100 if prev != 0 else 0
     
-    # 顏色邏輯 (Streamlit 原生支援)
+    # 根據狀態顯示不同顏色的卡片
+    bg_color = "#e6fffa" if change >= 0 else "#fff5f5"
     
-    col1, col2, col3 = st.columns(3)
+    st.markdown(f"""
+    <div style="background-color: {bg_color}; padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #eee;">
+        <h2 style="margin:0; color:#555;">{option}</h2>
+        <div style="display: flex; align-items: baseline; gap: 15px;">
+            <span style="font-size: 3.5rem; font-weight: bold; color: #333;">{curr}</span>
+            <span style="font-size: 1.5rem; font-weight: bold; color: {'#d0021b' if change >= 0 else '#009944'};">
+                {change:+.2f} ({pct:+.2f}%)
+            </span>
+        </div>
+        <div style="margin-top: 10px; color: #666; font-size: 0.9rem;">
+            資料來源: {data['source']} | 狀態: {status_text}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("最高價", f"{data['high']}")
+    c2.metric("最低價", f"{data['low']}")
+    c3.metric("參考昨收", f"{prev}")
     
-    with col1:
-        st.metric("最新股價", f"{data['current']}", f"{change:.2f} ({pct:.2f}%)")
-    with col2:
-        st.metric("開盤 / 昨收", f"{data['open']} / {data['prev_close']}")
-    with col3:
-        st.metric("最高 / 最低", f"{data['high']} / {data['low']}")
-    
-    st.divider()
-    
-    # 畫圖
-    st.plotly_chart(plot_chart(data), use_container_width=True)
-    
+    st.plotly_chart(plot_chart(data['df']), use_container_width=True)
+
 else:
-    st.error(f"⚠️ 無法連線至證交所 ({code})，請稍後再試。")
-    st.info("提示：如果是盤中時間，資料應該會正常顯示；若是深夜維護時段可能會抓不到。")
+    # 錯誤處理
+    st.error(f"⚠️ 無法取得數據 ({code})")
+    if status_code == "open":
+        st.warning("盤中連線不穩定，請稍後刷新。")
+    else:
+        st.info("檢查 requirements.txt 是否包含 lxml，或是證交所網站維護中。")
 
 # 頁腳
-st.markdown('<div class="footer">遠東集團 聯合稽核總部 一處戰情室｜系統運作中 🟢</div>', unsafe_allow_html=True)
+update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
+st.markdown(f'<div class="footer">更新時間：{update_time}</div>', unsafe_allow_html=True)
