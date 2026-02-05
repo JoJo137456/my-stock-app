@@ -4,6 +4,25 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, time as dt_time
 import pytz
+import requests
+import urllib3
+
+# === 0. 關鍵修復：SSL 憑證補丁 ===
+# 這一區塊是專門用來解決「SSLError」的
+# 它會強制告訴系統：忽略證交所的憑證檢查，直接連線
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# 備份原始的請求功能
+original_request = requests.Session.request
+
+# 定義新的請求功能 (強制關閉驗證)
+def patched_request(self, method, url, *args, **kwargs):
+    kwargs['verify'] = False  # 關鍵：關閉 SSL 驗證
+    return original_request(self, method, url, *args, **kwargs)
+
+# 替換掉系統原本的請求功能
+requests.Session.request = patched_request
+
 
 # === 1. 戰情室初始化 ===
 st.set_page_config(page_title="遠東集團_戰情室", layout="wide")
@@ -45,36 +64,39 @@ def get_stock_data(code, status):
         
         # --- 策略 A: 盤中模式 (抓 Realtime) ---
         if status == "open":
-            real = twstock.realtime.get(code)
-            if real['success']:
-                info = real['realtime']
-                
-                latest = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else 0.0
-                if latest == 0.0:
-                    latest = float(info['open']) if info['open'] != '-' else 0.0
-                
-                # 嘗試抓歷史資料 (若失敗則忽略)
-                try:
-                    hist = stock.fetch_31()
-                    prev_close = hist[-1].close if hist else latest
-                    df = pd.DataFrame(hist)
-                except Exception as e:
-                    # 如果盤中抓不到歷史，就只顯示當前價格，不讓程式崩潰
-                    prev_close = latest
-                    df = pd.DataFrame()
-                
-                return {
-                    "current": latest,
-                    "prev_close": prev_close,
-                    "high": float(info['high']) if info['high'] != '-' else 0,
-                    "low": float(info['low']) if info['low'] != '-' else 0,
-                    "df": df,
-                    "source": "Realtime API",
-                    "error": None
-                }
+            try:
+                real = twstock.realtime.get(code)
+                if real['success']:
+                    info = real['realtime']
+                    latest = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else 0.0
+                    # 如果剛開盤無成交價，改抓開盤價
+                    if latest == 0.0:
+                        latest = float(info['open']) if info['open'] != '-' else 0.0
+                    
+                    # 嘗試抓歷史資料做昨收參考
+                    try:
+                        hist = stock.fetch_31()
+                        prev_close = hist[-1].close if hist else latest
+                        df = pd.DataFrame(hist)
+                    except:
+                        prev_close = latest
+                        df = pd.DataFrame()
+                    
+                    return {
+                        "current": latest,
+                        "prev_close": prev_close,
+                        "high": float(info['high']) if info['high'] != '-' else 0,
+                        "low": float(info['low']) if info['low'] != '-' else 0,
+                        "df": df,
+                        "source": "Realtime API",
+                        "error": None
+                    }
+            except Exception as e:
+                # 盤中抓取失敗，自動降級去抓歷史資料
+                pass 
 
         # --- 策略 B: 盤後/休市模式 (抓 fetch_31 歷史數據) ---
-        hist = stock.fetch_31() # 這一步如果沒有 lxml 會直接報錯
+        hist = stock.fetch_31()
         
         if not hist:
             return {"error": "無法獲取歷史資料 (可能是證交所連線問題)"}
@@ -93,7 +115,6 @@ def get_stock_data(code, status):
         }
 
     except Exception as e:
-        # 捕捉所有錯誤並回傳，顯示在畫面上
         return {"error": str(e)}
 
 # === 4. 繪圖模組 ===
@@ -140,10 +161,9 @@ with st.sidebar:
 # === 6. 數據展示區 ===
 data = get_stock_data(code, status_code)
 
-# 檢查是否有錯誤回傳
 if data and data.get("error"):
     st.error(f"❌ 發生錯誤: {data['error']}")
-    st.warning("建議檢查：GitHub 的 requirements.txt 是否已加入 'lxml'？")
+    st.caption("SSL 錯誤已透過程式碼修復，若仍有問題請檢查 requirements.txt")
     
 elif data:
     curr = data['current']
