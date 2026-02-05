@@ -9,7 +9,6 @@ import urllib3
 import yfinance as yf
 
 # === 0. 系統層級修復 ===
-# SSL 憑證補丁 (強制過證交所安檢)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 original_request = requests.Session.request
 def patched_request(self, method, url, *args, **kwargs):
@@ -21,7 +20,7 @@ requests.Session.request = patched_request
 st.set_page_config(page_title="遠東集團_戰情室", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei') 
 
-# CSS 美化
+# CSS
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-family: 'Microsoft JhengHei', sans-serif !important; }
@@ -35,7 +34,6 @@ st.markdown('<div class="main-title">遠東集團<br>聯合稽核總部 一處�
 
 # === 2. 核心功能模組 ===
 
-# 判斷市場狀態
 def check_market_status():
     now = datetime.now(tw_tz)
     current_time = now.time()
@@ -50,13 +48,11 @@ def check_market_status():
     else:
         return "closed", "🌙 盤後 (日結資料)"
 
-# [升級版] 抓取歷史資料 (自動跨月)
 @st.cache_data(ttl=3600) 
 def fetch_twse_history_proxy(stock_code):
     try:
         data_list = []
         now = datetime.now()
-        # 抓取本月與上個月
         dates_to_fetch = [now.strftime('%Y%m01')]
         first_day_this_month = now.replace(day=1)
         last_month = first_day_this_month - timedelta(days=1)
@@ -72,13 +68,9 @@ def fetch_twse_history_proxy(stock_code):
                     date_parts = row[0].split('/')
                     ad_year = int(date_parts[0]) + 1911
                     date_iso = f"{ad_year}-{date_parts[1]}-{date_parts[2]}"
-                    
                     def to_float(s):
-                        try:
-                            return float(s.replace(',', ''))
-                        except:
-                            return 0.0
-                    
+                        try: return float(s.replace(',', ''))
+                        except: return 0.0
                     data_list.append({
                         'date': date_iso,
                         'open': to_float(row[3]),
@@ -90,12 +82,27 @@ def fetch_twse_history_proxy(stock_code):
     except Exception as e:
         return None
 
-# [新增功能] 抓取當日分時走勢
+# [重要升級] 增強版抓取邏輯：確保盤後也能看到今天早上的走勢
 @st.cache_data(ttl=300) 
 def get_intraday_chart_data(stock_code):
     try:
         ticker = yf.Ticker(f"{stock_code}.TW")
+        
+        # A計畫：嘗試抓今天 1 分鐘線 (最精細)
         df = ticker.history(period="1d", interval="1m")
+        
+        # 如果 A計畫 失敗 (由你提供的截圖看來，下午常會變成空的)
+        if df.empty:
+            # B計畫：抓最近 5 天的 5 分鐘線 (這招通常很穩)
+            df = ticker.history(period="5d", interval="5m")
+            
+            # 關鍵步驟：只切出「最後一個交易日」的資料
+            if not df.empty:
+                # 取得資料中最後一天的日期
+                last_day = df.index[-1].date()
+                # 篩選該日期的資料
+                df = df[df.index.date == last_day]
+        
         if df.empty:
             return None
         return df
@@ -117,7 +124,6 @@ def plot_daily_k(df):
         decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e',
         name="日K"
     )])
-    
     fig.update_layout(
         title="<b>📅 近兩個月日線走勢 (Trend)</b>",
         xaxis_rangeslider_visible=False,
@@ -133,6 +139,9 @@ def plot_daily_k(df):
 def plot_intraday_line(df):
     if df is None or df.empty: return None
     
+    # 判斷一下資料頻率，改標題
+    interval_str = "1分K" if (df.index[1] - df.index[0]).seconds == 60 else "5分K"
+    
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=df.index, y=df['Close'],
@@ -144,10 +153,10 @@ def plot_intraday_line(df):
     ))
     
     ref_price = df['Open'].iloc[0]
-    fig.add_hline(y=ref_price, line_dash="dot", line_color="gray", annotation_text="開盤參考")
+    fig.add_hline(y=ref_price, line_dash="dot", line_color="gray", annotation_text="開盤")
     
     fig.update_layout(
-        title="<b>⚡ 當日即時走勢 (Intraday)</b>",
+        title=f"<b>⚡ 本日即時/盤後走勢 ({interval_str})</b>",
         height=300,
         margin=dict(l=10, r=10, t=40, b=10),
         hovermode="x unified",
@@ -168,17 +177,14 @@ with st.sidebar:
     st.header("🎯 監控目標")
     option = st.radio("選擇公司", list(stock_map.keys()))
     code = stock_map[option]
-    
     st.divider()
     status_code, status_text = check_market_status()
     st.info(f"狀態：{status_text}")
-        
     if st.button("🔄 刷新情報"):
         st.cache_data.clear()
         st.rerun()
 
 # === 5. 資料處理與顯示 ===
-# 修正點：這裡加入了正確的 try-except 結構
 real_data = {}
 try:
     real = twstock.realtime.get(code)
@@ -186,33 +192,28 @@ try:
         info = real['realtime']
         latest = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else 0.0
         if latest == 0.0: latest = float(info['open']) if info['open'] != '-' else 0.0
-        
         real_data['price'] = latest
         real_data['high'] = info['high']
         real_data['low'] = info['low']
     else:
         real_data['price'] = 0
-except Exception:
+except:
     real_data['price'] = 0
 
-# 2. 抓取歷史資料 (Proxy)
 hist_data = fetch_twse_history_proxy(code)
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 
-# 3. 抓取即時分時資料
+# 這裡會呼叫新的 B計畫 邏輯
 df_intra = get_intraday_chart_data(code)
 
-# 計算數據
 current_price = real_data['price']
 if current_price == 0 and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
 
-# 昨收與漲跌
 prev_close = 0
 if not df_daily.empty:
     last_date = df_daily.iloc[-1]['date']
     today_str = datetime.now().strftime('%Y-%m-%d')
-    
     if last_date == today_str and len(df_daily) > 1:
         prev_close = df_daily.iloc[-2]['close']
     else:
@@ -247,8 +248,8 @@ with col1:
     if df_intra is not None and not df_intra.empty:
         st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
     else:
-        st.warning("⚠️ 無法取得即時分時圖 (API 限制或盤前)")
-        st.caption("提示：分時圖使用 Yahoo 數據，每 5 分鐘更新一次以避免封鎖。")
+        st.warning("⚠️ 無法取得即時分時圖 (Yahoo API 限制)")
+        st.caption("建議：稍等幾分鐘後再按刷新，或檢查網路。")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
