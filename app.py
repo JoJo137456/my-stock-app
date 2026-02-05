@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, time as dt_time
 import pytz
 import requests
 import urllib3
-import yfinance as yf # 重新引入 yfinance 用於畫分時圖
+import yfinance as yf
 
 # === 0. 系統層級修復 ===
 # SSL 憑證補丁 (強制過證交所安檢)
@@ -21,7 +21,7 @@ requests.Session.request = patched_request
 st.set_page_config(page_title="遠東集團_戰情室", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei') 
 
-# CSS 美化 (Apple 風格)
+# CSS 美化
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-family: 'Microsoft JhengHei', sans-serif !important; }
@@ -50,29 +50,25 @@ def check_market_status():
     else:
         return "closed", "🌙 盤後 (日結資料)"
 
-# [升級版] 抓取歷史資料 (自動跨月，確保數據足夠)
-@st.cache_data(ttl=3600) # 歷史資料快取 1 小時
+# [升級版] 抓取歷史資料 (自動跨月)
+@st.cache_data(ttl=3600) 
 def fetch_twse_history_proxy(stock_code):
     try:
         data_list = []
-        
-        # 抓取 "本月" 和 "上個月" 的資料，確保 K 線圖夠長
         now = datetime.now()
-        dates_to_fetch = [now.strftime('%Y%m01')] # 本月
-        
-        # 計算上個月
+        # 抓取本月與上個月
+        dates_to_fetch = [now.strftime('%Y%m01')]
         first_day_this_month = now.replace(day=1)
         last_month = first_day_this_month - timedelta(days=1)
-        dates_to_fetch.insert(0, last_month.strftime('%Y%m01')) # 插入上個月到最前面
+        dates_to_fetch.insert(0, last_month.strftime('%Y%m01'))
         
         for date_str in dates_to_fetch:
             url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date={date_str}&stockNo={stock_code}"
-            r = requests.get(url) # SSL patch 會自動生效
+            r = requests.get(url) 
             json_data = r.json()
             
             if json_data['stat'] == 'OK':
                 for row in json_data['data']:
-                    # 民國轉西元
                     date_parts = row[0].split('/')
                     ad_year = int(date_parts[0]) + 1911
                     date_iso = f"{ad_year}-{date_parts[1]}-{date_parts[2]}"
@@ -90,18 +86,15 @@ def fetch_twse_history_proxy(stock_code):
                         'low': to_float(row[5]),
                         'close': to_float(row[6]),
                     })
-        
         return data_list
     except Exception as e:
         return None
 
-# [新增功能] 抓取當日分時走勢 (Intraday)
-@st.cache_data(ttl=300) # 關鍵：快取 5 分鐘，避免被 Yahoo 封鎖
+# [新增功能] 抓取當日分時走勢
+@st.cache_data(ttl=300) 
 def get_intraday_chart_data(stock_code):
     try:
-        # yfinance 需要加上 .TW
         ticker = yf.Ticker(f"{stock_code}.TW")
-        # 抓取當天 1 分鐘線
         df = ticker.history(period="1d", interval="1m")
         if df.empty:
             return None
@@ -111,13 +104,10 @@ def get_intraday_chart_data(stock_code):
 
 # === 3. 繪圖模組 ===
 
-# 繪製 K 線圖 (日線)
 def plot_daily_k(df):
     if df.empty: return None
     df['Date'] = pd.to_datetime(df['date'])
     df.set_index('Date', inplace=True)
-    
-    # 只取最近 60 天，避免圖表太擠
     df = df.tail(60)
     
     fig = go.Figure(data=[go.Candlestick(
@@ -140,28 +130,20 @@ def plot_daily_k(df):
     )
     return fig
 
-# 繪製分時圖 (即時)
 def plot_intraday_line(df):
     if df is None or df.empty: return None
     
-    # 轉換 index 為台灣時間 (如果 yfinance 給的是 UTC)
-    # yfinance history 已經是當地的 timezone usually
-    
     fig = go.Figure()
-    
-    # 價格線
     fig.add_trace(go.Scatter(
         x=df.index, y=df['Close'],
         mode='lines',
         line=dict(color='#007AFF', width=2),
-        fill='tozeroy', # 填滿下方顏色，更有質感
+        fill='tozeroy',
         fillcolor='rgba(0, 122, 255, 0.1)',
         name='股價'
     ))
     
-    # 抓取昨收 (用第一筆 Open 當作參考，或 yfinance info)
     ref_price = df['Open'].iloc[0]
-    
     fig.add_hline(y=ref_price, line_dash="dot", line_color="gray", annotation_text="開盤參考")
     
     fig.update_layout(
@@ -171,15 +153,8 @@ def plot_intraday_line(df):
         hovermode="x unified",
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(
-            tickformat='%H:%M',
-            showgrid=False
-        ),
-        yaxis=dict(
-            showgrid=True, 
-            gridcolor='#eee',
-            tickformat='.2f'
-        )
+        xaxis=dict(tickformat='%H:%M', showgrid=False),
+        yaxis=dict(showgrid=True, gridcolor='#eee', tickformat='.2f')
     )
     return fig
 
@@ -203,7 +178,7 @@ with st.sidebar:
         st.rerun()
 
 # === 5. 資料處理與顯示 ===
-# 1. 抓取主要價格 (twstock Realtime)
+# 修正點：這裡加入了正確的 try-except 結構
 real_data = {}
 try:
     real = twstock.realtime.get(code)
@@ -215,34 +190,33 @@ try:
         real_data['price'] = latest
         real_data['high'] = info['high']
         real_data['low'] = info['low']
-else:
+    else:
+        real_data['price'] = 0
+except Exception:
     real_data['price'] = 0
 
-# 2. 抓取歷史資料 (Proxy) - 用來算昨收和畫日K
+# 2. 抓取歷史資料 (Proxy)
 hist_data = fetch_twse_history_proxy(code)
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 
-# 3. 抓取即時分時資料 (Yfinance)
+# 3. 抓取即時分時資料
 df_intra = get_intraday_chart_data(code)
 
 # 計算數據
 current_price = real_data['price']
-# 如果即時抓不到 (例如盤後很久)，就用歷史資料最新一筆
 if current_price == 0 and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
 
 # 昨收與漲跌
 prev_close = 0
 if not df_daily.empty:
-    # 如果歷史資料包含今天，那倒數第二筆才是昨收
-    # 簡單判斷：看最後一筆日期是否等於今天
     last_date = df_daily.iloc[-1]['date']
     today_str = datetime.now().strftime('%Y-%m-%d')
     
     if last_date == today_str and len(df_daily) > 1:
         prev_close = df_daily.iloc[-2]['close']
     else:
-        prev_close = df_daily.iloc[-1]['close'] # 若今天資料還沒進歷史庫
+        prev_close = df_daily.iloc[-1]['close']
 
 change = current_price - prev_close
 pct = (change / prev_close) * 100 if prev_close != 0 else 0
@@ -251,7 +225,6 @@ pct = (change / prev_close) * 100 if prev_close != 0 else 0
 bg_color = "#e6fffa" if change >= 0 else "#fff5f5"
 font_color = "#d0021b" if change >= 0 else "#009944"
 
-# 頂部價格卡片
 st.markdown(f"""
 <div style="background-color: {bg_color}; padding: 20px; border-radius: 12px; margin-bottom: 25px; border: 1px solid rgba(0,0,0,0.05);">
     <h2 style="margin:0; color:#555; font-size: 1.2rem;">{option}</h2>
@@ -267,7 +240,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 圖表區 (兩欄佈局)
 col1, col2 = st.columns([1, 1])
 
 with col1:
@@ -287,6 +259,5 @@ with col2:
         st.error("無法取得歷史 K 線資料")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# 頁腳
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
 st.markdown(f'<div class="footer">更新時間：{update_time}</div>', unsafe_allow_html=True)
