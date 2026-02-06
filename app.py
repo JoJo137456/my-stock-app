@@ -8,7 +8,7 @@ import requests
 import urllib3
 import yfinance as yf
 
-# === 0. 系統層級修復 (解決部分公司網域 SSL 問題) ===
+# === 0. 系統層級修復 ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 original_request = requests.Session.request
 def patched_request(self, method, url, *args, **kwargs):
@@ -20,7 +20,7 @@ requests.Session.request = patched_request
 st.set_page_config(page_title="遠東集團_戰情室", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei') 
 
-# CSS 美化設定
+# CSS 美化
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-family: 'Microsoft JhengHei', sans-serif !important; }
@@ -41,18 +41,18 @@ st.markdown('<div class="main-title">遠東集團<br>聯合稽核總部 一處�
 
 # === 2. 核心功能模組 ===
 
-def check_market_status(is_us_stock=False):
+def check_market_status(market_type='TW'):
     now = datetime.now(tw_tz)
     
-    if is_us_stock:
-        # 美股簡易判斷 (夏令時間未精細處理，僅作概略提示)
-        # 美股通常為台灣時間 21:30/22:30 開盤，隔日 04:00/05:00 收盤
+    if market_type == 'US':
+        # 美股簡易判斷
         hour = now.hour
         if 21 <= hour or hour < 5:
             return "open", "🇺🇸 美股開盤中"
         else:
             return "closed", "🇺🇸 美股休市 (盤後)"
             
+    # 台股 (包含大盤)
     current_time = now.time()
     market_open = dt_time(9, 0)
     market_close = dt_time(13, 35) 
@@ -70,11 +70,15 @@ def fetch_twse_history_proxy(stock_code):
     try:
         data_list = []
         now = datetime.now()
-        dates_to_fetch = [now.strftime('%Y%m01')]
-        first_day_this_month = now.replace(day=1)
-        last_month = first_day_this_month - timedelta(days=1)
-        dates_to_fetch.insert(0, last_month.strftime('%Y%m01'))
         
+        # [修改] 抓取近 6 個月資料
+        dates_to_fetch = []
+        curr_month = now.replace(day=1)
+        for i in range(6):
+            # 簡單的月份回推邏輯
+            target_date = curr_month - pd.DateOffset(months=i)
+            dates_to_fetch.append(target_date.strftime('%Y%m01'))
+            
         for date_str in dates_to_fetch:
             url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date={date_str}&stockNo={stock_code}"
             r = requests.get(url) 
@@ -99,6 +103,8 @@ def fetch_twse_history_proxy(stock_code):
                         'low': to_float(row[5]),
                         'close': to_float(row[6]),
                     })
+        # 排序確保日期正確
+        data_list.sort(key=lambda x: x['date'])
         return data_list
     except Exception as e:
         return None
@@ -107,7 +113,8 @@ def fetch_twse_history_proxy(stock_code):
 def fetch_us_history(ticker_symbol):
     try:
         tk = yf.Ticker(ticker_symbol)
-        hist = tk.history(period="3mo")
+        # [修改] 改為 6 個月
+        hist = tk.history(period="6mo")
         data_list = []
         
         for index, row in hist.iterrows():
@@ -124,9 +131,9 @@ def fetch_us_history(ticker_symbol):
         return None
 
 @st.cache_data(ttl=300) 
-def get_intraday_chart_data(stock_code, is_us=False):
+def get_intraday_chart_data(stock_code, is_us_source=False):
     try:
-        ticker_symbol = stock_code if is_us else f"{stock_code}.TW"
+        ticker_symbol = stock_code if is_us_source else f"{stock_code}.TW"
         ticker = yf.Ticker(ticker_symbol)
         
         df = ticker.history(period="1d", interval="1m")
@@ -148,7 +155,9 @@ def plot_daily_k(df):
     if df.empty: return None
     df['Date'] = pd.to_datetime(df['date'])
     df.set_index('Date', inplace=True)
-    df = df.tail(60)
+    
+    # [修改] 顯示最近 120 天 (約半年交易日)
+    df = df.tail(120)
     
     fig = go.Figure(data=[go.Candlestick(
         x=df.index,
@@ -158,7 +167,7 @@ def plot_daily_k(df):
         name="日K"
     )])
     fig.update_layout(
-        title="<b>📅 近兩個月日線走勢 (Trend)</b>",
+        title="<b>📅 近半年日線走勢 (6 Months Trend)</b>",
         xaxis_rangeslider_visible=False,
         height=350,
         margin=dict(l=10, r=10, t=40, b=10),
@@ -204,9 +213,12 @@ def plot_intraday_line(df):
     )
     return fig
 
-# === 4. 主控台邏輯 (完整擴充版) ===
+# === 4. 主控台邏輯 ===
 stock_map = {
-    # --- 🇹🇼 遠東集團軍 (台股) ---
+    # --- 📊 市場指標 ---
+    "🇹🇼 台灣加權指數 (大盤)": "^TWII",  # 新增
+    
+    # --- 🇹🇼 遠東集團軍 ---
     "🇹🇼 1402 遠東新": "1402", 
     "🇹🇼 1102 亞泥": "1102", 
     "🇹🇼 2606 裕民": "2606",
@@ -215,20 +227,16 @@ stock_map = {
     "🇹🇼 4904 遠傳": "4904", 
     "🇹🇼 1710 東聯": "1710",
     
-    # --- 🇺🇸 運動品牌客戶 (美股/ADR) ---
+    # --- 🇺🇸 客戶與競品 ---
     "🇺🇸 Nike (耐吉)": "NKE",
     "🇺🇸 Under Armour (UA)": "UAA",
     "🇺🇸 Lululemon (露露檸檬)": "LULU",
     "🇺🇸 Adidas (愛迪達 ADR)": "ADDYY",
     "🇺🇸 Puma (彪馬 ADR)": "PUMSY",
     "🇺🇸 Columbia (哥倫比亞)": "COLM",
-    
-    # --- 🇺🇸 休閒與快時尚客戶 (美股/ADR) ---
     "🇺🇸 Gap Inc (蓋璞)": "GAP",
     "🇺🇸 Fast Retailing (Uniqlo ADR)": "FRCOY",
     "🇺🇸 VF Corp (Vans/North Face)": "VFC",
-    
-    # --- 🇺🇸 飲料食品客戶 ---
     "🇺🇸 Coca-Cola (可口可樂)": "KO",
     "🇺🇸 PepsiCo (百事)": "PEP"
 }
@@ -238,16 +246,21 @@ with st.sidebar:
     option = st.radio("選擇公司", list(stock_map.keys()))
     code = stock_map[option]
     
-    # 自動判斷：代號不是純數字 = 美股/ADR
-    is_us = not code.isdigit()
+    # 邏輯判斷
+    is_index = (code == "^TWII")          # 是否為大盤
+    is_tw_stock = code.isdigit()          # 是否為台股個股
+    is_us_stock = not (is_index or is_tw_stock) # 其餘為美股
+    
+    # 判斷市場狀態 (大盤跟隨台股時間)
+    market_type = 'TW' if (is_tw_stock or is_index) else 'US'
     
     st.divider()
-    status_code, status_text = check_market_status(is_us_stock=is_us)
+    status_code, status_text = check_market_status(market_type=market_type)
     st.info(f"狀態：{status_text}")
     
-    if is_us and len(code) > 4:
-         st.caption("ℹ️ 此為 ADR (存託憑證)，走勢與母國連動，以美元計價。")
-         
+    if is_us_stock and len(code) > 4:
+         st.caption("ℹ️ 此為 ADR (存託憑證)，走勢與母國連動。")
+
     if st.button("🔄 刷新情報"):
         st.cache_data.clear()
         st.rerun()
@@ -255,8 +268,8 @@ with st.sidebar:
 # === 5. 資料處理 ===
 real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
 
-if not is_us:
-    # --- 台股處理邏輯 ---
+# A. 台股個股 (用 twstock 抓即時，最準)
+if is_tw_stock:
     try:
         real = twstock.realtime.get(code)
         if real['success']:
@@ -271,17 +284,16 @@ if not is_us:
             real_data['volume'] = info.get('accumulate_trade_volume', '0') 
     except:
         pass
-    
     hist_data = fetch_twse_history_proxy(code)
 
+# B. 美股 或 大盤 (用 yfinance 抓)
+# 註：大盤 ^TWII 用 yfinance 抓比較方便，因為 twstock 主要針對個股
 else:
-    # --- 美股處理邏輯 ---
     try:
         tk = yf.Ticker(code)
         fi = tk.fast_info
         
         latest = fi.last_price
-        
         real_data['price'] = latest
         real_data['open'] = fi.open
         real_data['high'] = fi.day_high
@@ -292,29 +304,31 @@ else:
     
     hist_data = fetch_us_history(code)
 
-# 共用邏輯
+# 共用邏輯：整合數據
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
-df_intra = get_intraday_chart_data(code, is_us=is_us)
 
+# 抓取分時圖：台股個股加 .TW，美股與大盤直接用代號
+chart_source_us = (is_us_stock or is_index) # 大盤也算在 Yahoo Source 體系
+df_intra = get_intraday_chart_data(code, is_us_source=chart_source_us)
+
+# Fallback (即時掛點時用歷史補)
 current_price = real_data['price']
-
-# Fallback 機制
 if (current_price == 0 or current_price is None) and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
     real_data['high'] = df_daily.iloc[-1]['high']
     real_data['low'] = df_daily.iloc[-1]['low']
     real_data['open'] = df_daily.iloc[-1]['open']
-    
     vol_num = df_daily.iloc[-1]['volume']
-    if not is_us:
+    
+    if is_tw_stock: # 台股歷史是股數
         real_data['volume'] = f"{int(vol_num / 1000):,}"
-    else:
+    else: # 美股與大盤歷史通常單位不同，直接顯示
         real_data['volume'] = f"{int(vol_num):,}"
 
 # 計算漲跌
 prev_close = 0
 if not df_daily.empty:
-    if is_us:
+    if is_us_stock or is_index: # Yahoo 體系
         try:
             prev_close = tk.fast_info.previous_close
         except:
@@ -322,7 +336,7 @@ if not df_daily.empty:
                 prev_close = df_daily.iloc[-2]['close']
             else:
                 prev_close = df_daily.iloc[-1]['close']
-    else:
+    else: # 台股個股體系
         last_date = df_daily.iloc[-1]['date']
         today_str = datetime.now().strftime('%Y-%m-%d')
         if last_date == today_str and len(df_daily) > 1:
@@ -336,15 +350,24 @@ pct = (change / prev_close) * 100 if prev_close != 0 else 0
 # === 6. UI 呈現 ===
 bg_color = "#e6fffa" if change >= 0 else "#fff5f5"
 font_color = "#d0021b" if change >= 0 else "#009944"
-currency_symbol = "$" if is_us else "NT$"
-vol_label = "成交量 (股)" if is_us else "成交量 (張)"
+currency_symbol = "$" if is_us_stock else "NT$" # 大盤也是台幣
+
+# 大盤顯示「點」而非張/股
+if is_index:
+    vol_label = "成交金額/量"
+    unit_label = "Pts"
+else:
+    vol_label = "成交量 (股)" if is_us_stock else "成交量 (張)"
+    unit_label = ""
 
 # A. 價格卡片
 st.markdown(f"""
 <div style="background-color: {bg_color}; padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 1px solid rgba(0,0,0,0.05);">
     <h2 style="margin:0; color:#555; font-size: 1.2rem;">{option}</h2>
     <div style="display: flex; align-items: baseline; gap: 15px; margin-top: 5px;">
-        <span style="font-size: 3.8rem; font-weight: 800; color: #1d1d1f; letter-spacing: -1px;">{currency_symbol} {current_price:,.2f}</span>
+        <span style="font-size: 3.8rem; font-weight: 800; color: #1d1d1f; letter-spacing: -1px;">
+           {currency_symbol.replace('NT$', '')} {current_price:,.2f} <span style="font-size: 1rem; color:#888">{unit_label}</span>
+        </span>
         <span style="font-size: 1.6rem; font-weight: 600; color: {font_color};">
             {change:+.2f} ({pct:+.2f}%)
         </span>
@@ -355,10 +378,10 @@ st.markdown(f"""
 # B. 指標列
 c1, c2, c3, c4, c5 = st.columns(5)
 safe_fmt = lambda x: f"{x:,.2f}" if isinstance(x, (int, float)) else x
-c1.metric("開盤價", safe_fmt(real_data.get('open')))
-c2.metric("最高價", safe_fmt(real_data.get('high')))
-c3.metric("最低價", safe_fmt(real_data.get('low')))
-c4.metric("昨收價", f"{prev_close:,.2f}")
+c1.metric("開盤", safe_fmt(real_data.get('open')))
+c2.metric("最高", safe_fmt(real_data.get('high')))
+c3.metric("最低", safe_fmt(real_data.get('low')))
+c4.metric("昨收", f"{prev_close:,.2f}")
 c5.metric(vol_label, real_data.get('volume', '-'))
 
 st.divider()
