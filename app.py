@@ -8,7 +8,7 @@ import requests
 import urllib3
 import yfinance as yf
 
-# === 0. 系統層級修復 ===
+# === 0. 系統層級修復 (解決部分公司網域 SSL 問題) ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 original_request = requests.Session.request
 def patched_request(self, method, url, *args, **kwargs):
@@ -20,7 +20,7 @@ requests.Session.request = patched_request
 st.set_page_config(page_title="遠東集團_戰情室", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei') 
 
-# CSS 美化
+# CSS 美化設定
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-family: 'Microsoft JhengHei', sans-serif !important; }
@@ -45,8 +45,8 @@ def check_market_status(is_us_stock=False):
     now = datetime.now(tw_tz)
     
     if is_us_stock:
-        # 簡單的美股判斷 (美股開盤約為台灣 21:30/22:30 到 04:00/05:00)
-        # 這裡僅作簡單提示，不深入夏令時間判斷
+        # 美股簡易判斷 (夏令時間未精細處理，僅作概略提示)
+        # 美股通常為台灣時間 21:30/22:30 開盤，隔日 04:00/05:00 收盤
         hour = now.hour
         if 21 <= hour or hour < 5:
             return "open", "🇺🇸 美股開盤中"
@@ -103,16 +103,13 @@ def fetch_twse_history_proxy(stock_code):
     except Exception as e:
         return None
 
-# 新增：專門抓美股歷史資料並標準化格式
 @st.cache_data(ttl=3600)
 def fetch_us_history(ticker_symbol):
     try:
         tk = yf.Ticker(ticker_symbol)
-        # 抓取近3個月，確保有足夠資料畫圖
         hist = tk.history(period="3mo")
         data_list = []
         
-        # 將 yfinance 格式轉換為與台股一致的 list of dict
         for index, row in hist.iterrows():
             data_list.append({
                 'date': index.strftime('%Y-%m-%d'),
@@ -129,7 +126,6 @@ def fetch_us_history(ticker_symbol):
 @st.cache_data(ttl=300) 
 def get_intraday_chart_data(stock_code, is_us=False):
     try:
-        # 如果是美股，直接用代碼；如果是台股，加上 .TW
         ticker_symbol = stock_code if is_us else f"{stock_code}.TW"
         ticker = yf.Ticker(ticker_symbol)
         
@@ -208,17 +204,33 @@ def plot_intraday_line(df):
     )
     return fig
 
-# === 4. 主控台邏輯 ===
+# === 4. 主控台邏輯 (完整擴充版) ===
 stock_map = {
-    "1402 遠東新": "1402", 
-    "1102 亞泥": "1102", 
-    "2606 裕民": "2606",
-    "1460 宏遠": "1460", 
-    "2903 遠百": "2903", 
-    "4904 遠傳": "4904", 
-    "1710 東聯": "1710",
-    "🇺🇸 Coca-Cola (KO)": "KO",   # 新增
-    "🇺🇸 PepsiCo (PEP)": "PEP"    # 新增
+    # --- 🇹🇼 遠東集團軍 (台股) ---
+    "🇹🇼 1402 遠東新": "1402", 
+    "🇹🇼 1102 亞泥": "1102", 
+    "🇹🇼 2606 裕民": "2606",
+    "🇹🇼 1460 宏遠": "1460", 
+    "🇹🇼 2903 遠百": "2903", 
+    "🇹🇼 4904 遠傳": "4904", 
+    "🇹🇼 1710 東聯": "1710",
+    
+    # --- 🇺🇸 運動品牌客戶 (美股/ADR) ---
+    "🇺🇸 Nike (耐吉)": "NKE",
+    "🇺🇸 Under Armour (UA)": "UAA",
+    "🇺🇸 Lululemon (露露檸檬)": "LULU",
+    "🇺🇸 Adidas (愛迪達 ADR)": "ADDYY",
+    "🇺🇸 Puma (彪馬 ADR)": "PUMSY",
+    "🇺🇸 Columbia (哥倫比亞)": "COLM",
+    
+    # --- 🇺🇸 休閒與快時尚客戶 (美股/ADR) ---
+    "🇺🇸 Gap Inc (蓋璞)": "GAP",
+    "🇺🇸 Fast Retailing (Uniqlo ADR)": "FRCOY",
+    "🇺🇸 VF Corp (Vans/North Face)": "VFC",
+    
+    # --- 🇺🇸 飲料食品客戶 ---
+    "🇺🇸 Coca-Cola (可口可樂)": "KO",
+    "🇺🇸 PepsiCo (百事)": "PEP"
 }
 
 with st.sidebar:
@@ -226,12 +238,16 @@ with st.sidebar:
     option = st.radio("選擇公司", list(stock_map.keys()))
     code = stock_map[option]
     
-    # 判斷是否為美股
-    is_us = code in ["KO", "PEP"]
+    # 自動判斷：代號不是純數字 = 美股/ADR
+    is_us = not code.isdigit()
     
     st.divider()
     status_code, status_text = check_market_status(is_us_stock=is_us)
     st.info(f"狀態：{status_text}")
+    
+    if is_us and len(code) > 4:
+         st.caption("ℹ️ 此為 ADR (存託憑證)，走勢與母國連動，以美元計價。")
+         
     if st.button("🔄 刷新情報"):
         st.cache_data.clear()
         st.rerun()
@@ -240,7 +256,7 @@ with st.sidebar:
 real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
 
 if not is_us:
-    # --- 台股處理邏輯 (維持原樣) ---
+    # --- 台股處理邏輯 ---
     try:
         real = twstock.realtime.get(code)
         if real['success']:
@@ -259,39 +275,30 @@ if not is_us:
     hist_data = fetch_twse_history_proxy(code)
 
 else:
-    # --- 美股處理邏輯 (新增) ---
+    # --- 美股處理邏輯 ---
     try:
-        # 使用 yfinance 獲取即時/延遲報價
         tk = yf.Ticker(code)
-        # fast_info 提供比 history 更快的最後報價
         fi = tk.fast_info
         
-        # 取得最新價格
         latest = fi.last_price
         
-        # 填充數據
         real_data['price'] = latest
         real_data['open'] = fi.open
         real_data['high'] = fi.day_high
         real_data['low'] = fi.day_low
-        real_data['volume'] = f"{int(fi.last_volume):,}" # 美股沒有"張"，直接顯示股數
-        
+        real_data['volume'] = f"{int(fi.last_volume):,}"
     except:
         pass
     
-    # 抓取歷史數據
     hist_data = fetch_us_history(code)
 
-# 共用邏輯：建立 DataFrame
+# 共用邏輯
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
-
-# 獲取當日走勢 (傳入 is_us 標記)
 df_intra = get_intraday_chart_data(code, is_us=is_us)
 
-# 數據整合 (Fallback 機制)
 current_price = real_data['price']
 
-# 如果即時抓不到，用歷史最後一筆補
+# Fallback 機制
 if (current_price == 0 or current_price is None) and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
     real_data['high'] = df_daily.iloc[-1]['high']
@@ -300,19 +307,14 @@ if (current_price == 0 or current_price is None) and not df_daily.empty:
     
     vol_num = df_daily.iloc[-1]['volume']
     if not is_us:
-        # 台股歷史 volume 是股數，轉成張數
         real_data['volume'] = f"{int(vol_num / 1000):,}"
     else:
         real_data['volume'] = f"{int(vol_num):,}"
 
-# 計算漲跌幅
+# 計算漲跌
 prev_close = 0
 if not df_daily.empty:
-    # 如果是美股，最後一筆可能是昨天的收盤(如果還沒開盤)，也可能是今天的
-    # 簡單起見，我們拿倒數第二筆當作"前一日收盤"來計算變化，或者 yfinance fast_info 有 previous_close
-    
     if is_us:
-        # 美股特別處理：嘗試從 yfinance 直接拿昨收
         try:
             prev_close = tk.fast_info.previous_close
         except:
@@ -321,7 +323,6 @@ if not df_daily.empty:
             else:
                 prev_close = df_daily.iloc[-1]['close']
     else:
-        # 台股原有邏輯
         last_date = df_daily.iloc[-1]['date']
         today_str = datetime.now().strftime('%Y-%m-%d')
         if last_date == today_str and len(df_daily) > 1:
@@ -335,12 +336,10 @@ pct = (change / prev_close) * 100 if prev_close != 0 else 0
 # === 6. UI 呈現 ===
 bg_color = "#e6fffa" if change >= 0 else "#fff5f5"
 font_color = "#d0021b" if change >= 0 else "#009944"
-
-# 針對美股的顯示微調
 currency_symbol = "$" if is_us else "NT$"
 vol_label = "成交量 (股)" if is_us else "成交量 (張)"
 
-# A. 大張價格卡片
+# A. 價格卡片
 st.markdown(f"""
 <div style="background-color: {bg_color}; padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 1px solid rgba(0,0,0,0.05);">
     <h2 style="margin:0; color:#555; font-size: 1.2rem;">{option}</h2>
@@ -353,17 +352,18 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# B. 關鍵指標列
+# B. 指標列
 c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("開盤價", f"{real_data.get('open', 0):,.2f}" if isinstance(real_data.get('open'), (int, float)) else real_data.get('open'))
-c2.metric("最高價", f"{real_data.get('high', 0):,.2f}" if isinstance(real_data.get('high'), (int, float)) else real_data.get('high'))
-c3.metric("最低價", f"{real_data.get('low', 0):,.2f}" if isinstance(real_data.get('low'), (int, float)) else real_data.get('low'))
+safe_fmt = lambda x: f"{x:,.2f}" if isinstance(x, (int, float)) else x
+c1.metric("開盤價", safe_fmt(real_data.get('open')))
+c2.metric("最高價", safe_fmt(real_data.get('high')))
+c3.metric("最低價", safe_fmt(real_data.get('low')))
 c4.metric("昨收價", f"{prev_close:,.2f}")
 c5.metric(vol_label, real_data.get('volume', '-'))
 
 st.divider()
 
-# C. 圖表區
+# C. 圖表
 col1, col2 = st.columns([1, 1])
 
 with col1:
@@ -372,7 +372,7 @@ with col1:
         st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
     else:
         st.warning("⚠️ 無法取得即時分時圖")
-        st.caption("美股若為盤前/盤後可能無分時資料，或 API 限流")
+        st.caption("可能原因：盤前/盤後、或資料源限流")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
