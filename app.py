@@ -71,11 +71,10 @@ def fetch_twse_history_proxy(stock_code):
         data_list = []
         now = datetime.now()
         
-        # [修改] 抓取近 6 個月資料
+        # 抓取近 6 個月資料
         dates_to_fetch = []
         curr_month = now.replace(day=1)
         for i in range(6):
-            # 簡單的月份回推邏輯
             target_date = curr_month - pd.DateOffset(months=i)
             dates_to_fetch.append(target_date.strftime('%Y%m01'))
             
@@ -113,7 +112,6 @@ def fetch_twse_history_proxy(stock_code):
 def fetch_us_history(ticker_symbol):
     try:
         tk = yf.Ticker(ticker_symbol)
-        # [修改] 改為 6 個月
         hist = tk.history(period="6mo")
         data_list = []
         
@@ -156,7 +154,7 @@ def plot_daily_k(df):
     df['Date'] = pd.to_datetime(df['date'])
     df.set_index('Date', inplace=True)
     
-    # [修改] 顯示最近 120 天 (約半年交易日)
+    # 顯示最近 120 天
     df = df.tail(120)
     
     fig = go.Figure(data=[go.Candlestick(
@@ -213,38 +211,49 @@ def plot_intraday_line(df):
     )
     return fig
 
-# === 4. 主控台邏輯 ===
-stock_map = {
-    # --- 📊 市場指標 ---
-    "🇹🇼 台灣加權指數 (大盤)": "^TWII",  # 新增
-    
-    # --- 🇹🇼 遠東集團軍 ---
-    "🇹🇼 1402 遠東新": "1402", 
-    "🇹🇼 1102 亞泥": "1102", 
-    "🇹🇼 2606 裕民": "2606",
-    "🇹🇼 1460 宏遠": "1460", 
-    "🇹🇼 2903 遠百": "2903", 
-    "🇹🇼 4904 遠傳": "4904", 
-    "🇹🇼 1710 東聯": "1710",
-    
-    # --- 🇺🇸 客戶與競品 ---
-    "🇺🇸 Nike (耐吉)": "NKE",
-    "🇺🇸 Under Armour (UA)": "UAA",
-    "🇺🇸 Lululemon (露露檸檬)": "LULU",
-    "🇺🇸 Adidas (愛迪達 ADR)": "ADDYY",
-    "🇺🇸 Puma (彪馬 ADR)": "PUMSY",
-    "🇺🇸 Columbia (哥倫比亞)": "COLM",
-    "🇺🇸 Gap Inc (蓋璞)": "GAP",
-    "🇺🇸 Fast Retailing (Uniqlo ADR)": "FRCOY",
-    "🇺🇸 VF Corp (Vans/North Face)": "VFC",
-    "🇺🇸 Coca-Cola (可口可樂)": "KO",
-    "🇺🇸 PepsiCo (百事)": "PEP"
+# === 4. 主控台邏輯 (全新分類架構) ===
+market_categories = {
+    "📈 大盤 (台灣加權指數)": {
+        "🇹🇼 台灣加權指數 (大盤)": "^TWII"
+    },
+    "🏢 遠東集團股票": {
+        "🇹🇼 1402 遠東新": "1402", 
+        "🇹🇼 1102 亞泥": "1102", 
+        "🇹🇼 2606 裕民": "2606",
+        "🇹🇼 1460 宏遠": "1460", 
+        "🇹🇼 2903 遠百": "2903", 
+        "🇹🇼 4904 遠傳": "4904", 
+        "🇹🇼 1710 東聯": "1710"
+    },
+    "👕 遠東集團紡纖事業 (客戶與競品)": {
+        "🇺🇸 Nike (耐吉)": "NKE",
+        "🇺🇸 Under Armour (UA)": "UAA",
+        "🇺🇸 Lululemon (露露檸檬)": "LULU",
+        "🇺🇸 Adidas (愛迪達 ADR)": "ADDYY",
+        "🇺🇸 Puma (彪馬 ADR)": "PUMSY",
+        "🇺🇸 Columbia (哥倫比亞)": "COLM",
+        "🇺🇸 Gap Inc (蓋璞)": "GAP",
+        "🇺🇸 Fast Retailing (Uniqlo ADR)": "FRCOY",
+        "🇺🇸 VF Corp (Vans/North Face)": "VFC"
+    },
+    "🥤 遠東集團化纖事業 (客戶)": {
+        "🇺🇸 Coca-Cola (可口可樂)": "KO",
+        "🇺🇸 PepsiCo (百事)": "PEP"
+    }
 }
 
 with st.sidebar:
     st.header("🎯 監控目標")
-    option = st.radio("選擇公司", list(stock_map.keys()))
-    code = stock_map[option]
+    
+    # 兩層式選單設計
+    selected_category = st.selectbox("📂 選擇分類板塊", list(market_categories.keys()))
+    
+    st.markdown("---")
+    
+    # 根據大分類抓取對應的公司清單
+    options_dict = market_categories[selected_category]
+    option = st.radio("🏢 選擇公司", list(options_dict.keys()))
+    code = options_dict[option]
     
     # 邏輯判斷
     is_index = (code == "^TWII")          # 是否為大盤
@@ -268,7 +277,7 @@ with st.sidebar:
 # === 5. 資料處理 ===
 real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
 
-# A. 台股個股 (用 twstock 抓即時，最準)
+# A. 台股個股
 if is_tw_stock:
     try:
         real = twstock.realtime.get(code)
@@ -286,8 +295,7 @@ if is_tw_stock:
         pass
     hist_data = fetch_twse_history_proxy(code)
 
-# B. 美股 或 大盤 (用 yfinance 抓)
-# 註：大盤 ^TWII 用 yfinance 抓比較方便，因為 twstock 主要針對個股
+# B. 美股 或 大盤
 else:
     try:
         tk = yf.Ticker(code)
@@ -307,11 +315,10 @@ else:
 # 共用邏輯：整合數據
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 
-# 抓取分時圖：台股個股加 .TW，美股與大盤直接用代號
-chart_source_us = (is_us_stock or is_index) # 大盤也算在 Yahoo Source 體系
+chart_source_us = (is_us_stock or is_index) 
 df_intra = get_intraday_chart_data(code, is_us_source=chart_source_us)
 
-# Fallback (即時掛點時用歷史補)
+# Fallback 
 current_price = real_data['price']
 if (current_price == 0 or current_price is None) and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
@@ -320,15 +327,15 @@ if (current_price == 0 or current_price is None) and not df_daily.empty:
     real_data['open'] = df_daily.iloc[-1]['open']
     vol_num = df_daily.iloc[-1]['volume']
     
-    if is_tw_stock: # 台股歷史是股數
+    if is_tw_stock:
         real_data['volume'] = f"{int(vol_num / 1000):,}"
-    else: # 美股與大盤歷史通常單位不同，直接顯示
+    else: 
         real_data['volume'] = f"{int(vol_num):,}"
 
 # 計算漲跌
 prev_close = 0
 if not df_daily.empty:
-    if is_us_stock or is_index: # Yahoo 體系
+    if is_us_stock or is_index: 
         try:
             prev_close = tk.fast_info.previous_close
         except:
@@ -336,7 +343,7 @@ if not df_daily.empty:
                 prev_close = df_daily.iloc[-2]['close']
             else:
                 prev_close = df_daily.iloc[-1]['close']
-    else: # 台股個股體系
+    else: 
         last_date = df_daily.iloc[-1]['date']
         today_str = datetime.now().strftime('%Y-%m-%d')
         if last_date == today_str and len(df_daily) > 1:
@@ -350,9 +357,8 @@ pct = (change / prev_close) * 100 if prev_close != 0 else 0
 # === 6. UI 呈現 ===
 bg_color = "#e6fffa" if change >= 0 else "#fff5f5"
 font_color = "#d0021b" if change >= 0 else "#009944"
-currency_symbol = "$" if is_us_stock else "NT$" # 大盤也是台幣
+currency_symbol = "$" if is_us_stock else "NT$" 
 
-# 大盤顯示「點」而非張/股
 if is_index:
     vol_label = "成交金額/量"
     unit_label = "Pts"
@@ -369,7 +375,7 @@ st.markdown(f"""
            {currency_symbol.replace('NT$', '')} {current_price:,.2f} <span style="font-size: 1rem; color:#888">{unit_label}</span>
         </span>
         <span style="font-size: 1.6rem; font-weight: 600; color: {font_color};">
-            {change:+.2f} ({pct:+.2f}%)
+             {change:+.2f} ({pct:+.2f}%)
         </span>
     </div>
 </div>
