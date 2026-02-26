@@ -219,13 +219,13 @@ def plot_relative_strength(df_target, df_bench, target_name, bench_name):
     ))
     
     fig.update_layout(
-        title="<b>🛡️ 戰略雷達：相對強勢分析 (一季基準化 Base=100)</b>",
+        title=f"<b>🛡️ 戰略雷達：相對強勢分析 (對標 {bench_name})</b>",
         height=350,
         margin=dict(l=10, r=10, t=40, b=10),
         hovermode="x unified",
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor='#f1f5f9', title="累積報酬指數")
+        yaxis=dict(showgrid=True, gridcolor='#f1f5f9', title="累積報酬指數 (Base=100)")
     )
     return fig
 
@@ -233,7 +233,11 @@ def plot_relative_strength(df_target, df_bench, target_name, bench_name):
 market_categories = {
     "📈 總體經濟與大盤 (宏觀與風險指標)": {
         "🇹🇼 台灣加權指數 (TAIEX)": "^TWII",
-        "🇺🇸 S&P 500 (標普500)": "^GSPC",
+        "🇹🇼 紡織纖維類指數 (Textile Sector)": "^TW14",
+        "🇺🇸 S&P 500 (標普 500 指數)": "^GSPC",
+        "🇺🇸 Dow Jones (道瓊工業指數)": "^DJI",
+        "🇺🇸 Nasdaq (那斯達克指數)": "^IXIC",
+        "🇺🇸 SOX (費城半導體指數)": "^SOX",
         "⚠️ VIX 恐慌指數 (市場風險)": "^VIX",
         "🏦 U.S. 10Y Treasury (實質利率)": "^TNX",
         "🥇 黃金期貨 (資金避險)": "GC=F",
@@ -278,17 +282,19 @@ with st.sidebar:
     
     options_dict = market_categories[selected_category]
     option = st.radio("監控標的", list(options_dict.keys()))
-    code = options_dict[option] # 定義了 code，確保後續邏輯順暢運行
+    code = options_dict[option]
     
+    # 指標屬性判定
     is_tw_stock = code.isdigit()
-    is_tw_index = (code == "^TWII")
-    is_us_index = (code in ["^GSPC", "^VIX", "^TNX"])
+    is_tw_index = (code in ["^TWII", "^TW14"])
+    is_us_index = (code in ["^GSPC", "^DJI", "^IXIC", "^SOX", "^VIX", "^TNX"])
     is_crypto = ("BTC" in code)
     is_forex = ("=X" in code or "DX" in code)
     is_futures = ("=F" in code)
     
     is_us_stock = not (is_tw_stock or is_tw_index or is_us_index or is_crypto or is_forex or is_futures)
     
+    # 決定市場時間基準
     if is_tw_stock or is_tw_index or code == "TWD=X": market_type = 'TW'
     elif is_crypto: market_type = 'CRYPTO'
     else: market_type = 'US'
@@ -334,14 +340,32 @@ else:
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 df_intra = get_intraday_chart_data(code, is_us_source=not is_tw_stock)
 
+# 動態基準數據對標邏輯 (Relative Strength Benchmark)
 df_bench = pd.DataFrame()
 bench_name = ""
-if not df_daily.empty and not (is_tw_index or code == "^GSPC"):
-    bench_code = "^TWII" if is_tw_stock else "^GSPC"
-    bench_name = "TAIEX (台灣加權指數)" if is_tw_stock else "S&P 500 指數"
-    bench_hist = fetch_us_history(bench_code)
-    if bench_hist: df_bench = pd.DataFrame(bench_hist)
+if not df_daily.empty:
+    if is_tw_stock or code == "^TW14":
+        bench_code = "^TWII"
+        bench_name = "TAIEX (台灣加權指數)"
+    elif code == "^TWII":
+        bench_code = "^GSPC"
+        bench_name = "S&P 500 指數"
+    elif is_us_stock or code in ["^DJI", "^IXIC", "^SOX"]:
+        bench_code = "^GSPC"
+        bench_name = "S&P 500 指數"
+    elif code == "^GSPC":
+        bench_code = "^TWII"
+        bench_name = "TAIEX (台灣加權指數)"
+    else:
+        bench_code = "^GSPC"
+        bench_name = "S&P 500 指數"
+        
+    # 防止拿自己跟自己比
+    if bench_code != code:
+        bench_hist = fetch_us_history(bench_code)
+        if bench_hist: df_bench = pd.DataFrame(bench_hist)
 
+# Fallback 報價保護機制
 current_price = real_data['price']
 if (current_price == 0 or current_price is None) and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
@@ -351,6 +375,7 @@ if (current_price == 0 or current_price is None) and not df_daily.empty:
     vol_num = df_daily.iloc[-1]['volume']
     real_data['volume'] = f"{int(vol_num / 1000):,}" if is_tw_stock else f"{int(vol_num):,}"
 
+# 計算漲跌
 prev_close = 0
 if not df_daily.empty:
     if not is_tw_stock: 
@@ -369,12 +394,14 @@ bg_color = "#f8fafc"
 font_color = "#dc2626" if change >= 0 else "#16a34a" 
 border_color = "#fca5a5" if change >= 0 else "#86efac"
 
+# 單位智能判斷
 currency_symbol = "NT$" if (is_tw_stock or is_tw_index or code == "TWD=X") else "$"
 unit_label = "Pts" if (is_tw_index or is_us_index or code == "DX-Y.NYB") else \
              "/ oz" if (is_futures and ("GC" in code or "SI" in code)) else \
              "/ bbl" if (is_futures and "CL" in code) else \
              "%" if code == "^TNX" else ""
 
+# A. 核心報價卡片
 st.markdown(f"""
 <div style="background-color: {bg_color}; padding: 25px; border-radius: 8px; margin-bottom: 25px; border-left: 6px solid {border_color};">
     <h2 style="margin:0; color:#475569; font-size: 1.1rem; font-weight: 600;">{option}</h2>
@@ -389,6 +416,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# B. 市場深度指標
 hide_volume = (is_tw_index or is_us_index or is_forex)
 safe_fmt = lambda x: f"{x:,.2f}" if isinstance(x, (int, float)) else x
 
@@ -409,6 +437,7 @@ else:
 
 st.divider()
 
+# C. 數據視覺化圖表
 col1, col2 = st.columns([1, 1])
 with col1:
     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -423,54 +452,115 @@ with col2:
     if not df_daily.empty:
         st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
     else:
-        st.error("暫無歷史交易資料")
+        st.error("暫無歷史交易資料 (可能因資料源尚未收錄此板塊指數)")
     st.markdown('</div>', unsafe_allow_html=True)
 
+# D. 戰略雷達：相對強勢 (Alpha / Beta 檢視)
 if not df_bench.empty and not df_daily.empty:
     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
     rs_fig = plot_relative_strength(df_daily, df_bench, option.split(" ")[-1], bench_name)
     if rs_fig:
         st.plotly_chart(rs_fig, use_container_width=True)
-        st.caption("🔍 **分析備註**：將雙邊起漲點設為 100 基準化。當資產曲線（藍）凌駕於大盤曲線（灰）之上，表彰該資產具備超越大盤之動能（Alpha）；反之則顯示營運護城河面臨防禦壓力。")
+        st.caption("🔍 **分析備註**：將雙邊起漲點設為 100 基準化。當資產曲線（藍）凌駕於大盤曲線（灰）之上，表彰該標的具備超越大環境之動能（Alpha）；反之則顯示營運護城河面臨防禦壓力。")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# === 7. 高階幕僚戰略解讀 ===
+# === 7. 高階幕僚戰略解讀 (涵蓋所有大盤與總經指標) ===
 strategic_commentary = {
+    "^TWII": {
+        "title": "🇹🇼 台灣加權指數 (TAIEX)",
+        "business_model": "反映台灣整體資本市場動能與外資流向，為評估集團旗下台股掛牌企業（如遠東新、亞泥）之系統性估值基準。",
+        "high": "🟢 【資金行情熱絡】大盤屢創新高，代表市場資金充沛。有利於集團旗下資產股之重估（Revaluation）與資本市場籌資行動。",
+        "low": "🔴 【系統性回檔】市場整體本益比（PE）下修。防禦型與高殖利率標的（如亞泥、遠傳）將發揮避險與資金避風港之戰略作用。"
+    },
+    "^TW14": {
+        "title": "🇹🇼 台灣紡織纖維類指數 (Textile Sector Index)",
+        "business_model": "台灣上市紡織產業之整體指標。直接對標遠東新（1402）、宏遠（1460）之板塊強弱，反映外資與投信對該產業的本益比（PE）評價共識。",
+        "high": "🟢 【產業動能強勢】板塊資金呈現淨流入，法人買盤推升整體紡織業估值。此時可檢視集團紡織事業群是否具備超越同業之 Alpha 動能。",
+        "low": "🔴 【產業景氣逆風】終端庫存去化緩慢或成本高漲導致資金撤出。集團應著重於高附加價值產品（如環保回收酯粒）以維持毛利護城河。"
+    },
+    "^GSPC": {
+        "title": "🇺🇸 S&P 500 (標普 500 指數)",
+        "business_model": "美國大型股基準，反映全球總體經濟的健康度。其走勢牽動外資對新興市場（含台灣）的風險偏好與資金配置。",
+        "high": "🟢 【全球風險偏好升溫】外資熱錢易外溢至新興市場，帶動台股權值股與集團大型事業體之連動上漲。",
+        "low": "🔴 【宏觀衰退疑慮】外資啟動避險機制，提款台股。集團需提防外資賣超帶來的流動性折價（Liquidity Discount）。"
+    },
+    "^DJI": {
+        "title": "🇺🇸 Dow Jones (道瓊工業指數)",
+        "business_model": "涵蓋美國 30 家頂尖藍籌股，反映傳統價值型企業與實體經濟的榮枯，與集團傳產事業群景氣具高度連動。",
+        "high": "🟢 【實體經濟強勁】傳統產業與消費性板塊復甦。利好遠東集團旗下百貨零售（遠百）、水泥建材及紡織等實體經濟驅動之事業。",
+        "low": "🔴 【傳產景氣萎縮】高利率或通膨壓抑實體消費需求。集團需加強成本控管與現金流防禦，暫緩非必要之實體通路擴張。"
+    },
+    "^IXIC": {
+        "title": "🇺🇸 Nasdaq (那斯達克指數)",
+        "business_model": "全球科技股風向球。其波動直接影響台灣電子產業供應鏈，亦連帶牽動遠傳（4904）等科技/通訊板塊之估值。",
+        "high": "🟢 【科技資本支出擴張】帶動台灣電子股狂歡。集團雖偏重傳產，但旗下遠傳電信之 5G、AIoT 與雲端業務將迎來價值重估之順風。",
+        "low": "🔴 【科技泡沫修正】資金可能自高本益比之科技股撤出。此時集團之傳產基石與穩健配息能力，將成為吸引法人資金避險之亮點。"
+    },
+    "^SOX": {
+        "title": "🇺🇸 SOX (費城半導體指數)",
+        "business_model": "全球半導體景氣核心指標。雖非集團主業，但其強弱高度決定台股的「資金排擠效應」。",
+        "high": "🔴 【資金排擠效應】半導體狂熱易吸走台股絕大部分資金，導致傳產股面臨「賺了指數、賠了差價」的流動性乾涸期。",
+        "low": "🟢 【資金外溢回流】半導體進入庫存調整或估值修正時，龐大資金往往轉向低基期、具殖利率保護之傳產權值股（如亞泥、遠東新）。"
+    },
     "^VIX": {
-        "title": "系統性風險與市場波動率指標 (VIX)",
+        "title": "⚠️ VIX 恐慌指數 (市場波動率指標)",
         "business_model": "衡量總體經濟避險情緒與流動性壓力的關鍵指標，直接關聯集團資本運作的外部環境風險。",
-        "high": "🔴 【風險溢酬升溫】代表市場流動性趨緊。建議啟動防禦機制，暫緩非必要之資本支出（CapEx），並重新檢視短期債務延展風險，以保護集團現金流。",
-        "low": "🟢 【市場情緒穩定】資金承擔風險意願高。有利於集團旗下事業體（如遠東新、遠傳）向金融機構取得具競爭力之長期融資，亦為活化資產或戰略佈局之契機。"
+        "high": "🔴 【風險溢酬升溫】代表市場流動性趨緊。建議啟動防禦機制，暫緩非必要之資本支出（CapEx），並重新檢視短期債務延展風險。",
+        "low": "🟢 【市場情緒穩定】資金承擔風險意願高。有利於集團旗下事業體向金融機構取得具競爭力之長期融資，為戰略佈局之契機。"
     },
     "^TNX": {
-        "title": "實質借貸成本與無風險利率 (U.S. 10Y Treasury)",
+        "title": "🏦 U.S. 10Y Treasury (實質借貸成本與無風險利率)",
         "business_model": "全球資本市場之定價錨點，直接影響集團發債成本與長期投資計畫之折現率（WACC）評估。",
-        "high": "🔴 【資金成本攀升】高度資本密集事業群（如不動產、大型擴廠）需嚴控利息保障倍數；惟集團具穩健現金流之傳產事業，相對具備抗震的防禦價值。",
-        "low": "🟢 【融資環境寬鬆】利於集團以較低之資金成本進行舉債經營（Financial Leverage），加速推展亞泥、遠東新等指標性綠色轉型與大型資本支出案。"
+        "high": "🔴 【資金成本攀升】高度資本密集事業群（如不動產、大型擴廠）需嚴控利息保障倍數；惟集團具穩健現金流之傳產事業相對抗震。",
+        "low": "🟢 【融資環境寬鬆】利於集團以較低之資金成本進行舉債經營（Financial Leverage），加速推展指標性綠色轉型與大型資本支出案。"
     },
     "CT=F": {
-        "title": "紡織事業群上游成本指標 (Cotton Futures)",
+        "title": "☁️ Cotton Futures (紡織事業群上游成本指標)",
         "business_model": "牽動遠東新（1402）與宏遠（1460）紡織事業板塊之核心進貨成本與毛利率（Gross Margin）表現。",
         "high": "🔴 【進貨成本通膨】考驗集團對下游品牌端（如 Nike, UA）之議價與成本轉嫁能力（Pricing Power）；若轉嫁滯後，恐短期壓縮營業利益率。",
-        "low": "🟢 【原物料壓力緩解】在終端消費需求維持平穩之假設下，成本下行將直接挹注紡織產品線之毛利率擴張，提升整體板塊之獲利動能。"
+        "low": "🟢 【原物料壓力緩解】在終端消費需求維持平穩之假設下，成本下行將直接挹注紡織產品線之毛利率擴張，提升板塊獲利動能。"
     },
     "CL=F": {
-        "title": "化纖事業群核心原料指標 (WTI Crude Oil)",
+        "title": "🛢️ WTI Crude Oil (化纖事業群核心原料指標)",
         "business_model": "石油衍生品（如 PTA、MEG）為集團化纖板塊之基石。油價波動直接決定石化產品之報價結構與利差空間。",
-        "high": "🔴 【石化原料上漲】推升進貨成本。若伴隨總體需求強勁，可推升終端產品報價；然若屬停滯性通膨，則將侵蝕東聯（1710）、遠東新化纖部門之獲利空間。",
+        "high": "🔴 【石化原料上漲】推升進貨成本。若伴隨需求強勁可推升終端報價；若屬停滯性通膨，則將侵蝕東聯（1710）、遠東新化纖部門之獲利空間。",
         "low": "🟢 【生產成本減輕】有效降低化學纖維生產負擔。惟須同步檢視是否隱含全球製造業終端需求萎縮之衰退風險。"
     },
     "BDRY": {
-        "title": "散裝航運景氣與運價指標 (BDRY Proxy)",
+        "title": "🚢 BDRY Proxy (散裝航運景氣與運價指標)",
         "business_model": "反映全球鐵礦砂、煤炭等大宗物資之海運需求，為研判裕民航運（2606）本業獲利動能之領先指標。",
         "high": "🟢 【運力供不應求】現貨船運價揚升，將直接挹注裕民航運之營收規模與營業利益率，為集團貢獻顯著之現金流。",
         "low": "🔴 【運力過剩或需求疲軟】航運事業群之獲利貢獻預期應相應下修，戰略上需強化長約（Time Charter）比重以穩定業績基期。"
     },
     "TWD=X": {
-        "title": "匯率曝險與外銷競爭力 (USD/TWD)",
+        "title": "💱 USD/TWD (匯率曝險與外銷競爭力)",
         "business_model": "集團跨國營運與外銷佔比高，新台幣匯率波動直接影響合併財報之營收認列與業外損益（匯兌損益）。",
-        "high": "🟢 【台幣貶值】有利於推升外銷產品之報價競爭力。同時，持有的美元計價資產與應收帳款將於財報上產生具體之匯兌收益（FX Gains）。",
+        "high": "🟢 【台幣貶值】有利於推升外銷產品之報價競爭力。同時，持有的美元計價資產將於財報上產生具體之匯兌收益（FX Gains）。",
         "low": "🔴 【台幣升值】削弱出口報價優勢。財務部門需審慎執行遠期外匯等避險（Hedging）操作，以對沖潛在之匯兌損失風險。"
+    },
+    "GC=F": {
+        "title": "🥇 Gold Futures (黃金期貨 - 資金避險指標)",
+        "business_model": "傳統的無孳息避險資產，對抗地緣政治動盪與法定貨幣貶值（通膨）的終極保值工具。",
+        "high": "🔴 【避險情緒高漲】反映市場擔憂通膨失控或地緣政治惡化，資金撤出實體經濟與股市，尋求保值。集團擴張戰略應轉趨保守。",
+        "low": "🟢 【實體經濟回溫】通膨受控且政經平穩，資金願意承擔風險，重新投入具備生產力的股市與實業投資。"
+    },
+    "SI=F": {
+        "title": "🥈 Silver Futures (白銀期貨 - 工業金屬與經濟前瞻)",
+        "business_model": "兼具貴金屬避險與高度工業應用（如太陽能、電子元件）屬性，為製造業景氣的觀察指標之一。",
+        "high": "🟢 【工業需求擴張】若伴隨銅等基本金屬同步上漲，反映全球製造業與綠能建設需求強勁，利好實體經濟板塊。",
+        "low": "🔴 【工業景氣衰退】製造業終端需求疲軟，去庫存壓力增加，預示電子零組件與原物料板塊面臨營運逆風。"
+    },
+    "BTC-USD": {
+        "title": "₿ 比特幣 (數位資產流動性指標)",
+        "business_model": "全球最大數位資產，高度反映資本市場對於去中心化標的與極端風險偏好的「熱錢流動性」指標。",
+        "high": "🟢 【流動性氾濫】市場極端風險偏好上升，熱錢充斥，有利於整體資本市場的估值膨脹與熱絡。",
+        "low": "🔴 【流動性抽離】資金回防保守資產，高風險標的遭遇拋售，預示總體市場資金面轉緊，資產定價將回歸基本面檢視。"
+    },
+    "DX-Y.NYB": {
+        "title": "💵 美元指數 (DXY - 全球資金流向總開關)",
+        "business_model": "衡量美元相對一籃子主要貨幣的強弱。美元強弱直接決定全球資本是在美國本土還是新興市場之間流動。",
+        "high": "🔴 【強勢美元抽資】外資自新興市場（含台灣）提款回流美國，台股面臨系統性賣壓，且新興市場購買力下降將影響出口動能。",
+        "low": "🟢 【弱勢美元熱錢】資金自美國外溢至非美市場，台股等新興市場迎來熱錢狂潮，推升股匯雙漲與集團資產重估。"
     }
 }
 
