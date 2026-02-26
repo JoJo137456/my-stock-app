@@ -1,58 +1,283 @@
-# === 7. 高階幕僚戰略解讀 (總經指標專屬) ===
-strategic_commentary = {
-    "^VIX": {
-        "title": "⚠️ VIX 恐慌指數：市場的防空警報",
-        "business_model": "這個數字代表現在投資人有多害怕。它不是買賣實體商品，而是衡量大家願不願意花大錢去買『保險』來保護手上的股票。",
-        "high": "🔴 當指標飆高：代表系統性風險爆發，市場正在無差別拋售。此時集團的戰略應該是「保留現金、防禦為主」，任何擴張或併購都應暫緩，保護血量（資金）度過風暴。",
-        "low": "🟢 當指標走低：代表天下太平，資金願意承擔風險。此時是集團旗下事業體（如遠東新、遠傳）向銀行取得低成本融資、擴大資本支出的好時機。"
+import streamlit as st
+import twstock
+import pandas as pd
+import plotly.graph_objects as go
+from datetime import datetime, timedelta, time as dt_time
+import pytz
+import requests
+import urllib3
+import yfinance as yf
+
+# === 0. 系統層級修復 ===
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+original_request = requests.Session.request
+def patched_request(self, method, url, *args, **kwargs):
+    kwargs['verify'] = False
+    return original_request(self, method, url, *args, **kwargs)
+requests.Session.request = patched_request
+
+# === 1. 戰情室初始化 ===
+st.set_page_config(page_title="遠東集團_高階戰略戰情室", layout="wide")
+tw_tz = pytz.timezone('Asia/Taipei') 
+
+# CSS 美化 (使用極簡專業風格)
+st.markdown("""
+    <style>
+        html, body, [class*="css"]  { font-family: 'Microsoft JhengHei', 'Segoe UI', sans-serif !important; }
+        .main-title { font-size: 2.2rem; font-weight: 700; color: #1e293b; text-align: center; margin: 1rem 0; letter-spacing: 1px;}
+        .sub-title { font-size: 1rem; color: #64748b; text-align: center; margin-bottom: 2rem; }
+        .chart-container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; border: 1px solid #e2e8f0; }
+        .footer { text-align: center; color: #94a3b8; font-size: 0.8rem; margin-top: 3rem; }
+        div[data-testid="metric-container"] {
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
+
+# === 2. 核心功能模組 ===
+
+def check_market_status(market_type='TW'):
+    now = datetime.now(tw_tz)
+    
+    if market_type == 'CRYPTO':
+        return "open", "🟢 數位資產 (24H 交易)"
+        
+    if market_type == 'US':
+        hour = now.hour
+        if 21 <= hour or hour < 5:
+            return "open", "🟢 國際市場 (交易中)"
+        else:
+            return "closed", "🔴 國際市場 (休市/盤後)"
+            
+    current_time = now.time()
+    market_open = dt_time(9, 0)
+    market_close = dt_time(13, 35) 
+    is_weekend = now.weekday() >= 5
+    
+    if is_weekend:
+        return "closed", "🔴 台股市場 (週末休市)"
+    elif market_open <= current_time <= market_close:
+        return "open", "🟢 台股市場 (盤中即時)"
+    else:
+        return "closed", "🔴 台股市場 (盤後結算)"
+
+@st.cache_data(ttl=3600) 
+def fetch_twse_history_proxy(stock_code):
+    try:
+        data_list = []
+        now = datetime.now()
+        dates_to_fetch = []
+        curr_month = now.replace(day=1)
+        for i in range(6):
+            target_date = curr_month - pd.DateOffset(months=i)
+            dates_to_fetch.append(target_date.strftime('%Y%m01'))
+            
+        for date_str in dates_to_fetch:
+            url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date={date_str}&stockNo={stock_code}"
+            r = requests.get(url) 
+            json_data = r.json()
+            
+            if json_data['stat'] == 'OK':
+                for row in json_data['data']:
+                    date_parts = row[0].split('/')
+                    ad_year = int(date_parts[0]) + 1911
+                    date_iso = f"{ad_year}-{date_parts[1]}-{date_parts[2]}"
+                    def to_float(s):
+                        try: return float(s.replace(',', ''))
+                        except: return 0.0
+                    
+                    vol_shares = to_float(row[1])
+                    data_list.append({
+                        'date': date_iso,
+                        'volume': vol_shares, 
+                        'open': to_float(row[3]),
+                        'high': to_float(row[4]),
+                        'low': to_float(row[5]),
+                        'close': to_float(row[6]),
+                    })
+        data_list.sort(key=lambda x: x['date'])
+        return data_list
+    except Exception as e:
+        return None
+
+@st.cache_data(ttl=3600)
+def fetch_us_history(ticker_symbol):
+    try:
+        tk = yf.Ticker(ticker_symbol)
+        hist = tk.history(period="6mo")
+        data_list = []
+        for index, row in hist.iterrows():
+            data_list.append({
+                'date': index.strftime('%Y-%m-%d'),
+                'volume': float(row['Volume']),
+                'open': float(row['Open']),
+                'high': float(row['High']),
+                'low': float(row['Low']),
+                'close': float(row['Close'])
+            })
+        return data_list
+    except:
+        return None
+
+@st.cache_data(ttl=300) 
+def get_intraday_chart_data(stock_code, is_us_source=False):
+    try:
+        ticker_symbol = stock_code if is_us_source else f"{stock_code}.TW"
+        ticker = yf.Ticker(ticker_symbol)
+        df = ticker.history(period="1d", interval="1m")
+        if df.empty:
+            df = ticker.history(period="5d", interval="5m")
+            if not df.empty:
+                last_day = df.index[-1].date()
+                df = df[df.index.date == last_day]
+        if df.empty: return None
+        return df
+    except:
+        return None
+
+# === 3. 繪圖模組 ===
+
+def plot_daily_k(df):
+    if df.empty: return None
+    df = df.copy()
+    df['Date'] = pd.to_datetime(df['date'])
+    df.set_index('Date', inplace=True)
+    df = df.tail(120)
+    
+    fig = go.Figure(data=[go.Candlestick(
+        x=df.index,
+        open=df['open'], high=df['high'], low=df['low'], close=df['close'],
+        increasing_line_color='#ef4444', increasing_fillcolor='#ef4444',
+        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e',
+        name="日K"
+    )])
+    fig.update_layout(
+        title="<b>📊 歷史價格走勢 (近半年)</b>",
+        xaxis_rangeslider_visible=False,
+        height=350,
+        margin=dict(l=10, r=10, t=40, b=10),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=True, gridcolor='#f1f5f9')
+    )
+    return fig
+
+def plot_intraday_line(df):
+    if df is None or df.empty: return None
+    interval_str = "1 Min" if (df.index[1] - df.index[0]).seconds == 60 else "5 Min"
+    y_min, y_max = df['Close'].min(), df['Close'].max()
+    padding = (y_max - y_min) * 0.1 if y_max != y_min else y_max * 0.01
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['Close'], mode='lines',
+        line=dict(color='#0f172a', width=2.5),
+        fill='tozeroy', fillcolor='rgba(15, 23, 42, 0.05)', name='報價'
+    ))
+    fig.add_hline(y=df['Open'].iloc[0], line_dash="dot", line_color="#94a3b8", annotation_text="開盤基準")
+    fig.update_layout(
+        title=f"<b>⚡ 當日分時動態 ({interval_str})</b>",
+        height=350,
+        margin=dict(l=10, r=10, t=40, b=10),
+        hovermode="x unified",
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(tickformat='%H:%M', showgrid=False),
+        yaxis=dict(showgrid=True, gridcolor='#f1f5f9', tickformat='.2f', range=[y_min - padding, y_max + padding]) 
+    )
+    return fig
+
+def plot_relative_strength(df_target, df_bench, target_name, bench_name):
+    if df_target.empty or df_bench.empty: return None
+    
+    # 整理資料並取近 60 個交易日 (一季)
+    df1 = df_target[['date', 'close']].tail(60).copy()
+    df2 = df_bench[['date', 'close']].tail(60).copy()
+    
+    merged = pd.merge(df1, df2, on='date', suffixes=('_target', '_bench'), how='inner')
+    if merged.empty: return None
+    
+    base_target = merged['close_target'].iloc[0]
+    base_bench = merged['close_bench'].iloc[0]
+    merged['Target_Norm'] = (merged['close_target'] / base_target) * 100
+    merged['Bench_Norm'] = (merged['close_bench'] / base_bench) * 100
+    
+    fig = go.Figure()
+    # 大盤線 (防禦基準線)
+    fig.add_trace(go.Scatter(
+        x=merged['date'], y=merged['Bench_Norm'], mode='lines',
+        line=dict(color='#cbd5e1', width=2, dash='dash'), name=bench_name
+    ))
+    # 個股線
+    fig.add_trace(go.Scatter(
+        x=merged['date'], y=merged['Target_Norm'], mode='lines',
+        line=dict(color='#2563eb', width=3), name=target_name
+    ))
+    
+    fig.update_layout(
+        title="<b>🛡️ 戰略雷達：相對強勢分析 (一季基準化 Base=100)</b>",
+        height=350,
+        margin=dict(l=10, r=10, t=40, b=10),
+        hovermode="x unified",
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=True, gridcolor='#f1f5f9', title="累積報酬指數")
+    )
+    return fig
+
+# === 4. 主控台邏輯 ===
+market_categories = {
+    "📈 總體經濟與大盤 (宏觀與風險指標)": {
+        "🇹🇼 台灣加權指數 (TAIEX)": "^TWII",
+        "🇺🇸 S&P 500 (標普500)": "^GSPC",
+        "⚠️ VIX 恐慌指數 (市場風險)": "^VIX",
+        "🏦 U.S. 10Y Treasury (實質利率)": "^TNX",
+        "🥇 黃金期貨 (資金避險)": "GC=F",
+        "🥈 白銀期貨 (工業金屬)": "SI=F",
+        "🛢️ WTI 原油 (能源成本)": "CL=F",
+        "₿ 比特幣 (數位資產)": "BTC-USD",
+        "💵 美元指數 (DXY)": "DX-Y.NYB",
+        "💱 美元兌台幣 (匯率曝險)": "TWD=X",
+        "☁️ 棉花期貨 (紡纖原物料)": "CT=F",
+        "🚢 BDRY 散裝航運 ETF (運價指標)": "BDRY"
     },
-    "^TNX": {
-        "title": "🏦 美國 10 年期公債殖利率：無風險的資金成本",
-        "business_model": "這是全世界金融市場的『基準利率』。你可以把它想像成借錢的基本利息，當你什麼風險都不想承擔時，把錢借給美國政府能拿到的最低報酬。",
-        "high": "🔴 當指標飆高：代表外面借錢的利息變貴了。對遠東集團這種需要大量蓋廠房、買設備的「資本密集」產業來說，未來的利息壓力會變大；但同時，高利率也會殺死那些只靠作夢的科技股，資金反而可能避險停泊到遠東集團這種有穩健現金流的傳產股。",
-        "low": "🟢 當指標走低：資金成本下降。集團發行公司債或向銀行借款的壓力減輕，有利於亞泥、遠東新的大型投資案推進，這時候借錢來賺錢的期望值最高。"
+    "🏢 遠東集團核心事業體": {
+        "🇹🇼 1402 遠東新": "1402", 
+        "🇹🇼 1102 亞泥": "1102", 
+        "🇹🇼 2606 裕民": "2606",
+        "🇹🇼 1460 宏遠": "1460", 
+        "🇹🇼 2903 遠百": "2903", 
+        "🇹🇼 4904 遠傳": "4904", 
+        "🇹🇼 1710 東聯": "1710"
     },
-    "CT=F": {
-        "title": "☁️ 棉花期貨：紡織事業的最上游",
-        "business_model": "棉花是做衣服最基礎的材料。遠東集團旗下的遠東新（1402）與宏遠（1460）做很多紡織品，棉花價格就是他們的核心『進貨成本』。",
-        "high": "🔴 當指標飆高：進貨成本大增。如果下游的 Nike 或 UA 願意接受漲價，我們的營收會跟著膨脹；但如果下游不給漲，遠東集團的「毛利率」就會被嚴重壓縮（利潤變薄）。",
-        "low": "🟢 當指標走低：進貨成本變便宜了。只要終端買衣服的人沒有變少，我們賣一件衣服能賺到的「價差」就會變大，毛利率會漂亮提升。"
+    "👕 國際品牌終端 (紡織板塊對標)": {
+        "🇺🇸 Nike": "NKE",
+        "🇺🇸 Under Armour": "UAA",
+        "🇺🇸 Lululemon": "LULU",
+        "🇺🇸 Adidas (ADR)": "ADDYY",
+        "🇺🇸 Puma (ADR)": "PUMSY",
+        "🇺🇸 Columbia": "COLM",
+        "🇺🇸 Gap Inc": "GAP",
+        "🇺🇸 Fast Retailing (Uniqlo ADR)": "FRCOY",
+        "🇺🇸 VF Corp": "VFC"
     },
-    "CL=F": {
-        "title": "🛢️ 原油期貨：化學纖維的生命線",
-        "business_model": "石油不只能發電，還能提煉出做塑膠和人造纖維的原料（PTA、MEG）。遠東集團的化纖事業（如東聯 1710、遠東新）高度依賴原油的衍生品。",
-        "high": "🔴 當指標飆高：化纖原料成本大漲。這時候考驗的是集團的「轉嫁能力」，如果能順利把漲價的成本轉嫁給可口可樂（買寶特瓶的）或成衣廠，影響就不大；否則就是吃掉獲利。",
-        "low": "🟢 當指標走低：成本下降。但如果是因為全球經濟衰退導致石油沒人要，那通常代表終端客戶（大家不買衣服不喝飲料了）的需求也消失了，這反而是一個危險的通縮訊號。"
-    },
-    "BDRY": {
-        "title": "🚢 BDRY 散裝航運：裕民航運的業績前哨站",
-        "business_model": "這代表在海上運送鐵礦砂、煤炭、穀物這些『大宗原物料』的運費價格。裕民航運（2606）就是靠租船幫別人載這些東西賺錢。",
-        "high": "🟢 當指標飆高：代表全世界都在搶船運物資，運費大漲。這是裕民航運最開心的時候，毛利率會暴衝，是集團的一隻強勢金雞母。",
-        "low": "🔴 當指標走低：船多貨少，大家削價競爭。裕民的獲利會大幅縮水，此時集團對航運事業體的業績期望就必須下修。"
-    },
-    "TWD=X": {
-        "title": "💱 美元兌台幣：出口外銷的雙刃劍",
-        "business_model": "遠東集團有很多產品（化纖、紡織、航運）是賺美金的，但在台灣發薪水、繳稅是用台幣。匯率就是這中間轉換的魔術數字。",
-        "high": "🟢 當台幣貶值（數字變大，如 32 變 33）：對集團是大利多！我們在海外賺的美金，換回台幣時會變多，財報上會平白無故多出一筆「匯兌收益」。",
-        "low": "🔴 當台幣升值（數字變小，如 32 變 30）：對出口不利。賺一樣的美金，換回台幣卻變少了，財報上會出現「匯兌損失」，吃掉本業辛苦賺來的利潤。"
+    "🥤 國際品牌終端 (化纖板塊對標)": {
+        "🇺🇸 Coca-Cola": "KO",
+        "🇺🇸 PepsiCo": "PEP"
     }
 }
 
-# 判斷目前選擇的標的是否在戰略解讀字典中
-if code in strategic_commentary:
-    st.markdown("### 🧠 高階幕僚戰略分析")
-    info = strategic_commentary[code]
-    st.markdown(f"""
-    <div style="background-color: #f8fafc; padding: 20px; border-radius: 12px; border-left: 5px solid #3b82f6; margin-bottom: 20px;">
-        <h4 style="margin-top: 0; color: #1e293b;">{info['title']}</h4>
-        <p style="color: #475569; font-size: 0.95rem; margin-bottom: 15px;"><strong>💡 商業運作邏輯：</strong>{info['business_model']}</p>
-        <div style="display: flex; gap: 20px;">
-            <div style="flex: 1; background: white; padding: 15px; border-radius: 8px; border: 1px solid #fee2e2;">
-                <p style="margin: 0; font-size: 0.95rem; color: #991b1b;">{info['high']}</p>
-            </div>
-            <div style="flex: 1; background: white; padding: 15px; border-radius: 8px; border: 1px solid #dcfce3;">
-                <p style="margin: 0; font-size: 0.95rem; color: #166534;">{info['low']}</p>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+with st.sidebar:
+    st.header("🎯 戰略監控目標")
+    selected_category = st.selectbox("板塊分類", list(market_categories.keys()))
+    st.markdown("---")
+    
+    options_dict = market_categories[selected_category]
+    option = st.
