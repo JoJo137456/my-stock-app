@@ -278,7 +278,7 @@ with st.sidebar:
     
     options_dict = market_categories[selected_category]
     option = st.radio("監控標的", list(options_dict.keys()))
-    code = options_dict[option] # === 這裡定義了 code ===
+    code = options_dict[option] # 定義了 code，確保後續邏輯順暢運行
     
     is_tw_stock = code.isdigit()
     is_tw_index = (code == "^TWII")
@@ -434,7 +434,7 @@ if not df_bench.empty and not df_daily.empty:
         st.caption("🔍 **分析備註**：將雙邊起漲點設為 100 基準化。當資產曲線（藍）凌駕於大盤曲線（灰）之上，表彰該資產具備超越大盤之動能（Alpha）；反之則顯示營運護城河面臨防禦壓力。")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# === 7. 高階幕僚戰略解讀 (確保放在 code 定義之後) ===
+# === 7. 高階幕僚戰略解讀 ===
 strategic_commentary = {
     "^VIX": {
         "title": "系統性風險與市場波動率指標 (VIX)",
@@ -475,7 +475,7 @@ strategic_commentary = {
 }
 
 if code in strategic_commentary:
-    st.markdown("### 🧠 總裁辦公室戰略分析 (Executive Summary)")
+    st.markdown("### 📊 宏觀指標與營運洞察 (Macroeconomic Metrics & Operational Insights)")
     info = strategic_commentary[code]
     st.markdown(f"""
     <div style="background-color: #ffffff; padding: 25px; border-radius: 8px; border-left: 5px solid #0f172a; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
