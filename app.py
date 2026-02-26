@@ -233,7 +233,6 @@ def plot_relative_strength(df_target, df_bench, target_name, bench_name):
 market_categories = {
     "📈 總體經濟與大盤 (宏觀與風險指標)": {
         "🇹🇼 台灣加權指數 (TAIEX)": "^TWII",
-        "🇹🇼 紡織纖維類指數 (Textile Sector)": "^TW14",
         "🇺🇸 S&P 500 (標普 500 指數)": "^GSPC",
         "🇺🇸 Dow Jones (道瓊工業指數)": "^DJI",
         "🇺🇸 Nasdaq (那斯達克指數)": "^IXIC",
@@ -286,7 +285,7 @@ with st.sidebar:
     
     # 指標屬性判定
     is_tw_stock = code.isdigit()
-    is_tw_index = (code in ["^TWII", "^TW14"])
+    is_tw_index = (code == "^TWII")
     is_us_index = (code in ["^GSPC", "^DJI", "^IXIC", "^SOX", "^VIX", "^TNX"])
     is_crypto = ("BTC" in code)
     is_forex = ("=X" in code or "DX" in code)
@@ -344,7 +343,7 @@ df_intra = get_intraday_chart_data(code, is_us_source=not is_tw_stock)
 df_bench = pd.DataFrame()
 bench_name = ""
 if not df_daily.empty:
-    if is_tw_stock or code == "^TW14":
+    if is_tw_stock:
         bench_code = "^TWII"
         bench_name = "TAIEX (台灣加權指數)"
     elif code == "^TWII":
@@ -471,12 +470,6 @@ strategic_commentary = {
         "business_model": "反映台灣整體資本市場動能與外資流向，為評估集團旗下台股掛牌企業（如遠東新、亞泥）之系統性估值基準。",
         "high": "🟢 【資金行情熱絡】大盤屢創新高，代表市場資金充沛。有利於集團旗下資產股之重估（Revaluation）與資本市場籌資行動。",
         "low": "🔴 【系統性回檔】市場整體本益比（PE）下修。防禦型與高殖利率標的（如亞泥、遠傳）將發揮避險與資金避風港之戰略作用。"
-    },
-    "^TW14": {
-        "title": "🇹🇼 台灣紡織纖維類指數 (Textile Sector Index)",
-        "business_model": "台灣上市紡織產業之整體指標。直接對標遠東新（1402）、宏遠（1460）之板塊強弱，反映外資與投信對該產業的本益比（PE）評價共識。",
-        "high": "🟢 【產業動能強勢】板塊資金呈現淨流入，法人買盤推升整體紡織業估值。此時可檢視集團紡織事業群是否具備超越同業之 Alpha 動能。",
-        "low": "🔴 【產業景氣逆風】終端庫存去化緩慢或成本高漲導致資金撤出。集團應著重於高附加價值產品（如環保回收酯粒）以維持毛利護城河。"
     },
     "^GSPC": {
         "title": "🇺🇸 S&P 500 (標普 500 指數)",
