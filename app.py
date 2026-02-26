@@ -48,14 +48,12 @@ def check_market_status(market_type='TW'):
         return "open", "🟢 加密貨幣 (24小時交易)"
         
     if market_type == 'US':
-        # 美股/國際市場簡易判斷
         hour = now.hour
         if 21 <= hour or hour < 5:
             return "open", "🇺🇸 國際市場開盤中"
         else:
             return "closed", "🇺🇸 國際市場休市 (盤後)"
             
-    # 台股 (包含大盤與台幣匯率)
     current_time = now.time()
     market_open = dt_time(9, 0)
     market_close = dt_time(13, 35) 
@@ -73,8 +71,6 @@ def fetch_twse_history_proxy(stock_code):
     try:
         data_list = []
         now = datetime.now()
-        
-        # 抓取近 6 個月資料
         dates_to_fetch = []
         curr_month = now.replace(day=1)
         for i in range(6):
@@ -96,7 +92,6 @@ def fetch_twse_history_proxy(stock_code):
                         except: return 0.0
                     
                     vol_shares = to_float(row[1])
-                    
                     data_list.append({
                         'date': date_iso,
                         'volume': vol_shares, 
@@ -116,7 +111,6 @@ def fetch_us_history(ticker_symbol):
         tk = yf.Ticker(ticker_symbol)
         hist = tk.history(period="6mo")
         data_list = []
-        
         for index, row in hist.iterrows():
             data_list.append({
                 'date': index.strftime('%Y-%m-%d'),
@@ -135,16 +129,13 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
     try:
         ticker_symbol = stock_code if is_us_source else f"{stock_code}.TW"
         ticker = yf.Ticker(ticker_symbol)
-        
         df = ticker.history(period="1d", interval="1m")
         if df.empty:
             df = ticker.history(period="5d", interval="5m")
             if not df.empty:
                 last_day = df.index[-1].date()
                 df = df[df.index.date == last_day]
-        
-        if df.empty:
-            return None
+        if df.empty: return None
         return df
     except:
         return None
@@ -153,9 +144,9 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
 
 def plot_daily_k(df):
     if df.empty: return None
+    df = df.copy()
     df['Date'] = pd.to_datetime(df['date'])
     df.set_index('Date', inplace=True)
-    
     df = df.tail(120)
     
     fig = go.Figure(data=[go.Candlestick(
@@ -179,50 +170,83 @@ def plot_daily_k(df):
 
 def plot_intraday_line(df):
     if df is None or df.empty: return None
-    
     interval_str = "1分K" if (df.index[1] - df.index[0]).seconds == 60 else "5分K"
-    
-    y_min = df['Close'].min()
-    y_max = df['Close'].max()
+    y_min, y_max = df['Close'].min(), df['Close'].max()
     padding = (y_max - y_min) * 0.1 if y_max != y_min else y_max * 0.01
-    y_range = [y_min - padding, y_max + padding]
-
+    
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=df.index, y=df['Close'],
-        mode='lines',
+        x=df.index, y=df['Close'], mode='lines',
         line=dict(color='#007AFF', width=2),
-        fill='tozeroy',
-        fillcolor='rgba(0, 122, 255, 0.1)',
-        name='價格'
+        fill='tozeroy', fillcolor='rgba(0, 122, 255, 0.1)', name='價格'
     ))
-    
-    ref_price = df['Open'].iloc[0]
-    fig.add_hline(y=ref_price, line_dash="dot", line_color="gray", annotation_text="開盤")
-    
+    fig.add_hline(y=df['Open'].iloc[0], line_dash="dot", line_color="gray", annotation_text="開盤")
     fig.update_layout(
         title=f"<b>⚡ 本日即時/盤後走勢 ({interval_str})</b>",
-        height=300,
+        height=350,
         margin=dict(l=10, r=10, t=40, b=10),
         hovermode="x unified",
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(tickformat='%H:%M', showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor='#eee', tickformat='.2f', range=y_range) 
+        yaxis=dict(showgrid=True, gridcolor='#eee', tickformat='.2f', range=[y_min - padding, y_max + padding]) 
+    )
+    return fig
+
+def plot_relative_strength(df_target, df_bench, target_name, bench_name):
+    if df_target.empty or df_bench.empty: return None
+    
+    # 整理資料並取近 60 個交易日 (約三個月)
+    df1 = df_target[['date', 'close']].tail(60).copy()
+    df2 = df_bench[['date', 'close']].tail(60).copy()
+    
+    # 合併對齊日期
+    merged = pd.merge(df1, df2, on='date', suffixes=('_target', '_bench'), how='inner')
+    if merged.empty: return None
+    
+    # 基準化：將第一天的收盤價設為 100%
+    base_target = merged['close_target'].iloc[0]
+    base_bench = merged['close_bench'].iloc[0]
+    merged['Target_Norm'] = (merged['close_target'] / base_target) * 100
+    merged['Bench_Norm'] = (merged['close_bench'] / base_bench) * 100
+    
+    fig = go.Figure()
+    # 大盤線 (灰色虛線，作為防禦與攻擊的基準線)
+    fig.add_trace(go.Scatter(
+        x=merged['date'], y=merged['Bench_Norm'], mode='lines',
+        line=dict(color='#9ca3af', width=2, dash='dash'), name=bench_name
+    ))
+    # 個股線 (藍色實線)
+    fig.add_trace(go.Scatter(
+        x=merged['date'], y=merged['Target_Norm'], mode='lines',
+        line=dict(color='#2563eb', width=3), name=target_name
+    ))
+    
+    fig.update_layout(
+        title="<b>🛡️ 戰略雷達：相對強勢走勢對比 (近三個月基準化 = 100)</b>",
+        height=350,
+        margin=dict(l=10, r=10, t=40, b=10),
+        hovermode="x unified",
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=True, gridcolor='#eee', title="累積報酬指數")
     )
     return fig
 
 # === 4. 主控台邏輯 ===
 market_categories = {
-    "📈 總體經濟與大盤 (宏觀指標)": {
+    "📈 總體經濟與大盤 (宏觀與風險指標)": {
         "🇹🇼 台灣加權指數 (大盤)": "^TWII",
         "🇺🇸 S&P 500 (標普500)": "^GSPC",
+        "⚠️ VIX 恐慌指數 (風險雷達)": "^VIX",
+        "🏦 美國 10 年期公債殖利率 (無風險利率)": "^TNX",
         "🥇 黃金 (Gold Futures)": "GC=F",
         "🥈 白銀 (Silver Futures)": "SI=F",
         "🛢️ 原油 (WTI Crude)": "CL=F",
         "₿ 比特幣 (BTC-USD)": "BTC-USD",
         "💵 美元指數 (DXY)": "DX-Y.NYB",
-        "💱 美元兌台幣 (USD/TWD)": "TWD=X"
+        "💱 美元兌台幣 (USD/TWD)": "TWD=X",
+        "☁️ 棉花期貨 (化纖上游成本)": "CT=F",
+        "🚢 BDRY 散裝航運 ETF (裕民對標指標)": "BDRY"
     },
     "🏢 遠東集團股票": {
         "🇹🇼 1402 遠東新": "1402", 
@@ -252,7 +276,6 @@ market_categories = {
 
 with st.sidebar:
     st.header("🎯 監控目標")
-    
     selected_category = st.selectbox("📂 選擇分類板塊", list(market_categories.keys()))
     st.markdown("---")
     
@@ -260,31 +283,23 @@ with st.sidebar:
     option = st.radio("🏢 選擇公司 / 標的", list(options_dict.keys()))
     code = options_dict[option]
     
-    # 細部屬性判斷
     is_tw_stock = code.isdigit()
     is_tw_index = (code == "^TWII")
-    is_us_index = (code == "^GSPC")
+    is_us_index = (code in ["^GSPC", "^VIX", "^TNX"])
     is_crypto = ("BTC" in code)
     is_forex = ("=X" in code or "DX" in code)
     is_futures = ("=F" in code)
     
     is_us_stock = not (is_tw_stock or is_tw_index or is_us_index or is_crypto or is_forex or is_futures)
     
-    # 決定市場狀態
-    if is_tw_stock or is_tw_index or code == "TWD=X":
-        market_type = 'TW'
-    elif is_crypto:
-        market_type = 'CRYPTO'
-    else:
-        market_type = 'US'
+    if is_tw_stock or is_tw_index or code == "TWD=X": market_type = 'TW'
+    elif is_crypto: market_type = 'CRYPTO'
+    else: market_type = 'US'
     
     st.divider()
     status_code, status_text = check_market_status(market_type=market_type)
     st.info(f"狀態：{status_text}")
-    
-    if is_us_stock and len(code) > 4:
-         st.caption("ℹ️ 此為 ADR (存託憑證)，走勢與母國連動。")
-
+    if is_us_stock and len(code) > 4: st.caption("ℹ️ 此為 ADR (存託憑證)，走勢與母國連動。")
     if st.button("🔄 刷新情報"):
         st.cache_data.clear()
         st.rerun()
@@ -299,36 +314,38 @@ if is_tw_stock:
             info = real['realtime']
             latest = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else 0.0
             if latest == 0.0: latest = float(info['open']) if info['open'] != '-' else 0.0
-            
             real_data['price'] = latest
             real_data['high'] = info.get('high', '-')
             real_data['low'] = info.get('low', '-')
             real_data['open'] = info.get('open', '-')
             real_data['volume'] = info.get('accumulate_trade_volume', '0') 
-    except:
-        pass
+    except: pass
     hist_data = fetch_twse_history_proxy(code)
-
 else:
     try:
         tk = yf.Ticker(code)
         fi = tk.fast_info
-        
         latest = fi.last_price
         real_data['price'] = latest
         real_data['open'] = fi.open
         real_data['high'] = fi.day_high
         real_data['low'] = fi.day_low
         real_data['volume'] = f"{int(fi.last_volume):,}"
-    except:
-        pass
-    
+    except: pass
     hist_data = fetch_us_history(code)
 
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
+df_intra = get_intraday_chart_data(code, is_us_source=not is_tw_stock)
 
-chart_source_us = not is_tw_stock 
-df_intra = get_intraday_chart_data(code, is_us_source=chart_source_us)
+# 基準數據 (用於相對強弱圖)
+df_bench = pd.DataFrame()
+bench_name = ""
+if not df_daily.empty and not (is_tw_index or code == "^GSPC"):
+    # 台股對標大盤，美股/原物料對標S&P500
+    bench_code = "^TWII" if is_tw_stock else "^GSPC"
+    bench_name = "台灣加權指數" if is_tw_stock else "S&P 500 指數"
+    bench_hist = fetch_us_history(bench_code)
+    if bench_hist: df_bench = pd.DataFrame(bench_hist)
 
 # Fallback 
 current_price = real_data['price']
@@ -338,30 +355,18 @@ if (current_price == 0 or current_price is None) and not df_daily.empty:
     real_data['low'] = df_daily.iloc[-1]['low']
     real_data['open'] = df_daily.iloc[-1]['open']
     vol_num = df_daily.iloc[-1]['volume']
-    
-    if is_tw_stock:
-        real_data['volume'] = f"{int(vol_num / 1000):,}"
-    else: 
-        real_data['volume'] = f"{int(vol_num):,}"
+    real_data['volume'] = f"{int(vol_num / 1000):,}" if is_tw_stock else f"{int(vol_num):,}"
 
 # 計算漲跌
 prev_close = 0
 if not df_daily.empty:
     if not is_tw_stock: 
-        try:
-            prev_close = tk.fast_info.previous_close
-        except:
-            if len(df_daily) > 1:
-                prev_close = df_daily.iloc[-2]['close']
-            else:
-                prev_close = df_daily.iloc[-1]['close']
+        try: prev_close = tk.fast_info.previous_close
+        except: prev_close = df_daily.iloc[-2]['close'] if len(df_daily) > 1 else df_daily.iloc[-1]['close']
     else: 
         last_date = df_daily.iloc[-1]['date']
         today_str = datetime.now().strftime('%Y-%m-%d')
-        if last_date == today_str and len(df_daily) > 1:
-            prev_close = df_daily.iloc[-2]['close']
-        else:
-            prev_close = df_daily.iloc[-1]['close']
+        prev_close = df_daily.iloc[-2]['close'] if last_date == today_str and len(df_daily) > 1 else df_daily.iloc[-1]['close']
 
 change = current_price - prev_close
 pct = (change / prev_close) * 100 if prev_close != 0 else 0
@@ -370,19 +375,11 @@ pct = (change / prev_close) * 100 if prev_close != 0 else 0
 bg_color = "#e6fffa" if change >= 0 else "#fff5f5"
 font_color = "#d0021b" if change >= 0 else "#009944"
 
-# 決定單位符號
-currency_symbol = "$"
-if is_tw_stock or is_tw_index or code == "TWD=X":
-    currency_symbol = "NT$"
-
-if is_tw_index or is_us_index or code == "DX-Y.NYB":
-    unit_label = "Pts"
-elif is_futures and "GC" in code or "SI" in code:
-    unit_label = "/ oz"
-elif is_futures and "CL" in code:
-    unit_label = "/ bbl"
-else:
-    unit_label = ""
+currency_symbol = "NT$" if (is_tw_stock or is_tw_index or code == "TWD=X") else "$"
+unit_label = "Pts" if (is_tw_index or is_us_index or code == "DX-Y.NYB") else \
+             "/ oz" if (is_futures and ("GC" in code or "SI" in code)) else \
+             "/ bbl" if (is_futures and "CL" in code) else \
+             "%" if code == "^TNX" else ""
 
 # A. 價格卡片
 st.markdown(f"""
@@ -390,7 +387,7 @@ st.markdown(f"""
     <h2 style="margin:0; color:#555; font-size: 1.2rem;">{option}</h2>
     <div style="display: flex; align-items: baseline; gap: 15px; margin-top: 5px;">
         <span style="font-size: 3.8rem; font-weight: 800; color: #1d1d1f; letter-spacing: -1px;">
-           {currency_symbol.replace('NT$', '')} {current_price:,.2f} <span style="font-size: 1rem; color:#888">{unit_label}</span>
+           {currency_symbol.replace('NT$', '') if code != '^TNX' else ''} {current_price:,.2f} <span style="font-size: 1rem; color:#888">{unit_label}</span>
         </span>
         <span style="font-size: 1.6rem; font-weight: 600; color: {font_color};">
              {change:+.2f} ({pct:+.2f}%)
@@ -399,7 +396,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# B. 指標列 (根據標的類型決定是否顯示成交量)
+# B. 指標列
 hide_volume = (is_tw_index or is_us_index or is_forex)
 safe_fmt = lambda x: f"{x:,.2f}" if isinstance(x, (int, float)) else x
 
@@ -415,22 +412,19 @@ else:
     c2.metric("最高", safe_fmt(real_data.get('high')))
     c3.metric("最低", safe_fmt(real_data.get('low')))
     c4.metric("昨收", f"{prev_close:,.2f}")
-    
-    vol_label = "成交量 (股/單位)" if not is_tw_stock else "成交量 (張)"
+    vol_label = "成交量 (張)" if is_tw_stock else "成交量 (股/單位)"
     c5.metric(vol_label, real_data.get('volume', '-'))
 
 st.divider()
 
-# C. 圖表
+# C. 圖表佈局 (上方兩個為絕對走勢，下方為相對強弱戰略雷達)
 col1, col2 = st.columns([1, 1])
-
 with col1:
     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
     if df_intra is not None and not df_intra.empty:
         st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
     else:
-        st.warning("⚠️ 無法取得即時分時圖")
-        st.caption("可能原因：盤前/盤後、或資料源限流")
+        st.warning("⚠️ 無法取得即時分時圖 (可能原因：盤前/休市或限流)")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
@@ -439,6 +433,15 @@ with col2:
         st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
     else:
         st.error("無法取得歷史 K 線資料")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# D. 戰略雷達：相對強勢 (排除大盤本身不跟自己比)
+if not df_bench.empty and not df_daily.empty:
+    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+    rs_fig = plot_relative_strength(df_daily, df_bench, option.split(" ")[-1], bench_name)
+    if rs_fig:
+        st.plotly_chart(rs_fig, use_container_width=True)
+        st.caption("💡 **底層決策邏輯**：基準點皆設定為 100。藍線若在灰線上，代表該資產動能超越大盤（相對強勢）；反之則為相對弱勢。用來檢視營運護城河的抗跌性與攻擊力。")
     st.markdown('</div>', unsafe_allow_html=True)
 
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
