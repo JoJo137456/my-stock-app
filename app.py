@@ -7,6 +7,8 @@ import pytz
 import requests
 import urllib3
 import yfinance as yf
+import base64
+import os
 
 # === 0. 系統層級修復 ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -39,31 +41,76 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
-
-# === 1.5 安全防禦機制 (密碼鎖) ===
+# === 1.5 安全防禦機制 (專屬視覺密碼鎖) ===
 def check_password():
     """回傳 True 如果使用者輸入了正確密碼"""
-    # 步驟一：如果場上還沒有 'password_correct' 這個狀態指示物，先幫他放一個並設定為 False
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
-    # 步驟二：如果他已經有 True 的狀態指示物，直接放行
     if st.session_state["password_correct"]:
         return True
 
-    # 步驟三：如果還沒驗證過，在畫面上蓋出一個輸入框
-    st.markdown("### 🔒 聯合稽核總部：系統登入")
-    # type="password" 會將輸入的文字變成隱藏的點點點
-    pwd = st.text_input("請輸入授權密碼", type="password")
+    # ---- 發動場地魔法：設定背景與隱藏側邊欄 ----
+    if os.path.exists('bg.jpg'):
+        with open('bg.jpg', 'rb') as f:
+            encoded_bg = base64.b64encode(f.read()).decode()
+        bg_css = f"""
+            <style>
+            .stApp {{
+                background-image: url("data:image/jpeg;base64,{encoded_bg}");
+                background-size: cover;
+                background-position: center;
+                background-repeat: no-repeat;
+            }}
+            </style>
+        """
+        st.markdown(bg_css, unsafe_allow_html=True)
+    
+    st.markdown(
+        """
+        <style>
+            [data-testid="stSidebar"] {display: none;}
+            [data-testid="collapsedControl"] {display: none;}
+            header {visibility: hidden;}
+            /* 讓白底登入框變得不透明且有陰影 */
+            [data-testid="stVerticalBlockBorderWrapper"] {
+                background-color: rgba(255, 255, 255, 0.98);
+                border-radius: 8px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+                padding: 10px;
+            }
+        </style>
+        """, unsafe_allow_html=True
+    )
 
-    # 步驟四：驗證密碼
-    if pwd == "AUDIT@01":
-        st.session_state["password_correct"] = True
-        st.rerun()  # 密碼正確，重新整理頁面讓它往下執行核心功能
-    elif pwd != "": 
-        # 密碼打錯了，且不是什麼都沒打的狀態
-        st.error("🚫 密碼錯誤，拒絕存取。")
+    # ---- 繪製登入介面卡片 ----
+    st.markdown("<br><br><br>", unsafe_allow_html=True) # 往下推疊，對齊視覺中心
+    col1, col2, col3 = st.columns([1, 1.2, 1]) # 控制中間白框的寬度比例
+    
+    with col2:
+        with st.container(border=True):
+            st.markdown("<h3 style='text-align: center; color: #333; font-weight: 700; margin-bottom: 20px;'>聯稽總部戰略儀表板</h3>", unsafe_allow_html=True)
+            st.markdown("<hr style='margin-bottom: 20px;'>", unsafe_allow_html=True)
+            
+            st.caption("🏢 COMPANY")
+            st.selectbox("company", ["遠東新世紀FENC"], label_visibility="collapsed")
+            
+            st.caption("👤 ACCOUNT")
+            st.text_input("account", value="聯合稽核總部", disabled=True, label_visibility="collapsed")
+            
+            st.caption("🔒 PASSWORD")
+            pwd = st.text_input("password", type="password", label_visibility="collapsed")
+            
+            st.markdown("<p style='font-size: 0.8rem; color: #d9534f; margin-top: -10px; margin-bottom: 20px;'>* 密碼同公司開機或e-mail密碼，若無，則預設密碼為5碼工號。<br><a href='#' style='color:#f0ad4e;'>Forgot Your Password?</a></p>", unsafe_allow_html=True)
+            
+            if st.button("LOG IN", type="primary", use_container_width=True):
+                if pwd == "AUDIT@01":
+                    st.session_state["password_correct"] = True
+                    st.rerun()
+                elif pwd != "":
+                    st.error("🚫 密碼錯誤，拒絕存取。")
+            
+            st.markdown("<div style='font-size: 0.9rem; text-align: center; margin-top: 20px; font-weight: 600; color: #333;'>如有問題，請聯絡<br>聯合稽核總部-李宗念先生 分機:6855</div>", unsafe_allow_html=True)
 
     return False
 
@@ -73,6 +120,7 @@ if not check_password():
 
 
 # === 2. 核心功能模組 ===
+st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
 
 def check_market_status(market_type='TW'):
     now = datetime.now(tw_tz)
