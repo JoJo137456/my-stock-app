@@ -41,7 +41,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# === 1.5 安全防禦機制 (專屬視覺密碼鎖) ===
+# === 1.5 安全防禦機制 (深色專屬視覺密碼鎖) ===
 def check_password():
     """回傳 True 如果使用者輸入了正確密碼"""
     if "password_correct" not in st.session_state:
@@ -72,36 +72,41 @@ def check_password():
             [data-testid="stSidebar"] {display: none;}
             [data-testid="collapsedControl"] {display: none;}
             header {visibility: hidden;}
-            /* 讓白底登入框變得不透明且有陰影 */
+            /* 讓登入框變成深色半透明玻璃質感 */
             [data-testid="stVerticalBlockBorderWrapper"] {
-                background-color: rgba(255, 255, 255, 0.98);
-                border-radius: 8px;
-                box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-                padding: 10px;
+                background-color: rgba(15, 23, 42, 0.85) !important; /* 深海軍藍，高不透明度 */
+                border-radius: 12px !important;
+                border: 1px solid rgba(255, 255, 255, 0.15) !important;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.6) !important;
+                padding: 20px 30px !important;
+                backdrop-filter: blur(5px); /* 背景微模糊，增加立體感 */
             }
         </style>
         """, unsafe_allow_html=True
     )
 
-    # ---- 繪製登入介面卡片 ----
+    # ---- 繪製深色系登入介面卡片 ----
     st.markdown("<br><br><br>", unsafe_allow_html=True) # 往下推疊，對齊視覺中心
     col1, col2, col3 = st.columns([1, 1.2, 1]) # 控制中間白框的寬度比例
     
     with col2:
         with st.container(border=True):
-            st.markdown("<h3 style='text-align: center; color: #333; font-weight: 700; margin-bottom: 20px;'>聯稽總部戰略儀表板</h3>", unsafe_allow_html=True)
-            st.markdown("<hr style='margin-bottom: 20px;'>", unsafe_allow_html=True)
+            # 標題換成純白色
+            st.markdown("<h3 style='text-align: center; color: #ffffff; font-weight: 700; margin-bottom: 20px;'>聯稽總部戰略儀表板</h3>", unsafe_allow_html=True)
+            st.markdown("<hr style='border-color: rgba(255,255,255,0.2); margin-top: -10px; margin-bottom: 20px;'>", unsafe_allow_html=True)
             
-            st.caption("🏢 COMPANY")
+            # 欄位標題換成淺灰藍色，增加質感
+            st.markdown("<div style='color: #cbd5e1; font-size: 0.85rem; margin-bottom: 5px; font-weight: 600;'>🏢 COMPANY</div>", unsafe_allow_html=True)
             st.selectbox("company", ["遠東新世紀FENC"], label_visibility="collapsed")
             
-            st.caption("👤 ACCOUNT")
+            st.markdown("<div style='color: #cbd5e1; font-size: 0.85rem; margin-bottom: 5px; margin-top: 10px; font-weight: 600;'>👤 ACCOUNT</div>", unsafe_allow_html=True)
             st.text_input("account", value="聯合稽核總部", disabled=True, label_visibility="collapsed")
             
-            st.caption("🔒 PASSWORD")
+            st.markdown("<div style='color: #cbd5e1; font-size: 0.85rem; margin-bottom: 5px; margin-top: 10px; font-weight: 600;'>🔒 PASSWORD</div>", unsafe_allow_html=True)
             pwd = st.text_input("password", type="password", label_visibility="collapsed")
             
-            st.markdown("<p style='font-size: 0.8rem; color: #d9534f; margin-top: -10px; margin-bottom: 20px;'>* 密碼同公司開機或e-mail密碼，若無，則預設密碼為5碼工號。<br><a href='#' style='color:#f0ad4e;'>Forgot Your Password?</a></p>", unsafe_allow_html=True)
+            # 警告小字換成亮粉色與金黃色，在深色背景上更清楚
+            st.markdown("<p style='font-size: 0.8rem; color: #fca5a5; margin-top: 5px; margin-bottom: 20px;'>* 密碼同公司開機或e-mail密碼，若無，則預設密碼為5碼工號。<br><a href='#' style='color:#fbbf24;'>Forgot Your Password?</a></p>", unsafe_allow_html=True)
             
             if st.button("LOG IN", type="primary", use_container_width=True):
                 if pwd == "AUDIT@01":
@@ -110,7 +115,8 @@ def check_password():
                 elif pwd != "":
                     st.error("🚫 密碼錯誤，拒絕存取。")
             
-            st.markdown("<div style='font-size: 0.9rem; text-align: center; margin-top: 20px; font-weight: 600; color: #333;'>如有問題，請聯絡<br>聯合稽核總部-李宗念先生 分機:6855</div>", unsafe_allow_html=True)
+            # 聯絡人資訊換成純白加粗字體
+            st.markdown("<div style='font-size: 0.95rem; text-align: center; margin-top: 20px; font-weight: 700; color: #ffffff; letter-spacing: 0.5px;'>如有問題，請聯絡<br>聯合稽核總部-李宗念先生 分機:6855</div>", unsafe_allow_html=True)
 
     return False
 
