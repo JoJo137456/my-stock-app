@@ -41,6 +41,37 @@ st.markdown("""
 
 st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
 
+# === 1.5 安全防禦機制 (密碼鎖) ===
+def check_password():
+    """回傳 True 如果使用者輸入了正確密碼"""
+    # 步驟一：如果場上還沒有 'password_correct' 這個狀態指示物，先幫他放一個並設定為 False
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+
+    # 步驟二：如果他已經有 True 的狀態指示物，直接放行
+    if st.session_state["password_correct"]:
+        return True
+
+    # 步驟三：如果還沒驗證過，在畫面上蓋出一個輸入框
+    st.markdown("### 🔒 聯合稽核總部：系統登入")
+    # type="password" 會將輸入的文字變成隱藏的點點點
+    pwd = st.text_input("請輸入授權密碼", type="password")
+
+    # 步驟四：驗證密碼
+    if pwd == "AUDIT@01":
+        st.session_state["password_correct"] = True
+        st.rerun()  # 密碼正確，重新整理頁面讓它往下執行核心功能
+    elif pwd != "": 
+        # 密碼打錯了，且不是什麼都沒打的狀態
+        st.error("🚫 密碼錯誤，拒絕存取。")
+
+    return False
+
+# 終極防線：如果上面的檢查沒過（回傳 False），就在這裡停住後面所有的程式碼
+if not check_password():
+    st.stop()
+
+
 # === 2. 核心功能模組 ===
 
 def check_market_status(market_type='TW'):
