@@ -20,7 +20,7 @@ requests.Session.request = patched_request
 st.set_page_config(page_title="FENC Audit HQ | Strategic Dashboard", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-# === 全新明亮系現代化登入介面 (依圖片模板打造) ===
+# === 淺藍系現代化登入介面 ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -35,13 +35,13 @@ def check_password():
         /* 隱藏預設元素 */
         [data-testid="stSidebar"], header, [data-testid="collapsedControl"] {display: none !important;}
         
-        /* 全域背景設定 */
+        /* 全域背景設定 - 改為淺藍色系 */
         .stApp {
-            background-color: #FDF4EF !important; /* 模板的暖膚底色 */
+            background-color: #F0F8FF !important; /* 乾淨的 Alice Blue 淺藍底色 */
             font-family: 'Poppins', sans-serif !important;
         }
         
-        /* 左下角的巨大圓弧色塊 */
+        /* 左下角的巨大圓弧色塊 - 柔和的藍色 */
         .stApp::before {
             content: '';
             position: fixed;
@@ -49,7 +49,7 @@ def check_password():
             left: -15vw;
             width: 65vw;
             height: 65vw;
-            background-color: #F8DAC9;
+            background-color: #D6EAF8; /* 稍深的柔和藍色 */
             border-radius: 50%;
             z-index: 0;
         }
@@ -86,27 +86,26 @@ def check_password():
             letter-spacing: -2px;
         }
         .hero-title-outline {
-            font-size: 75px;
+            font-size: 55px; /* 稍微縮小以容納長字串 */
             font-weight: 800;
             color: transparent;
             -webkit-text-stroke: 1.5px #1A1B20;
-            line-height: 1.1;
+            line-height: 1.2;
             margin-bottom: 50px;
             letter-spacing: -1px;
         }
         
-        /* 左側 Learn Now 按鈕 */
-        .btn-learn {
+        /* 左側 Dashboard 標籤 (純視覺，無點擊效果) */
+        .label-dashboard {
             background-color: #1A1B20;
             color: #ffffff;
             padding: 14px 32px;
             border-radius: 8px;
-            text-decoration: none;
             font-weight: 500;
             font-size: 14px;
             display: inline-block;
+            cursor: default; /* 游標保持預設箭頭 */
         }
-        .btn-learn:hover { color: #FDF4EF; }
 
         /* === 右側白底登入卡片 === */
         .login-wrapper {
@@ -117,11 +116,18 @@ def check_password():
             margin-top: 20px;
             position: relative;
         }
+        .login-dept {
+            font-size: 14px;
+            color: #666666;
+            font-weight: 600;
+            margin-bottom: 5px;
+            letter-spacing: 1px;
+        }
         .login-title {
             font-size: 26px;
             font-weight: 800;
             color: #1A1B20;
-            margin-bottom: 30px;
+            margin-bottom: 25px;
         }
         .login-label {
             font-size: 13px;
@@ -171,6 +177,15 @@ def check_password():
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         }
+        
+        /* IT Contact 聯絡資訊 */
+        .it-contact {
+            margin-top: 25px;
+            text-align: center;
+            font-size: 12.5px;
+            color: #888888;
+            font-weight: 500;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -181,22 +196,24 @@ def check_password():
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown('<div class="hero-subtitle">Net Banking</div>', unsafe_allow_html=True)
         st.markdown('<div class="hero-title-solid">Audit. HQ</div>', unsafe_allow_html=True)
-        st.markdown('<div class="hero-title-outline">Taiwan</div>', unsafe_allow_html=True)
-        st.markdown('<a href="#" class="btn-learn">Learn Now ──</a>', unsafe_allow_html=True)
+        st.markdown('<div class="hero-title-outline">Far Eastone Group</div>', unsafe_allow_html=True)
+        # 移除了連結，改為純標籤
+        st.markdown('<div class="label-dashboard">Dashboard</div>', unsafe_allow_html=True)
         
     with col_right:
         st.markdown('<div class="login-wrapper">', unsafe_allow_html=True)
+        # 加上聯合稽核總部
+        st.markdown('<div class="login-dept">聯合稽核總部</div>', unsafe_allow_html=True)
         st.markdown('<div class="login-title">Login Now</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="login-label">Customer ID</div>', unsafe_allow_html=True)
-        st.text_input("", value="490.892.812-007", label_visibility="collapsed", key="acc_id")
+        st.text_input("", value="fenc07822", label_visibility="collapsed", key="acc_id")
         
         st.markdown('<div class="login-label" style="margin-top:20px;">Enter Passcode</div>', unsafe_allow_html=True)
         pwd = st.text_input("", type="password", label_visibility="collapsed", key="pwd")
         
         st.markdown('<div class="terms-text">By login, you agree to our <a href="#">Terms & Conditions</a></div>', unsafe_allow_html=True)
         
-        # 底部按鈕與忘記密碼區塊
         btn_col, link_col = st.columns([1, 1])
         with btn_col:
             if st.button("Login Now ──", type="primary", use_container_width=True):
@@ -207,6 +224,9 @@ def check_password():
                     st.error("Invalid credentials")
         with link_col:
             st.markdown('<div style="text-align: right; padding-top: 15px;"><a href="#" style="color: #888; font-size: 13px; font-weight: 500; text-decoration: underline;">Forgot Passcode</a></div>', unsafe_allow_html=True)
+        
+        # 加上專屬 IT 聯絡資訊
+        st.markdown('<div class="it-contact">IT Contact Curt Lee (#6855)</div>', unsafe_allow_html=True)
             
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -215,7 +235,7 @@ def check_password():
 if not check_password():
     st.stop()
 
-# === 以下為主儀表板程式碼 (登入後才會顯示，這部分需改回深色模式以避免排版衝突) ===
+# === 以下為主儀表板程式碼 ===
 st.markdown("""
     <style>
         .stApp { background: #000000 !important; color: #f5f5f7 !important; }
