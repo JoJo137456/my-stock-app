@@ -216,7 +216,6 @@ if not check_password():
     st.stop()
 
 # === 以下為主儀表板程式碼 (登入後才會顯示，這部分需改回深色模式以避免排版衝突) ===
-# 為了避免登入頁面的亮色系影響內部儀表板，我們在登入成功後強制切換回黑色系 CSS
 st.markdown("""
     <style>
         .stApp { background: #000000 !important; color: #f5f5f7 !important; }
@@ -436,8 +435,51 @@ else:
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 df_intra = get_intraday_chart_data(code, is_us_source=not is_tw_stock)
 current_price = real_data['price']
+
 if (current_price == 0 or current_price is None) and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
     real_data['high'] = df_daily.iloc[-1]['high']
     real_data['low'] = df_daily.iloc[-1]['low']
-    real_data['open'] = df_daily.iloc[-1]['
+    real_data['open'] = df_daily.iloc[-1]['open']
+    vol_num = df_daily.iloc[-1]['volume']
+    real_data['volume'] = f"{int(vol_num / 1000):,}" if is_tw_stock else f"{int(vol_num):,}"
+
+prev_close = 0
+if not df_daily.empty:
+    if not is_tw_stock:
+        try: prev_close = tk.fast_info.previous_close
+        except: prev_close = df_daily.iloc[-2]['close'] if len(df_daily) > 1 else df_daily.iloc[-1]['close']
+    else:
+        last_date = df_daily.iloc[-1]['date']
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        prev_close = df_daily.iloc[-2]['close'] if last_date == today_str and len(df_daily) > 1 else df_daily.iloc[-1]['close']
+
+change = current_price - prev_close
+pct = (change / prev_close) * 100 if prev_close != 0 else 0
+
+font_color = "#34c759" if change >= 0 else "#ff3b30"
+currency_symbol = "NT$" if (is_tw_stock or is_tw_index or code == "TWD=X") else "$"
+
+st.markdown(f"""
+<div style="background-color: #1c1c1e; padding: 30px; border-radius: 20px; margin-bottom: 25px; border: 1px solid #38383a;">
+    <h2 style="margin:0; color:#86868b; font-size: 1.1rem;">{option}</h2>
+    <div style="display: flex; align-items: baseline; gap: 20px; margin-top: 8px;">
+        <span style="font-size: 3.8rem; font-weight: 700; color: #f5f5f7;">
+           {currency_symbol.replace('NT$', '') if code != '^TNX' else ''} {current_price:,.2f}
+        </span>
+        <span style="font-size: 1.8rem; font-weight: 600; color: {font_color};">
+             {change:+.2f} ({pct:+.2f}%)
+        </span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+col1, col2 = st.columns([1, 1])
+with col1:
+    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+    if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+with col2:
+    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+    if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
