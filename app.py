@@ -22,7 +22,7 @@ requests.Session.request = patched_request
 st.set_page_config(page_title="FENC Audit HQ | Strategic Dashboard", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei') 
 
-# === 1.5 Security & Authentication (Solid Apple Dark Mode UI) ===
+# === 1.5 Security & Authentication (High Contrast Apple Style) ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -57,60 +57,85 @@ def check_password():
             [data-testid="collapsedControl"] {display: none;}
             header {visibility: hidden;}
             
-            /* 1. Bulletproof Dark Container (防彈級太空灰底框) */
+            /* Main Container: Subtle dark translucent background */
             [data-testid="stVerticalBlockBorderWrapper"] {
-                background-color: rgba(28, 28, 30, 0.95) !important; /* iOS 系統級深灰色，95%不透明 */
-                border-radius: 20px !important;
-                border: 1px solid rgba(255, 255, 255, 0.15) !important;
-                box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8) !important;
+                background-color: rgba(20, 20, 25, 0.75) !important;
+                backdrop-filter: blur(10px) !important;
+                -webkit-backdrop-filter: blur(10px) !important;
+                border-radius: 24px !important;
+                border: 1px solid rgba(255, 255, 255, 0.2) !important;
+                box-shadow: 0 30px 60px rgba(0, 0, 0, 0.7) !important;
                 padding: 40px !important;
             }
             
-            /* 2. Bulletproof Input Fields (強制覆寫輸入框為深灰底、白字) */
-            input[type="text"], input[type="password"], div[data-baseweb="select"] > div {
-                background-color: #2C2C2E !important; 
-                color: #FFFFFF !important;
-                border: 1px solid #3A3A3C !important;
-                border-radius: 10px !important;
-                font-size: 1.05rem !important;
-                font-weight: 500 !important;
-                -webkit-text-fill-color: #FFFFFF !important; /* 強制文字填色為白 */
+            /* Custom Title Box (使用者提議的專屬標題框) */
+            .title-box {
+                background-color: rgba(0, 0, 0, 0.65);
+                padding: 20px;
+                border-radius: 16px;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                margin-bottom: 30px;
+                text-align: center;
+                box-shadow: 0 10px 20px rgba(0,0,0,0.5);
             }
-            div[data-baseweb="select"] span {
-                color: #FFFFFF !important;
+            .title-box h2 {
+                color: #ffffff !important;
+                margin: 0 !important;
+                font-weight: 800;
+                letter-spacing: 2px;
+                font-size: 2.2rem;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.8);
             }
             
-            /* 輸入框點擊時的藍色光暈 */
+            /* Inputs: Dark translucent background with white borders */
+            div[data-baseweb="input"] > div, div[data-baseweb="select"] > div {
+                background-color: rgba(0, 0, 0, 0.5) !important;
+                border: 1px solid rgba(255, 255, 255, 0.4) !important;
+                border-radius: 12px !important;
+                transition: all 0.3s ease !important;
+            }
             div[data-baseweb="input"] > div:focus-within, div[data-baseweb="select"] > div:focus-within {
-                border: 1px solid #0A84FF !important;
+                border: 1px solid #0A84FF !important; /* Apple Blue Focus */
+                background-color: rgba(0, 0, 0, 0.7) !important;
             }
             
-            /* 3. Apple-style Primary Button (白色圓角按鈕) */
+            /* Typography inside inputs: Pure White */
+            input, select, div[data-baseweb="select"] span { 
+                color: #ffffff !important; 
+                font-size: 1.1rem !important;
+                font-weight: 600 !important;
+                letter-spacing: 0.5px !important;
+                -webkit-text-fill-color: #ffffff !important; 
+            }
+            
+            /* Apple-style Primary Button */
             button[kind="primary"] {
-                background-color: #FFFFFF !important; 
+                background-color: #ffffff !important; 
                 color: #000000 !important; 
                 font-weight: 700 !important;
                 font-size: 1.1rem !important;
+                letter-spacing: 0.5px !important;
                 border: none !important;
                 border-radius: 20px !important;
                 padding: 12px !important;
                 transition: all 0.2s ease !important;
             }
             button[kind="primary"]:hover {
-                background-color: #E5E5EA !important;
+                background-color: #e5e5ea !important;
                 transform: scale(1.02);
             }
             
-            /* Custom minimalist labels */
+            /* Custom minimalist labels: Pure White */
             .apple-label {
-                font-size: 0.75rem;
-                font-weight: 600;
+                font-size: 0.8rem;
+                font-weight: 700;
                 letter-spacing: 0.1em;
-                color: #86868B;
+                color: #ffffff;
                 text-transform: uppercase;
                 margin-bottom: 8px;
                 margin-top: 16px;
                 display: block;
+                text-shadow: 0 1px 3px rgba(0,0,0,0.8);
             }
         </style>
         """, unsafe_allow_html=True
@@ -121,7 +146,12 @@ def check_password():
     
     with col2:
         with st.container(border=True):
-            st.markdown("<h2 style='text-align: center; color: #F5F5F7; font-weight: 700; margin-bottom: 30px; letter-spacing: 1px; font-size: 2.2rem;'>Audit HQ Portal</h2>", unsafe_allow_html=True)
+            # Title wrapped in a dedicated dark box
+            st.markdown("""
+                <div class='title-box'>
+                    <h2>Audit HQ Portal</h2>
+                </div>
+            """, unsafe_allow_html=True)
             
             st.markdown("<span class='apple-label'>Organization</span>", unsafe_allow_html=True)
             st.selectbox("company", ["Far Eastern New Century (FENC)"], label_visibility="collapsed")
@@ -132,8 +162,9 @@ def check_password():
             st.markdown("<span class='apple-label'>Password</span>", unsafe_allow_html=True)
             pwd = st.text_input("password", type="password", label_visibility="collapsed")
             
+            # Subtitle instructions in pure white with text-shadow for readability
             st.markdown("""
-                <div style='font-size: 0.8rem; color: #86868B; margin-top: 16px; margin-bottom: 30px; line-height: 1.5; text-align: center; font-weight: 400;'>
+                <div style='font-size: 0.85rem; color: #ffffff; margin-top: 20px; margin-bottom: 30px; line-height: 1.6; text-align: center; font-weight: 500; text-shadow: 0 1px 3px rgba(0,0,0,0.8);'>
                 Use your corporate PC/Email credentials.<br>
                 For plant operations, use the leave/overtime password.
                 </div>
@@ -148,9 +179,9 @@ def check_password():
             
             st.markdown("""
                 <div style='display: flex; justify-content: center; gap: 20px; margin-top: 25px;'>
-                    <a href='#' style='color: #0A84FF; font-size: 0.85rem; text-decoration: none;'>Forgot Password?</a>
-                    <span style='color: #424245;'>|</span>
-                    <a href='#' style='color: #0A84FF; font-size: 0.85rem; text-decoration: none;'>Contact Support (Ext. 6855)</a>
+                    <a href='#' style='color: #60A5FA; font-size: 0.9rem; font-weight: 600; text-decoration: none; text-shadow: 0 1px 2px rgba(0,0,0,0.8);'>Forgot Password?</a>
+                    <span style='color: #ffffff;'>|</span>
+                    <a href='#' style='color: #60A5FA; font-size: 0.9rem; font-weight: 600; text-decoration: none; text-shadow: 0 1px 2px rgba(0,0,0,0.8);'>Contact Support (Ext. 6855)</a>
                 </div>
             """, unsafe_allow_html=True)
 
