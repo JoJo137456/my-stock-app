@@ -7,6 +7,8 @@ import pytz
 import requests
 import urllib3
 import yfinance as yf
+import base64
+import os
 
 # === 0. System Level Fixes ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -20,228 +22,207 @@ requests.Session.request = patched_request
 st.set_page_config(page_title="FENC Audit HQ | Strategic Dashboard", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-# === 淺藍系現代化登入介面 ===
+# === 最終版工業 SCADA 登入介面 ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if st.session_state["password_correct"]:
         return True
 
-    # 注入 Google 字體與全版 CSS (包含 Noto Sans TC 以支援繁體中文設計)
-    st.markdown("""
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;800&family=Noto+Sans+TC:wght@500;700;900&display=swap');
-
-        /* 隱藏預設元素 */
-        [data-testid="stSidebar"], header, [data-testid="collapsedControl"] {display: none !important;}
-        
-        /* 全域背景設定 - 淺藍色系 */
-        .stApp {
-            background-color: #F0F8FF !important; 
-            font-family: 'Poppins', 'Noto Sans TC', sans-serif !important;
-        }
-        
-        /* 左下角的巨大圓弧色塊 - 柔和的藍色 */
-        .stApp::before {
+    # 背景圖
+    if os.path.exists('bg.jpg'):
+        with open('bg.jpg', 'rb') as f:
+            encoded_bg = base64.b64encode(f.read()).decode()
+        bg_css = f"""
+        <style>
+        .stApp {{
+            background-image: url("data:image/jpeg;base64,{encoded_bg}") !important;
+            background-size: cover !important;
+            background-position: center !important;
+            background-attachment: fixed !important;
+        }}
+        .stApp::before {{
             content: '';
             position: fixed;
-            bottom: -30vh;
-            left: -15vw;
-            width: 65vw;
-            height: 65vw;
-            background-color: #D6EAF8; 
-            border-radius: 50%;
-            z-index: 0;
-        }
+            inset: 0;
+            background: linear-gradient(rgba(0,0,0,0.75), rgba(0,0,0,0.85));
+            z-index: -1;
+        }}
+        </style>
+        """
+        st.markdown(bg_css, unsafe_allow_html=True)
 
-        /* 將內容層次推至最上層 */
-        .main .block-container {
-            z-index: 1;
-            padding-top: 10vh !important;
-        }
-
-        /* === 左側文字排版 === */
-        .hero-subtitle {
-            font-size: 16px;
-            font-weight: 700;
-            color: #1A1B20;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            letter-spacing: 0.5px;
-        }
-        .hero-subtitle::before {
-            content: '';
-            display: inline-block;
-            width: 40px;
-            height: 2px;
-            background-color: #1A1B20;
-            margin-right: 15px;
-        }
-        .hero-title-solid {
-            font-size: 80px;
-            font-weight: 800;
-            color: #1A1B20;
-            line-height: 1.1;
-            margin-bottom: 0;
-            letter-spacing: -2px;
+    # 調整後的 SCADA 工業風 CSS
+    st.markdown("""
+    <style>
+        [data-testid="stSidebar"], header, [data-testid="collapsedControl"] {display: none !important;}
+        
+        /* 主卡片 */
+        .scada-card {
+            background: rgba(15, 18, 25, 0.92);
+            backdrop-filter: blur(24px);
+            border: 2px solid #00ff9f;
+            border-radius: 18px;
+            padding: 60px 55px 50px;
+            max-width: 460px;
+            margin: 90px auto 40px;
+            box-shadow: 0 0 40px rgba(0, 255, 159, 0.25), 0 25px 60px rgba(0, 0, 0, 0.8);
         }
         
-        /* 強化的輪廓字體設計 */
-        .hero-title-outline {
-            font-size: 55px; 
+        /* 標題 - 強 neon 發光 */
+        .scada-title {
+            font-size: 42px;
             font-weight: 900;
-            color: transparent;
-            -webkit-text-stroke: 1.5px #1A1B20;
-            line-height: 1.2;
-            margin-top: 5px;
-            margin-bottom: 50px;
-            letter-spacing: 1px;
-        }
-        
-        /* 左側 Dashboard 標籤 (純視覺，無點擊效果) */
-        .label-dashboard {
-            background-color: #1A1B20;
             color: #ffffff;
-            padding: 14px 32px;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 14px;
-            display: inline-block;
-            cursor: default; 
-            letter-spacing: 1px;
-        }
-
-        /* === 右側白底登入卡片 === */
-        [data-testid="column"]:nth-of-type(3) {
-            background: #ffffff;
-            border-radius: 20px;
-            padding: 40px 35px;
-            box-shadow: 0 15px 35px rgba(0,0,0,0.04);
-            margin-top: 20px;
-        }
-        
-        /* 視覺焦點：巨大的中文部門標題 */
-        .login-dept {
-            font-size: 28px;
-            color: #1A1B20;
-            font-weight: 900;
-            margin-bottom: 2px;
-            letter-spacing: 1.5px;
-        }
-        /* 弱化的 Login Now 副標題 */
-        .login-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: #888888;
-            margin-bottom: 30px;
-        }
-        .login-label {
-            font-size: 13px;
-            color: #888888;
+            text-align: center;
+            letter-spacing: 3px;
             margin-bottom: 8px;
-            font-weight: 600;
+            text-shadow: 0 0 15px #00ff9f, 0 0 30px #00ff9f, 0 0 45px #00ff9f;
         }
         
-        /* 覆寫 Streamlit 輸入框外觀 */
+        /* 副標題 - neon 發光 */
+        .scada-subtitle {
+            font-size: 17px;
+            color: #a0f0d0;
+            text-align: center;
+            margin-bottom: 50px;
+            font-weight: 500;
+            text-shadow: 0 0 12px #00ff9f;
+        }
+        
+        /* 標籤 - 強烈 neon 發光 (與標題相同風格) */
+        .scada-label {
+            font-size: 14px;
+            font-weight: 700;
+            color: #00ff9f;
+            margin: 25px 0 8px 0;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            display: block;
+            text-align: center;
+            text-shadow: 0 0 10px #00ff9f, 0 0 20px #00ff9f, 0 0 30px #00ff9f;
+        }
+        
+        /* ORGANIZATION 的純白文字 */
+        .scada-org-text {
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: 600;
+            text-align: center;
+            letter-spacing: 1px;
+            margin-bottom: 25px;
+            text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+        }
+        
+        /* 輸入框 - 完全移除外框，改為透明與完美置中 */
         div[data-baseweb="input"] > div {
-            border: 1px solid #E0E0E0 !important;
-            background-color: #ffffff !important;
-            border-radius: 8px !important;
-            height: 52px !important;
+            background-color: transparent !important;
+            border: none !important;
+            border-bottom: 1px solid rgba(0, 255, 159, 0.3) !important;
+            border-radius: 0 !important;
+            height: 45px !important;
             box-shadow: none !important;
         }
-        div[data-baseweb="input"] > div:hover { border-color: #1A1B20 !important; }
-        div[data-baseweb="input"]:focus-within > div { border: 1.5px solid #1A1B20 !important; }
-        
         div[data-baseweb="input"] input {
-            color: #1A1B20 !important;
-            padding: 12px 16px !important;
-            font-size: 15px !important;
+            color: #ffffff !important;
+            text-align: center !important;
+            font-size: 20px !important;
             font-weight: 500 !important;
+            padding: 0 !important; /* 確保完美置中 */
+            letter-spacing: 1.5px;
+        }
+        /* 隱藏輸入框右側的清除 (X) 圖示，避免文字被擠歪 */
+        div[data-baseweb="input"] > div > div:nth-child(2) {
+            display: none !important;
+        }
+        /* 輸入時的底部發光特效 */
+        div[data-baseweb="input"]:focus-within > div {
+            border-color: transparent !important;
+            border-bottom: 2px solid #00ff9f !important;
+            box-shadow: 0 15px 15px -15px rgba(0, 255, 159, 0.8) !important;
         }
         
-        /* 條款文字 */
-        .terms-text {
-            font-size: 12px;
-            color: #A0A0A0;
-            margin: 20px 0;
-            font-weight: 500;
-        }
-        .terms-text a { color: #A0A0A0; text-decoration: underline; }
-
-        /* Login 按鈕 */
+        /* Sign In 按鈕 */
         button[kind="primary"] {
-            background-color: #1A1B20 !important;
-            color: white !important;
-            border-radius: 8px !important;
-            height: 50px !important;
-            font-weight: 600 !important;
-            padding: 0 35px !important;
-            border: none !important;
-            letter-spacing: 0.5px;
+            background: linear-gradient(90deg, #00b8ff, #0090ff) !important;
+            color: #ffffff !important;
+            font-size: 18px !important;
+            font-weight: 700 !important;
+            height: 60px !important;
+            border-radius: 12px !important;
+            margin-top: 35px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
         }
         button[kind="primary"]:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            background: linear-gradient(90deg, #00ff9f, #00b8ff) !important;
+            box-shadow: 0 0 30px rgba(0, 255, 159, 0.6);
+            transform: scale(1.03);
         }
         
-        /* IT Contact 聯絡資訊 */
-        .it-contact {
-            margin-top: 25px;
+        /* 底部連結 - 強烈 neon 發光 */
+        .scada-footer {
             text-align: center;
-            font-size: 12.5px;
-            color: #888888;
-            font-weight: 600;
+            margin-top: 45px;
+            font-size: 15px;
         }
+        .scada-footer a, .scada-footer span {
+            color: #00ff9f;
+            text-decoration: none;
+            font-weight: 700;
+            text-shadow: 0 0 10px #00ff9f, 0 0 20px #00ff9f;
+            letter-spacing: 0.5px;
+        }
+        .scada-footer a:hover { text-decoration: underline; }
     </style>
     """, unsafe_allow_html=True)
 
-    # 頁面對齊佈局 (左、中、右)
-    col_left, spacer, col_right = st.columns([1.1, 0.2, 0.9])
+    st.markdown("<br><br><br><br>", unsafe_allow_html=True)
     
-    with col_left:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown('<div class="hero-subtitle">Strategic Command</div>', unsafe_allow_html=True)
-        st.markdown('<div class="hero-title-solid">Audit. HQ</div>', unsafe_allow_html=True)
-        st.markdown('<div class="hero-title-outline">Far Eastern Group</div>', unsafe_allow_html=True)
-        st.markdown('<div class="label-dashboard">Intelligence Nexus</div>', unsafe_allow_html=True)
-        
-    with col_right:
-        st.markdown('<div class="login-dept">遠東聯合稽核總部</div>', unsafe_allow_html=True)
-        st.markdown('<div class="login-title">Login Now</div>', unsafe_allow_html=True)
-        
-        st.markdown('<div class="login-label">Customer ID</div>', unsafe_allow_html=True)
-        st.text_input("", value="fenc07822", label_visibility="collapsed", key="acc_id")
-        
-        st.markdown('<div class="login-label" style="margin-top:20px;">Enter Passcode</div>', unsafe_allow_html=True)
-        pwd = st.text_input("", type="password", label_visibility="collapsed", key="pwd")
-        
-        st.markdown('<div class="terms-text">By login, you agree to our <a href="#">Terms & Conditions</a></div>', unsafe_allow_html=True)
-        
-        btn_col, link_col = st.columns([1, 1])
-        with btn_col:
-            if st.button("Login Now ──", type="primary", use_container_width=True):
+    col1, col2, col3 = st.columns([1, 1.65, 1])
+    with col2:
+        with st.container():
+            st.markdown('<div class="scada-card">', unsafe_allow_html=True)
+            
+            st.markdown('<div class="scada-title">AUDIT HQ</div>', unsafe_allow_html=True)
+            st.markdown('<div class="scada-subtitle">FENC Corporate Control Access</div>', unsafe_allow_html=True)
+            
+            # 修改點 1 & 2: 螢光標籤與純白文字 (取代下拉選單)
+            st.markdown('<span class="scada-label">ORGANIZATION</span>', unsafe_allow_html=True)
+            st.markdown('<div class="scada-org-text">Far Eastern New Century (FENC)</div>', unsafe_allow_html=True)
+            
+            # 修改點 3 & 4: 螢光標籤與無框完美置中的輸入框
+            st.markdown('<span class="scada-label">ACCOUNT ID</span>', unsafe_allow_html=True)
+            st.text_input("", value="Audit_HQ_Admin", label_visibility="collapsed", key="acc_id")
+            
+            st.markdown('<span class="scada-label">PASSWORD</span>', unsafe_allow_html=True)
+            pwd = st.text_input("", type="password", label_visibility="collapsed", key="pwd")
+            
+            if st.button("SIGN IN", type="primary", use_container_width=True):
                 if pwd == "AUDIT@01":
                     st.session_state["password_correct"] = True
                     st.rerun()
                 elif pwd != "":
-                    st.error("Invalid credentials")
-        with link_col:
-            st.markdown('<div style="text-align: right; padding-top: 15px;"><a href="#" style="color: #888; font-size: 13px; font-weight: 600; text-decoration: underline;">Forgot Passcode</a></div>', unsafe_allow_html=True)
-        
-        st.markdown('<div class="it-contact">IT Contact Curt Lee (#6855)</div>', unsafe_allow_html=True)
+                    st.error("❌ ACCESS DENIED — Invalid credentials")
+            
+            # 修改點 5: 底部發光文字
+            st.markdown("""
+            <div class="scada-footer">
+                <a href="#">Forgot Password</a> <span style="color:#a0f0d0; text-shadow:none;">•</span> <a href="#">IT Support (ext. 6855)</a>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown('</div>', unsafe_allow_html=True)
 
     return False
 
 if not check_password():
     st.stop()
 
-# === 以下為主儀表板程式碼 ===
+# === 以下為主儀表板程式碼 (維持原樣) ===
 st.markdown("""
     <style>
         .stApp { background: #000000 !important; color: #f5f5f7 !important; }
-        .stApp::before { display: none !important; } 
         .main-title { font-size: 2.6rem; font-weight: 700; color: #f5f5f7; text-align: center; margin: 1.5rem 0; letter-spacing: 1px;}
         .sub-title { font-size: 1.15rem; color: #86868b; text-align: center; margin-bottom: 2.5rem; font-weight: 400;}
         .chart-container {
@@ -392,11 +373,17 @@ market_categories = {
         "SOX (Semiconductor)": "^SOX", "VIX (Volatility)": "^VIX",
         "U.S. 10Y Treasury": "^TNX", "Gold Futures": "GC=F",
         "WTI Crude Oil": "CL=F", "Bitcoin (Crypto)": "BTC-USD",
-        "US Dollar Index (DXY)": "DX-Y.NYB", "USD/TWD": "TWD=X"
+        "US Dollar Index (DXY)": "DX-Y.NYB", "USD/TWD": "TWD=X",
+        "Cotton Futures": "CT=F", "BDRY (Shipping ETF)": "BDRY"
     },
     "Core Business Entities": {
         "1402 FENC": "1402", "1102 ACC": "1102", "2606 U-Ming": "2606",
         "1460 Everest": "1460", "2903 FEDS": "2903", "4904 FET": "4904", "1710 OUCC": "1710"
+    },
+    "Global Brand Peers (Apparel)": {
+        "Nike": "NKE", "Under Armour": "UAA", "Lululemon": "LULU",
+        "Adidas (ADR)": "ADDYY", "Puma (ADR)": "PUMSY", "Columbia": "COLM",
+        "Gap Inc": "GAP", "Fast Retailing (ADR)": "FRCOY", "VF Corp": "VFC"
     }
 }
 
@@ -457,7 +444,6 @@ else:
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 df_intra = get_intraday_chart_data(code, is_us_source=not is_tw_stock)
 current_price = real_data['price']
-
 if (current_price == 0 or current_price is None) and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
     real_data['high'] = df_daily.iloc[-1]['high']
@@ -481,13 +467,17 @@ pct = (change / prev_close) * 100 if prev_close != 0 else 0
 
 font_color = "#34c759" if change >= 0 else "#ff3b30"
 currency_symbol = "NT$" if (is_tw_stock or is_tw_index or code == "TWD=X") else "$"
+unit_label = "Pts" if (is_tw_index or is_us_index or code == "DX-Y.NYB") else \
+             "/ oz" if (is_futures and ("GC" in code or "SI" in code)) else \
+             "/ bbl" if (is_futures and "CL" in code) else \
+             "%" if code == "^TNX" else ""
 
 st.markdown(f"""
-<div style="background-color: #1c1c1e; padding: 30px; border-radius: 20px; margin-bottom: 25px; border: 1px solid #38383a;">
-    <h2 style="margin:0; color:#86868b; font-size: 1.1rem;">{option}</h2>
+<div style="background-color: #1c1c1e; padding: 30px; border-radius: 20px; margin-bottom: 25px; border: 1px solid #38383a; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
+    <h2 style="margin:0; color:#86868b; font-size: 1.1rem; font-weight: 500; letter-spacing: 0.5px;">{option}</h2>
     <div style="display: flex; align-items: baseline; gap: 20px; margin-top: 8px;">
-        <span style="font-size: 3.8rem; font-weight: 700; color: #f5f5f7;">
-           {currency_symbol.replace('NT$', '') if code != '^TNX' else ''} {current_price:,.2f}
+        <span style="font-size: 3.8rem; font-weight: 700; color: #f5f5f7; letter-spacing: -1.5px;">
+           {currency_symbol.replace('NT$', '') if code != '^TNX' else ''} {current_price:,.2f} <span style="font-size: 1.2rem; color:#86868b; font-weight: 400;">{unit_label}</span>
         </span>
         <span style="font-size: 1.8rem; font-weight: 600; color: {font_color};">
              {change:+.2f} ({pct:+.2f}%)
@@ -496,12 +486,34 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+hide_volume = (is_tw_index or is_us_index or is_forex)
+safe_fmt = lambda x: f"{x:,.2f}" if isinstance(x, (int, float)) else x
+if hide_volume:
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Open", safe_fmt(real_data.get('open')))
+    c2.metric("High", safe_fmt(real_data.get('high')))
+    c3.metric("Low", safe_fmt(real_data.get('low')))
+    c4.metric("Prev Close", f"{prev_close:,.2f}")
+else:
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Open", safe_fmt(real_data.get('open')))
+    c2.metric("High", safe_fmt(real_data.get('high')))
+    c3.metric("Low", safe_fmt(real_data.get('low')))
+    c4.metric("Prev Close", f"{prev_close:,.2f}")
+    c5.metric("Volume", real_data.get('volume', '-'))
+
+st.divider()
 col1, col2 = st.columns([1, 1])
 with col1:
     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
     if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
+    else: st.info("Intraday data unavailable.")
     st.markdown('</div>', unsafe_allow_html=True)
 with col2:
     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
+    else: st.info("Historical data unavailable.")
     st.markdown('</div>', unsafe_allow_html=True)
+
+update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
+st.markdown(f"<div style='text-align: center; color: #86868b; font-size: 0.8rem; margin-top: 40px;'>Last synced: {update_time} (CST)</div>", unsafe_allow_html=True)
