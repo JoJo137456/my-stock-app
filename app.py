@@ -20,24 +20,28 @@ requests.Session.request = patched_request
 st.set_page_config(page_title="FENC Audit HQ | Strategic Dashboard", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-# === 登入頁面（調整後的顏色與字體） ===
+# === 淺藍系現代化登入介面 ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if st.session_state["password_correct"]:
         return True
 
+    # 注入 Google 字體與全版 CSS (包含 Noto Sans TC 以支援繁體中文設計)
     st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;800&family=Noto+Sans+TC:wght@500;700;900&display=swap');
 
-        .stApp {
-            background-color: #F0F8FF !important;
-            font-family: 'Inter', 'Noto Sans TC', system-ui, -apple-system, sans-serif !important;
-        }
-
+        /* 隱藏預設元素 */
         [data-testid="stSidebar"], header, [data-testid="collapsedControl"] {display: none !important;}
-
+        
+        /* 全域背景設定 - 淺藍色系 */
+        .stApp {
+            background-color: #F0F8FF !important; 
+            font-family: 'Poppins', 'Noto Sans TC', sans-serif !important;
+        }
+        
+        /* 左下角的巨大圓弧色塊 - 柔和的藍色 */
         .stApp::before {
             content: '';
             position: fixed;
@@ -45,25 +49,26 @@ def check_password():
             left: -15vw;
             width: 65vw;
             height: 65vw;
-            background-color: #D6EAF8;
+            background-color: #D6EAF8; 
             border-radius: 50%;
             z-index: 0;
         }
 
+        /* 將內容層次推至最上層 */
         .main .block-container {
             z-index: 1;
             padding-top: 10vh !important;
         }
 
+        /* === 左側文字排版 === */
         .hero-subtitle {
-            font-family: 'Inter', sans-serif;
             font-size: 16px;
             font-weight: 700;
             color: #1A1B20;
             margin-bottom: 15px;
             display: flex;
             align-items: center;
-            letter-spacing: 1.2px;
+            letter-spacing: 0.5px;
         }
         .hero-subtitle::before {
             content: '';
@@ -73,154 +78,147 @@ def check_password():
             background-color: #1A1B20;
             margin-right: 15px;
         }
-
         .hero-title-solid {
-            font-family: 'Inter', 'Noto Sans TC', sans-serif;
             font-size: 80px;
-            font-weight: 900;
+            font-weight: 800;
             color: #1A1B20;
             line-height: 1.1;
             margin-bottom: 0;
-            letter-spacing: -2.5px;
+            letter-spacing: -2px;
         }
-
+        
+        /* 強化的輪廓字體設計 */
         .hero-title-outline {
-            font-family: 'Inter', 'Noto Sans TC', sans-serif;
-            font-size: 55px;
-            font-weight: 800;
-            color: #1E40AF;  /* 深藍色實心文字 */
+            font-size: 55px; 
+            font-weight: 900;
+            color: transparent;
+            -webkit-text-stroke: 1.5px #1A1B20;
             line-height: 1.2;
             margin-top: 5px;
             margin-bottom: 50px;
-            letter-spacing: 0.5px;
+            letter-spacing: 1px;
         }
-
+        
+        /* 左側 Dashboard 標籤 (純視覺，無點擊效果) */
         .label-dashboard {
             background-color: #1A1B20;
             color: #ffffff;
             padding: 14px 32px;
             border-radius: 8px;
-            font-family: 'Inter', sans-serif;
-            font-weight: 700;
+            font-weight: 600;
             font-size: 14px;
             display: inline-block;
-            cursor: default;
-            letter-spacing: 1.6px;
+            cursor: default; 
+            letter-spacing: 1px;
         }
 
+        /* === 右側白底登入卡片 === */
         [data-testid="column"]:nth-of-type(3) {
             background: #ffffff;
             border-radius: 20px;
             padding: 40px 35px;
             box-shadow: 0 15px 35px rgba(0,0,0,0.04);
             margin-top: 20px;
-            border: 1px solid #E2E8F0;
         }
-
+        
+        /* 視覺焦點：巨大的中文部門標題 */
         .login-dept {
-            font-family: 'Noto Sans TC', sans-serif;
             font-size: 28px;
-            font-weight: 900;
             color: #1A1B20;
-            letter-spacing: 1.2px;
+            font-weight: 900;
             margin-bottom: 2px;
+            letter-spacing: 1.5px;
         }
-
+        /* 弱化的 Login Now 副標題 */
         .login-title {
-            font-family: 'Inter', sans-serif;
             font-size: 16px;
             font-weight: 600;
-            color: #64748B;
+            color: #888888;
             margin-bottom: 30px;
         }
-
         .login-label {
-            font-family: 'Inter', sans-serif;
             font-size: 13px;
-            font-weight: 600;
-            color: #64748B;
+            color: #888888;
             margin-bottom: 8px;
+            font-weight: 600;
         }
-
+        
+        /* 覆寫 Streamlit 輸入框外觀 */
         div[data-baseweb="input"] > div {
-            border: 1px solid #CBD5E1 !important;
+            border: 1px solid #E0E0E0 !important;
             background-color: #ffffff !important;
-            border-radius: 10px !important;
+            border-radius: 8px !important;
             height: 52px !important;
+            box-shadow: none !important;
         }
-
+        div[data-baseweb="input"] > div:hover { border-color: #1A1B20 !important; }
+        div[data-baseweb="input"]:focus-within > div { border: 1.5px solid #1A1B20 !important; }
+        
         div[data-baseweb="input"] input {
-            font-family: 'Inter', monospace;
-            font-variant-numeric: tabular-nums;
-            color: #0F172A !important;
+            color: #1A1B20 !important;
             padding: 12px 16px !important;
             font-size: 15px !important;
             font-weight: 500 !important;
         }
-
-        div[data-baseweb="input"]:focus-within > div {
-            border-color: #1E40AF !important;
-            box-shadow: 0 0 0 3px rgba(30,64,175,0.15) !important;
-        }
-
+        
+        /* 條款文字 */
         .terms-text {
-            font-family: 'Inter', sans-serif;
             font-size: 12px;
-            color: #64748B;
+            color: #A0A0A0;
             margin: 20px 0;
             font-weight: 500;
         }
-        .terms-text a { color: #1E40AF; text-decoration: underline; }
+        .terms-text a { color: #A0A0A0; text-decoration: underline; }
 
+        /* Login 按鈕 */
         button[kind="primary"] {
-            background-color: #1E40AF !important;
+            background-color: #1A1B20 !important;
             color: white !important;
-            border-radius: 10px !important;
-            height: 52px !important;
-            font-family: 'Inter', sans-serif;
-            font-weight: 700 !important;
-            font-size: 16px !important;
-            letter-spacing: 0.6px;
+            border-radius: 8px !important;
+            height: 50px !important;
+            font-weight: 600 !important;
+            padding: 0 35px !important;
             border: none !important;
+            letter-spacing: 0.5px;
         }
         button[kind="primary"]:hover {
-            background-color: #1E3A8A !important;
-            transform: translateY(-1px);
-            box-shadow: 0 6px 16px rgba(30,64,175,0.25) !important;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         }
-
+        
+        /* IT Contact 聯絡資訊 */
         .it-contact {
-            font-family: 'Inter', sans-serif;
             margin-top: 25px;
             text-align: center;
             font-size: 12.5px;
-            color: #64748B;
+            color: #888888;
             font-weight: 600;
         }
     </style>
     """, unsafe_allow_html=True)
 
+    # 頁面對齊佈局 (左、中、右)
     col_left, spacer, col_right = st.columns([1.1, 0.2, 0.9])
-
+    
     with col_left:
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown('<div class="hero-subtitle">Strategic Command</div>', unsafe_allow_html=True)
         st.markdown('<div class="hero-title-solid">Audit. HQ</div>', unsafe_allow_html=True)
         st.markdown('<div class="hero-title-outline">Far Eastern Group</div>', unsafe_allow_html=True)
         st.markdown('<div class="label-dashboard">Intelligence Nexus</div>', unsafe_allow_html=True)
-
+        
     with col_right:
         st.markdown('<div class="login-dept">遠東聯合稽核總部</div>', unsafe_allow_html=True)
         st.markdown('<div class="login-title">Login Now</div>', unsafe_allow_html=True)
-
+        
         st.markdown('<div class="login-label">Customer ID</div>', unsafe_allow_html=True)
         st.text_input("", value="fenc07822", label_visibility="collapsed", key="acc_id")
-
+        
         st.markdown('<div class="login-label" style="margin-top:20px;">Enter Passcode</div>', unsafe_allow_html=True)
         pwd = st.text_input("", type="password", label_visibility="collapsed", key="pwd")
-
+        
         st.markdown('<div class="terms-text">By login, you agree to our <a href="#">Terms & Conditions</a></div>', unsafe_allow_html=True)
-
+        
         btn_col, link_col = st.columns([1, 1])
         with btn_col:
             if st.button("Login Now ──", type="primary", use_container_width=True):
@@ -230,8 +228,8 @@ def check_password():
                 elif pwd != "":
                     st.error("Invalid credentials")
         with link_col:
-            st.markdown('<div style="text-align: right; padding-top: 15px;"><a href="#" style="color: #64748B; font-size: 13px; font-weight: 600; text-decoration: underline;">Forgot Passcode</a></div>', unsafe_allow_html=True)
-
+            st.markdown('<div style="text-align: right; padding-top: 15px;"><a href="#" style="color: #888; font-size: 13px; font-weight: 600; text-decoration: underline;">Forgot Passcode</a></div>', unsafe_allow_html=True)
+        
         st.markdown('<div class="it-contact">IT Contact Curt Lee (#6855)</div>', unsafe_allow_html=True)
 
     return False
@@ -239,70 +237,27 @@ def check_password():
 if not check_password():
     st.stop()
 
-# === 主儀表板（黑底風格） ===
+# === 以下為主儀表板程式碼 ===
 st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+TC:wght@500;700;900&display=swap');
-
-        .stApp {
-            background: #000000 !important;
-            color: #f5f5f7 !important;
-            font-family: 'Inter', 'Noto Sans TC', sans-serif !important;
-        }
-        .stApp::before { display: none !important; }
-
-        .main-title {
-            font-family: 'Inter', sans-serif;
-            font-size: 2.6rem;
-            font-weight: 800;
-            color: #f5f5f7;
-            text-align: center;
-            margin: 1.5rem 0;
-            letter-spacing: -0.5px;
-        }
-        .sub-title {
-            font-family: 'Inter', sans-serif;
-            font-size: 1.15rem;
-            color: #86868b;
-            text-align: center;
-            margin-bottom: 2.5rem;
-            font-weight: 400;
-        }
-
+        .stApp { background: #000000 !important; color: #f5f5f7 !important; }
+        .stApp::before { display: none !important; } 
+        .main-title { font-size: 2.6rem; font-weight: 700; color: #f5f5f7; text-align: center; margin: 1.5rem 0; letter-spacing: 1px;}
+        .sub-title { font-size: 1.15rem; color: #86868b; text-align: center; margin-bottom: 2.5rem; font-weight: 400;}
         .chart-container {
-            background: #1c1c1e;
-            padding: 24px;
-            border-radius: 20px;
-            margin-bottom: 24px;
-            border: 1px solid #38383a;
+            background: #1c1c1e; padding: 24px; border-radius: 20px;
+            margin-bottom: 24px; border: 1px solid #38383a;
         }
-
         div[data-testid="metric-container"] {
-            background-color: #1c1c1e;
-            border: 1px solid #38383a;
-            padding: 15px;
-            border-radius: 16px;
-            text-align: center;
+            background-color: #1c1c1e; border: 1px solid #38383a; padding: 15px;
+            border-radius: 16px; text-align: center;
         }
-        div[data-testid="metric-container"] > div {
-            color: #f5f5f7 !important;
-            font-family: 'Inter', monospace !important;
-            font-variant-numeric: tabular-nums;
-        }
-        div[data-testid="metric-container"] label {
-            color: #86868b !important;
-            font-weight: 600 !important;
-            font-size: 0.85rem !important;
-            text-transform: uppercase;
-        }
+        div[data-testid="metric-container"] > div { color: #f5f5f7 !important; }
+        div[data-testid="metric-container"] label { color: #86868b !important; font-weight: 500 !important; font-size: 0.85rem !important; text-transform: uppercase;}
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-title">Strategic Control Center</div><div class="sub-title">FENC Audit Headquarters</div>', unsafe_allow_html=True)
-
-# ────────────────────────────────────────────────
-# 以下為你原本的市場狀態、資料抓取、圖表繪製等邏輯（保持不變）
-# ────────────────────────────────────────────────
 
 def check_market_status(market_type='TW'):
     now = datetime.now(tw_tz)
@@ -451,7 +406,7 @@ with st.sidebar:
     options_dict = market_categories[selected_category]
     option = st.radio("Asset", list(options_dict.keys()))
     code = options_dict[option]
-
+    
     is_tw_stock = code.isdigit()
     is_tw_index = (code == "^TWII")
     is_us_index = (code in ["^GSPC", "^DJI", "^IXIC", "^SOX", "^VIX", "^TNX"])
@@ -459,11 +414,11 @@ with st.sidebar:
     is_forex = ("=X" in code or "DX" in code)
     is_futures = ("=F" in code)
     is_us_stock = not (is_tw_stock or is_tw_index or is_us_index or is_crypto or is_forex or is_futures)
-
+    
     if is_tw_stock or is_tw_index or code == "TWD=X": market_type = 'TW'
     elif is_crypto: market_type = 'CRYPTO'
     else: market_type = 'US'
-
+    
     st.divider()
     status_code, status_text = check_market_status(market_type=market_type)
     st.info(f"Status: {status_text}")
@@ -523,6 +478,7 @@ if not df_daily.empty:
 
 change = current_price - prev_close
 pct = (change / prev_close) * 100 if prev_close != 0 else 0
+
 font_color = "#34c759" if change >= 0 else "#ff3b30"
 currency_symbol = "NT$" if (is_tw_stock or is_tw_index or code == "TWD=X") else "$"
 
@@ -530,7 +486,7 @@ st.markdown(f"""
 <div style="background-color: #1c1c1e; padding: 30px; border-radius: 20px; margin-bottom: 25px; border: 1px solid #38383a;">
     <h2 style="margin:0; color:#86868b; font-size: 1.1rem;">{option}</h2>
     <div style="display: flex; align-items: baseline; gap: 20px; margin-top: 8px;">
-        <span style="font-size: 3.8rem; font-weight: 700; color: #f5f5f7; font-family: 'Inter', monospace; font-variant-numeric: tabular-nums;">
+        <span style="font-size: 3.8rem; font-weight: 700; color: #f5f5f7;">
            {currency_symbol.replace('NT$', '') if code != '^TNX' else ''} {current_price:,.2f}
         </span>
         <span style="font-size: 1.8rem; font-weight: 600; color: {font_color};">
@@ -543,12 +499,9 @@ st.markdown(f"""
 col1, col2 = st.columns([1, 1])
 with col1:
     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-    if df_intra is not None and not df_intra.empty:
-        st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
+    if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
-
 with col2:
     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-    if not df_daily.empty:
-        st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
+    if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
