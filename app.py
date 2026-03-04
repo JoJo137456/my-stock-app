@@ -105,9 +105,10 @@ def check_password():
             font-size: 14px;
             display: inline-block;
             cursor: default; 
+            letter-spacing: 0.5px;
         }
 
-        /* === 右側白底登入卡片 (將樣式直接綁定在第三個 Column 上) === */
+        /* === 右側白底登入卡片 === */
         [data-testid="column"]:nth-of-type(3) {
             background: #ffffff;
             border-radius: 20px;
@@ -172,6 +173,7 @@ def check_password():
             font-weight: 600 !important;
             padding: 0 35px !important;
             border: none !important;
+            letter-spacing: 0.5px;
         }
         button[kind="primary"]:hover {
             transform: translateY(-2px);
@@ -194,13 +196,14 @@ def check_password():
     
     with col_left:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown('<div class="hero-subtitle">Net Banking</div>', unsafe_allow_html=True)
+        # 替換為 Strategic Command
+        st.markdown('<div class="hero-subtitle">Strategic Command</div>', unsafe_allow_html=True)
         st.markdown('<div class="hero-title-solid">Audit. HQ</div>', unsafe_allow_html=True)
         st.markdown('<div class="hero-title-outline">Far Eastone Group</div>', unsafe_allow_html=True)
-        st.markdown('<div class="label-dashboard">Dashboard</div>', unsafe_allow_html=True)
+        # 替換為 Intelligence Nexus
+        st.markdown('<div class="label-dashboard">Intelligence Nexus</div>', unsafe_allow_html=True)
         
     with col_right:
-        # 在這裡，我們已經不用再放 <div class="login-wrapper"> 了，因為右欄本身已經被 CSS 變成白色卡片！
         st.markdown('<div class="login-dept">聯合稽核總部</div>', unsafe_allow_html=True)
         st.markdown('<div class="login-title">Login Now</div>', unsafe_allow_html=True)
         
@@ -234,7 +237,7 @@ if not check_password():
 st.markdown("""
     <style>
         .stApp { background: #000000 !important; color: #f5f5f7 !important; }
-        .stApp::before { display: none !important; } /* 隱藏登入頁的大圓圈 */
+        .stApp::before { display: none !important; } 
         .main-title { font-size: 2.6rem; font-weight: 700; color: #f5f5f7; text-align: center; margin: 1.5rem 0; letter-spacing: 1px;}
         .sub-title { font-size: 1.15rem; color: #86868b; text-align: center; margin-bottom: 2.5rem; font-weight: 400;}
         .chart-container {
