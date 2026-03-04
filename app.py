@@ -57,18 +57,18 @@ def check_password():
             [data-testid="collapsedControl"] {display: none;}
             header {visibility: hidden;}
             
-            /* Apple Glassmorphism (毛玻璃) Effect for Login Container */
+            /* Apple Glassmorphism Effect for Login Container */
             [data-testid="stVerticalBlockBorderWrapper"] {
-                background-color: rgba(30, 30, 35, 0.65) !important; /* Premium dark tint */
-                backdrop-filter: saturate(180%) blur(25px) !important; /* High blur for frosted glass */
+                background-color: rgba(30, 30, 35, 0.65) !important;
+                backdrop-filter: saturate(180%) blur(25px) !important;
                 -webkit-backdrop-filter: saturate(180%) blur(25px) !important;
-                border-radius: 24px !important; /* Smooth large rounded corners */
-                border: 1px solid rgba(255, 255, 255, 0.15) !important; /* Subtle edge highlight */
+                border-radius: 24px !important;
+                border: 1px solid rgba(255, 255, 255, 0.15) !important;
                 box-shadow: 0 40px 80px rgba(0, 0, 0, 0.5) !important;
                 padding: 40px 50px !important;
             }
             
-            /* Inputs: Sleek translucent backgrounds with focus animations */
+            /* Inputs */
             div[data-baseweb="input"] > div, div[data-baseweb="select"] > div {
                 background-color: rgba(255, 255, 255, 0.08) !important;
                 border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -80,7 +80,7 @@ def check_password():
                 border: 1px solid rgba(255, 255, 255, 0.3) !important;
             }
             div[data-baseweb="input"] > div:focus-within {
-                border: 1px solid #0A84FF !important; /* Apple blue focus ring */
+                border: 1px solid #0A84FF !important;
                 background-color: rgba(255, 255, 255, 0.15) !important;
             }
             
@@ -93,7 +93,7 @@ def check_password():
                 -webkit-text-fill-color: #ffffff !important; 
             }
             
-            /* Apple-style Primary Button: Solid white with dark text or classic blue */
+            /* Apple-style Primary Button */
             button[kind="primary"] {
                 background-color: #ffffff !important; 
                 color: #000000 !important; 
@@ -101,7 +101,7 @@ def check_password():
                 font-size: 1.1rem !important;
                 letter-spacing: 0.5px !important;
                 border: none !important;
-                border-radius: 20px !important; /* Pill shape */
+                border-radius: 20px !important;
                 padding: 12px !important;
                 transition: all 0.2s ease !important;
             }
@@ -130,7 +130,6 @@ def check_password():
     
     with col2:
         with st.container(border=True):
-            # Clean, minimalist title
             st.markdown("<h2 style='text-align: center; color: #f5f5f7; font-weight: 700; margin-bottom: 30px; letter-spacing: 1px; font-size: 2.2rem;'>Audit HQ Portal</h2>", unsafe_allow_html=True)
             
             st.markdown("<span class='apple-label'>Organization</span>", unsafe_allow_html=True)
@@ -142,7 +141,6 @@ def check_password():
             st.markdown("<span class='apple-label'>Password</span>", unsafe_allow_html=True)
             pwd = st.text_input("password", type="password", label_visibility="collapsed")
             
-            # Subtitle instructions in a clean, subdued font
             st.markdown("""
                 <div style='font-size: 0.8rem; color: #86868b; margin-top: 16px; margin-bottom: 30px; line-height: 1.5; text-align: center; font-weight: 400;'>
                 Use your corporate PC/Email credentials.<br>
@@ -172,7 +170,6 @@ if not check_password():
 
 
 # === 2. Core Dashboard Module ===
-# Apply Apple dark mode aesthetic to the main dashboard
 st.markdown("""
     <style>
         .stApp { background: #000000 !important; color: #f5f5f7 !important; }
@@ -289,8 +286,8 @@ def plot_daily_k(df):
     df = df.tail(120)
     fig = go.Figure(data=[go.Candlestick(
         x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'],
-        increasing_line_color='#34c759', increasing_fillcolor='#34c759',  /* Apple Green */
-        decreasing_line_color='#ff3b30', decreasing_fillcolor='#ff3b30',  /* Apple Red */
+        increasing_line_color='#34c759', increasing_fillcolor='#34c759',  # Apple Green
+        decreasing_line_color='#ff3b30', decreasing_fillcolor='#ff3b30',  # Apple Red
         name="Daily K"
     )])
     layout = get_dark_layout("6-Month Price Trend")
@@ -307,7 +304,7 @@ def plot_intraday_line(df):
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=df.index, y=df['Close'], mode='lines',
-        line=dict(color='#0A84FF', width=2.5), /* Apple Blue */
+        line=dict(color='#0A84FF', width=2.5), # Apple Blue
         fill='tozeroy', fillcolor='rgba(10, 132, 255, 0.1)', name='Quote'
     ))
     fig.add_hline(y=df['Open'].iloc[0], line_dash="dot", line_color="#86868b")
@@ -425,7 +422,7 @@ change = current_price - prev_close
 pct = (change / prev_close) * 100 if prev_close != 0 else 0
 
 # === 6. UI Presentation ===
-font_color = "#34c759" if change >= 0 else "#ff3b30" /* Apple Green/Red */
+font_color = "#34c759" if change >= 0 else "#ff3b30" # Apple Green/Red
 
 currency_symbol = "NT$" if (is_tw_stock or is_tw_index or code == "TWD=X") else "$"
 unit_label = "Pts" if (is_tw_index or is_us_index or code == "DX-Y.NYB") else \
