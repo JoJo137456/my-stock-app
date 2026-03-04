@@ -22,7 +22,7 @@ requests.Session.request = patched_request
 st.set_page_config(page_title="FENC Audit HQ | Strategic Dashboard", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei') 
 
-# === 1.5 Security & Authentication (Apple Glassmorphism UI) ===
+# === 1.5 Security & Authentication (Solid Apple Dark Mode UI) ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -57,56 +57,47 @@ def check_password():
             [data-testid="collapsedControl"] {display: none;}
             header {visibility: hidden;}
             
-            /* Apple Glassmorphism Effect for Login Container */
+            /* 1. Bulletproof Dark Container (防彈級太空灰底框) */
             [data-testid="stVerticalBlockBorderWrapper"] {
-                background-color: rgba(30, 30, 35, 0.65) !important;
-                backdrop-filter: saturate(180%) blur(25px) !important;
-                -webkit-backdrop-filter: saturate(180%) blur(25px) !important;
-                border-radius: 24px !important;
+                background-color: rgba(28, 28, 30, 0.95) !important; /* iOS 系統級深灰色，95%不透明 */
+                border-radius: 20px !important;
                 border: 1px solid rgba(255, 255, 255, 0.15) !important;
-                box-shadow: 0 40px 80px rgba(0, 0, 0, 0.5) !important;
-                padding: 40px 50px !important;
+                box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8) !important;
+                padding: 40px !important;
             }
             
-            /* Inputs */
-            div[data-baseweb="input"] > div, div[data-baseweb="select"] > div {
-                background-color: rgba(255, 255, 255, 0.08) !important;
-                border: 1px solid rgba(255, 255, 255, 0.1) !important;
-                border-radius: 12px !important;
-                transition: all 0.3s ease !important;
-            }
-            div[data-baseweb="input"] > div:hover, div[data-baseweb="select"] > div:hover {
-                background-color: rgba(255, 255, 255, 0.12) !important;
-                border: 1px solid rgba(255, 255, 255, 0.3) !important;
-            }
-            div[data-baseweb="input"] > div:focus-within {
-                border: 1px solid #0A84FF !important;
-                background-color: rgba(255, 255, 255, 0.15) !important;
-            }
-            
-            /* Typography inside inputs */
-            input, select, div[data-baseweb="select"] span { 
-                color: #ffffff !important; 
+            /* 2. Bulletproof Input Fields (強制覆寫輸入框為深灰底、白字) */
+            input[type="text"], input[type="password"], div[data-baseweb="select"] > div {
+                background-color: #2C2C2E !important; 
+                color: #FFFFFF !important;
+                border: 1px solid #3A3A3C !important;
+                border-radius: 10px !important;
                 font-size: 1.05rem !important;
-                font-weight: 400 !important;
-                letter-spacing: 0.5px !important;
-                -webkit-text-fill-color: #ffffff !important; 
+                font-weight: 500 !important;
+                -webkit-text-fill-color: #FFFFFF !important; /* 強制文字填色為白 */
+            }
+            div[data-baseweb="select"] span {
+                color: #FFFFFF !important;
             }
             
-            /* Apple-style Primary Button */
+            /* 輸入框點擊時的藍色光暈 */
+            div[data-baseweb="input"] > div:focus-within, div[data-baseweb="select"] > div:focus-within {
+                border: 1px solid #0A84FF !important;
+            }
+            
+            /* 3. Apple-style Primary Button (白色圓角按鈕) */
             button[kind="primary"] {
-                background-color: #ffffff !important; 
+                background-color: #FFFFFF !important; 
                 color: #000000 !important; 
-                font-weight: 600 !important;
+                font-weight: 700 !important;
                 font-size: 1.1rem !important;
-                letter-spacing: 0.5px !important;
                 border: none !important;
                 border-radius: 20px !important;
                 padding: 12px !important;
                 transition: all 0.2s ease !important;
             }
             button[kind="primary"]:hover {
-                background-color: #f5f5f7 !important;
+                background-color: #E5E5EA !important;
                 transform: scale(1.02);
             }
             
@@ -115,7 +106,7 @@ def check_password():
                 font-size: 0.75rem;
                 font-weight: 600;
                 letter-spacing: 0.1em;
-                color: #a1a1aa;
+                color: #86868B;
                 text-transform: uppercase;
                 margin-bottom: 8px;
                 margin-top: 16px;
@@ -130,7 +121,7 @@ def check_password():
     
     with col2:
         with st.container(border=True):
-            st.markdown("<h2 style='text-align: center; color: #f5f5f7; font-weight: 700; margin-bottom: 30px; letter-spacing: 1px; font-size: 2.2rem;'>Audit HQ Portal</h2>", unsafe_allow_html=True)
+            st.markdown("<h2 style='text-align: center; color: #F5F5F7; font-weight: 700; margin-bottom: 30px; letter-spacing: 1px; font-size: 2.2rem;'>Audit HQ Portal</h2>", unsafe_allow_html=True)
             
             st.markdown("<span class='apple-label'>Organization</span>", unsafe_allow_html=True)
             st.selectbox("company", ["Far Eastern New Century (FENC)"], label_visibility="collapsed")
@@ -142,7 +133,7 @@ def check_password():
             pwd = st.text_input("password", type="password", label_visibility="collapsed")
             
             st.markdown("""
-                <div style='font-size: 0.8rem; color: #86868b; margin-top: 16px; margin-bottom: 30px; line-height: 1.5; text-align: center; font-weight: 400;'>
+                <div style='font-size: 0.8rem; color: #86868B; margin-top: 16px; margin-bottom: 30px; line-height: 1.5; text-align: center; font-weight: 400;'>
                 Use your corporate PC/Email credentials.<br>
                 For plant operations, use the leave/overtime password.
                 </div>
@@ -286,8 +277,8 @@ def plot_daily_k(df):
     df = df.tail(120)
     fig = go.Figure(data=[go.Candlestick(
         x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'],
-        increasing_line_color='#34c759', increasing_fillcolor='#34c759',  # Apple Green
-        decreasing_line_color='#ff3b30', decreasing_fillcolor='#ff3b30',  # Apple Red
+        increasing_line_color='#34c759', increasing_fillcolor='#34c759',  
+        decreasing_line_color='#ff3b30', decreasing_fillcolor='#ff3b30',  
         name="Daily K"
     )])
     layout = get_dark_layout("6-Month Price Trend")
@@ -304,7 +295,7 @@ def plot_intraday_line(df):
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=df.index, y=df['Close'], mode='lines',
-        line=dict(color='#0A84FF', width=2.5), # Apple Blue
+        line=dict(color='#0A84FF', width=2.5), 
         fill='tozeroy', fillcolor='rgba(10, 132, 255, 0.1)', name='Quote'
     ))
     fig.add_hline(y=df['Open'].iloc[0], line_dash="dot", line_color="#86868b")
@@ -422,7 +413,7 @@ change = current_price - prev_close
 pct = (change / prev_close) * 100 if prev_close != 0 else 0
 
 # === 6. UI Presentation ===
-font_color = "#34c759" if change >= 0 else "#ff3b30" # Apple Green/Red
+font_color = "#34c759" if change >= 0 else "#ff3b30"
 
 currency_symbol = "NT$" if (is_tw_stock or is_tw_index or code == "TWD=X") else "$"
 unit_label = "Pts" if (is_tw_index or is_us_index or code == "DX-Y.NYB") else \
