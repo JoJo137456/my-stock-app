@@ -7,6 +7,7 @@ import pytz
 import requests
 import urllib3
 import yfinance as yf
+import base64
 import os
 
 # === 0. 系統層級修復 ===
@@ -21,7 +22,7 @@ requests.Session.request = patched_request
 st.set_page_config(page_title="遠東集團_高階戰略戰情室", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei') 
 
-# CSS 美化 (高對比戰略深色風格)
+# CSS 美化 (高對比戰略深色風格 - 應用於主控台)
 st.markdown("""
     <style>
         /* 全局字體與深色背景設定 */
@@ -72,7 +73,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# === 1.5 安全防禦機制 (高對比登入介面) ===
+# === 1.5 安全防禦機制 (大樓背景 + 高對比登入介面) ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -80,18 +81,34 @@ def check_password():
     if st.session_state["password_correct"]:
         return True
 
+    # 載入大樓背景圖
+    if os.path.exists('bg.jpg'):
+        with open('bg.jpg', 'rb') as f:
+            encoded_bg = base64.b64encode(f.read()).decode()
+        bg_css = f"""
+        <style>
+        .stApp {{
+            background-image: url("data:image/jpeg;base64,{encoded_bg}") !important;
+            background-size: cover !important;
+            background-position: center !important;
+            background-repeat: no-repeat !important;
+        }}
+        </style>
+        """
+        st.markdown(bg_css, unsafe_allow_html=True)
+        
     st.markdown(
         """
         <style>
             [data-testid="stSidebar"] {display: none;}
             [data-testid="collapsedControl"] {display: none;}
             
-            /* 高對比登入卡片 */
+            /* 高對比登入卡片：提高不透明度，阻絕背景干擾 */
             [data-testid="stVerticalBlockBorderWrapper"] {
-                background: linear-gradient(145deg, #1e293b, #0f172a) !important;
-                border-radius: 16px !important;
+                background-color: rgba(15, 23, 42, 0.92) !important; /* 92%不透明深色底 */
+                border-radius: 12px !important;
                 border: 1px solid #38bdf8 !important; /* 銳利的藍色邊框 */
-                box-shadow: 0 0 30px rgba(56, 189, 248, 0.15) !important;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.8) !important;
                 padding: 30px 40px !important;
             }
             
@@ -111,9 +128,10 @@ def check_password():
     
     with col2:
         with st.container(border=True):
-            st.markdown("<h2 style='text-align: center; color: #f8fafc; font-weight: 800; margin-bottom: 20px; letter-spacing: 1px;'>聯稽總部戰略儀表板</h2>", unsafe_allow_html=True)
+            st.markdown("<h2 style='text-align: center; color: #ffffff; font-weight: 800; margin-bottom: 20px; letter-spacing: 1px;'>聯稽總部戰略儀表板</h2>", unsafe_allow_html=True)
             st.markdown("<hr style='border-color: #334155; margin-top: -10px; margin-bottom: 25px;'>", unsafe_allow_html=True)
             
+            # 精確還原 COMPANY 與 ACCOUNT
             st.markdown("<div style='color: #38bdf8; font-size: 0.85rem; margin-bottom: 5px; font-weight: 700; letter-spacing: 1px;'>🏢 COMPANY</div>", unsafe_allow_html=True)
             st.selectbox("company", ["遠東新世紀FENC"], label_visibility="collapsed")
             
@@ -123,17 +141,18 @@ def check_password():
             st.markdown("<div style='color: #38bdf8; font-size: 0.85rem; margin-bottom: 5px; margin-top: 15px; font-weight: 700; letter-spacing: 1px;'>🔒 PASSWORD</div>", unsafe_allow_html=True)
             pwd = st.text_input("password", type="password", label_visibility="collapsed")
             
-            st.markdown("<p style='font-size: 0.8rem; color: #94a3b8; margin-top: 8px; margin-bottom: 25px;'>* 預設密碼為5碼工號。<a href='#' style='color:#38bdf8; text-decoration: none;'> Forgot Password?</a></p>", unsafe_allow_html=True)
+            # 移除 5 碼工號的文字
+            st.markdown("<p style='font-size: 0.8rem; color: #fca5a5; margin-top: 8px; margin-bottom: 25px;'>* 密碼同公司開機或e-mail密碼。<br><a href='#' style='color:#facc15; text-decoration: none;'> Forgot Password?</a></p>", unsafe_allow_html=True)
             
-            # 使用自定義的高對比按鈕
-            if st.button("AUTHENTICATE 授權登入", type="primary", use_container_width=True):
+            if st.button("LOG IN", type="primary", use_container_width=True):
                 if pwd == "AUDIT@01":
                     st.session_state["password_correct"] = True
                     st.rerun()
                 elif pwd != "":
                     st.error("🚫 密碼錯誤，拒絕存取。")
             
-            st.markdown("<div style='font-size: 0.85rem; text-align: center; margin-top: 25px; font-weight: 500; color: #64748b;'>SYSTEM ADMIN: 李宗念 (EXT: 6855)</div>", unsafe_allow_html=True)
+            # 聯絡人資訊改成純白高對比
+            st.markdown("<div style='font-size: 1rem; text-align: center; margin-top: 25px; font-weight: 800; color: #ffffff; text-shadow: 0px 2px 4px rgba(0,0,0,0.8); letter-spacing: 1px;'>若有問題，請聯繫李宗念先生(分機6855)</div>", unsafe_allow_html=True)
 
     return False
 
@@ -142,32 +161,23 @@ if not check_password():
 
 
 # === 2. 核心功能模組 ===
+# (以下為主控台邏輯，直接沿用你剛才的高對比深色設定)
 st.markdown('<div class="main-title">FAR EASTERN GROUP</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
 
 def check_market_status(market_type='TW'):
     now = datetime.now(tw_tz)
-    
-    if market_type == 'CRYPTO':
-        return "open", "🟢 數位資產 (24H 交易)"
-        
+    if market_type == 'CRYPTO': return "open", "🟢 數位資產 (24H 交易)"
     if market_type == 'US':
         hour = now.hour
-        if 21 <= hour or hour < 5:
-            return "open", "🟢 國際市場 (交易中)"
-        else:
-            return "closed", "🔴 國際市場 (休市/盤後)"
-            
+        if 21 <= hour or hour < 5: return "open", "🟢 國際市場 (交易中)"
+        else: return "closed", "🔴 國際市場 (休市/盤後)"
     current_time = now.time()
     market_open = dt_time(9, 0)
     market_close = dt_time(13, 35) 
     is_weekend = now.weekday() >= 5
-    
-    if is_weekend:
-        return "closed", "🔴 台股市場 (週末休市)"
-    elif market_open <= current_time <= market_close:
-        return "open", "🟢 台股市場 (盤中即時)"
-    else:
-        return "closed", "🔴 台股市場 (盤後結算)"
+    if is_weekend: return "closed", "🔴 台股市場 (週末休市)"
+    elif market_open <= current_time <= market_close: return "open", "🟢 台股市場 (盤中即時)"
+    else: return "closed", "🔴 台股市場 (盤後結算)"
 
 @st.cache_data(ttl=3600) 
 def fetch_twse_history_proxy(stock_code):
@@ -179,12 +189,10 @@ def fetch_twse_history_proxy(stock_code):
         for i in range(6):
             target_date = curr_month - pd.DateOffset(months=i)
             dates_to_fetch.append(target_date.strftime('%Y%m01'))
-            
         for date_str in dates_to_fetch:
             url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date={date_str}&stockNo={stock_code}"
             r = requests.get(url) 
             json_data = r.json()
-            
             if json_data['stat'] == 'OK':
                 for row in json_data['data']:
                     date_parts = row[0].split('/')
@@ -193,20 +201,15 @@ def fetch_twse_history_proxy(stock_code):
                     def to_float(s):
                         try: return float(s.replace(',', ''))
                         except: return 0.0
-                    
                     vol_shares = to_float(row[1])
                     data_list.append({
-                        'date': date_iso,
-                        'volume': vol_shares, 
-                        'open': to_float(row[3]),
-                        'high': to_float(row[4]),
-                        'low': to_float(row[5]),
-                        'close': to_float(row[6]),
+                        'date': date_iso, 'volume': vol_shares, 
+                        'open': to_float(row[3]), 'high': to_float(row[4]),
+                        'low': to_float(row[5]), 'close': to_float(row[6]),
                     })
         data_list.sort(key=lambda x: x['date'])
         return data_list
-    except Exception as e:
-        return None
+    except Exception as e: return None
 
 @st.cache_data(ttl=3600)
 def fetch_us_history(ticker_symbol):
@@ -216,16 +219,12 @@ def fetch_us_history(ticker_symbol):
         data_list = []
         for index, row in hist.iterrows():
             data_list.append({
-                'date': index.strftime('%Y-%m-%d'),
-                'volume': float(row['Volume']),
-                'open': float(row['Open']),
-                'high': float(row['High']),
-                'low': float(row['Low']),
-                'close': float(row['Close'])
+                'date': index.strftime('%Y-%m-%d'), 'volume': float(row['Volume']),
+                'open': float(row['Open']), 'high': float(row['High']),
+                'low': float(row['Low']), 'close': float(row['Close'])
             })
         return data_list
-    except:
-        return None
+    except: return None
 
 @st.cache_data(ttl=300) 
 def get_intraday_chart_data(stock_code, is_us_source=False):
@@ -240,10 +239,9 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
                 df = df[df.index.date == last_day]
         if df.empty: return None
         return df
-    except:
-        return None
+    except: return None
 
-# === 3. 繪圖模組 (全面更新為深色高對比主題) ===
+# === 3. 繪圖模組 ===
 def get_dark_layout(title_text):
     return dict(
         title=f"<b>{title_text}</b>",
@@ -261,13 +259,10 @@ def plot_daily_k(df):
     df['Date'] = pd.to_datetime(df['date'])
     df.set_index('Date', inplace=True)
     df = df.tail(120)
-    
     fig = go.Figure(data=[go.Candlestick(
-        x=df.index,
-        open=df['open'], high=df['high'], low=df['low'], close=df['close'],
-        increasing_line_color='#ef4444', increasing_fillcolor='#ef4444', # 紅色上漲 (台股習慣)
-        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e', # 綠色下跌
-        name="日K"
+        x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'],
+        increasing_line_color='#ef4444', increasing_fillcolor='#ef4444', 
+        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e', name="日K"
     )])
     layout = get_dark_layout("📊 歷史價格走勢 (近半年)")
     layout['xaxis_rangeslider_visible'] = False
@@ -280,15 +275,13 @@ def plot_intraday_line(df):
     interval_str = "1 Min" if (df.index[1] - df.index[0]).seconds == 60 else "5 Min"
     y_min, y_max = df['Close'].min(), df['Close'].max()
     padding = (y_max - y_min) * 0.1 if y_max != y_min else y_max * 0.01
-    
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=df.index, y=df['Close'], mode='lines',
-        line=dict(color='#38bdf8', width=2.5), # 亮藍色線條
+        line=dict(color='#38bdf8', width=2.5), 
         fill='tozeroy', fillcolor='rgba(56, 189, 248, 0.1)', name='報價'
     ))
     fig.add_hline(y=df['Open'].iloc[0], line_dash="dot", line_color="#94a3b8", annotation_text="開盤", annotation_font_color="#94a3b8")
-    
     layout = get_dark_layout(f"⚡ 當日分時動態 ({interval_str})")
     layout['height'] = 350
     layout['hovermode'] = "x unified"
@@ -300,18 +293,14 @@ def plot_intraday_line(df):
 
 def plot_relative_strength(df_target, df_bench, target_name, bench_name):
     if df_target.empty or df_bench.empty: return None
-    
     df1 = df_target[['date', 'close']].tail(60).copy()
     df2 = df_bench[['date', 'close']].tail(60).copy()
-    
     merged = pd.merge(df1, df2, on='date', suffixes=('_target', '_bench'), how='inner')
     if merged.empty: return None
-    
     base_target = merged['close_target'].iloc[0]
     base_bench = merged['close_bench'].iloc[0]
     merged['Target_Norm'] = (merged['close_target'] / base_target) * 100
     merged['Bench_Norm'] = (merged['close_bench'] / base_bench) * 100
-    
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=merged['date'], y=merged['Bench_Norm'], mode='lines',
@@ -319,9 +308,8 @@ def plot_relative_strength(df_target, df_bench, target_name, bench_name):
     ))
     fig.add_trace(go.Scatter(
         x=merged['date'], y=merged['Target_Norm'], mode='lines',
-        line=dict(color='#facc15', width=3), name=target_name # 金色強調線條
+        line=dict(color='#facc15', width=3), name=target_name 
     ))
-    
     layout = get_dark_layout(f"🛡️ 戰略雷達：相對強勢分析 (對標 {bench_name})")
     layout['height'] = 350
     layout['hovermode'] = "x unified"
@@ -332,45 +320,26 @@ def plot_relative_strength(df_target, df_bench, target_name, bench_name):
 # === 4. 主控台邏輯 ===
 market_categories = {
     "📈 總體經濟與大盤 (宏觀與風險指標)": {
-        "🇹🇼 台灣加權指數 (TAIEX)": "^TWII",
-        "🇺🇸 S&P 500 (標普 500 指數)": "^GSPC",
-        "🇺🇸 Dow Jones (道瓊工業指數)": "^DJI",
-        "🇺🇸 Nasdaq (那斯達克指數)": "^IXIC",
-        "🇺🇸 SOX (費城半導體指數)": "^SOX",
-        "⚠️ VIX 恐慌指數 (市場風險)": "^VIX",
-        "🏦 U.S. 10Y Treasury (實質利率)": "^TNX",
-        "🥇 黃金期貨 (資金避險)": "GC=F",
-        "🥈 白銀期貨 (工業金屬)": "SI=F",
-        "🛢️ WTI 原油 (能源成本)": "CL=F",
-        "₿ 比特幣 (數位資產)": "BTC-USD",
-        "💵 美元指數 (DXY)": "DX-Y.NYB",
-        "💱 美元兌台幣 (匯率曝險)": "TWD=X",
-        "☁️ 棉花期貨 (紡纖原物料)": "CT=F",
+        "🇹🇼 台灣加權指數 (TAIEX)": "^TWII", "🇺🇸 S&P 500 (標普 500 指數)": "^GSPC",
+        "🇺🇸 Dow Jones (道瓊工業指數)": "^DJI", "🇺🇸 Nasdaq (那斯達克指數)": "^IXIC",
+        "🇺🇸 SOX (費城半導體指數)": "^SOX", "⚠️ VIX 恐慌指數 (市場風險)": "^VIX",
+        "🏦 U.S. 10Y Treasury (實質利率)": "^TNX", "🥇 黃金期貨 (資金避險)": "GC=F",
+        "🥈 白銀期貨 (工業金屬)": "SI=F", "🛢️ WTI 原油 (能源成本)": "CL=F",
+        "₿ 比特幣 (數位資產)": "BTC-USD", "💵 美元指數 (DXY)": "DX-Y.NYB",
+        "💱 美元兌台幣 (匯率曝險)": "TWD=X", "☁️ 棉花期貨 (紡纖原物料)": "CT=F",
         "🚢 BDRY 散裝航運 ETF (運價指標)": "BDRY"
     },
     "🏢 遠東集團核心事業體": {
-        "🇹🇼 1402 遠東新": "1402", 
-        "🇹🇼 1102 亞泥": "1102", 
-        "🇹🇼 2606 裕民": "2606",
-        "🇹🇼 1460 宏遠": "1460", 
-        "🇹🇼 2903 遠百": "2903", 
-        "🇹🇼 4904 遠傳": "4904", 
-        "🇹🇼 1710 東聯": "1710"
+        "🇹🇼 1402 遠東新": "1402", "🇹🇼 1102 亞泥": "1102", "🇹🇼 2606 裕民": "2606",
+        "🇹🇼 1460 宏遠": "1460", "🇹🇼 2903 遠百": "2903", "🇹🇼 4904 遠傳": "4904", "🇹🇼 1710 東聯": "1710"
     },
     "👕 國際品牌終端 (紡織板塊對標)": {
-        "🇺🇸 Nike": "NKE",
-        "🇺🇸 Under Armour": "UAA",
-        "🇺🇸 Lululemon": "LULU",
-        "🇺🇸 Adidas (ADR)": "ADDYY",
-        "🇺🇸 Puma (ADR)": "PUMSY",
-        "🇺🇸 Columbia": "COLM",
-        "🇺🇸 Gap Inc": "GAP",
-        "🇺🇸 Fast Retailing (Uniqlo ADR)": "FRCOY",
-        "🇺🇸 VF Corp": "VFC"
+        "🇺🇸 Nike": "NKE", "🇺🇸 Under Armour": "UAA", "🇺🇸 Lululemon": "LULU",
+        "🇺🇸 Adidas (ADR)": "ADDYY", "🇺🇸 Puma (ADR)": "PUMSY", "🇺🇸 Columbia": "COLM",
+        "🇺🇸 Gap Inc": "GAP", "🇺🇸 Fast Retailing (Uniqlo ADR)": "FRCOY", "🇺🇸 VF Corp": "VFC"
     },
     "🥤 國際品牌終端 (化纖板塊對標)": {
-        "🇺🇸 Coca-Cola": "KO",
-        "🇺🇸 PepsiCo": "PEP"
+        "🇺🇸 Coca-Cola": "KO", "🇺🇸 PepsiCo": "PEP"
     }
 }
 
@@ -378,7 +347,6 @@ with st.sidebar:
     st.markdown("<h2 style='color:#f8fafc;'>🎯 戰略監控目標</h2>", unsafe_allow_html=True)
     selected_category = st.selectbox("板塊分類", list(market_categories.keys()))
     st.markdown("<hr style='border-color: #334155;'>", unsafe_allow_html=True)
-    
     options_dict = market_categories[selected_category]
     option = st.radio("監控標的", list(options_dict.keys()))
     code = options_dict[option]
@@ -389,7 +357,6 @@ with st.sidebar:
     is_crypto = ("BTC" in code)
     is_forex = ("=X" in code or "DX" in code)
     is_futures = ("=F" in code)
-    
     is_us_stock = not (is_tw_stock or is_tw_index or is_us_index or is_crypto or is_forex or is_futures)
     
     if is_tw_stock or is_tw_index or code == "TWD=X": market_type = 'TW'
@@ -440,15 +407,10 @@ df_intra = get_intraday_chart_data(code, is_us_source=not is_tw_stock)
 df_bench = pd.DataFrame()
 bench_name = ""
 if not df_daily.empty:
-    if is_tw_stock:
-        bench_code, bench_name = "^TWII", "TAIEX (台灣加權指數)"
-    elif code == "^TWII" or is_us_stock or code in ["^DJI", "^IXIC", "^SOX"]:
-        bench_code, bench_name = "^GSPC", "S&P 500 指數"
-    elif code == "^GSPC":
-        bench_code, bench_name = "^TWII", "TAIEX (台灣加權指數)"
-    else:
-        bench_code, bench_name = "^GSPC", "S&P 500 指數"
-        
+    if is_tw_stock: bench_code, bench_name = "^TWII", "TAIEX (台灣加權指數)"
+    elif code == "^TWII" or is_us_stock or code in ["^DJI", "^IXIC", "^SOX"]: bench_code, bench_name = "^GSPC", "S&P 500 指數"
+    elif code == "^GSPC": bench_code, bench_name = "^TWII", "TAIEX (台灣加權指數)"
+    else: bench_code, bench_name = "^GSPC", "S&P 500 指數"
     if bench_code != code:
         bench_hist = fetch_us_history(bench_code)
         if bench_hist: df_bench = pd.DataFrame(bench_hist)
@@ -475,9 +437,9 @@ if not df_daily.empty:
 change = current_price - prev_close
 pct = (change / prev_close) * 100 if prev_close != 0 else 0
 
-# === 6. UI 呈現 (高對比戰略面板) ===
+# === 6. UI 呈現 ===
 bg_color = "#151e2d"
-font_color = "#ef4444" if change >= 0 else "#22c55e" # 螢光紅(漲), 螢光綠(跌)
+font_color = "#ef4444" if change >= 0 else "#22c55e" 
 border_color = "#ef4444" if change >= 0 else "#22c55e"
 
 currency_symbol = "NT$" if (is_tw_stock or is_tw_index or code == "TWD=X") else "$"
@@ -486,7 +448,6 @@ unit_label = "Pts" if (is_tw_index or is_us_index or code == "DX-Y.NYB") else \
              "/ bbl" if (is_futures and "CL" in code) else \
              "%" if code == "^TNX" else ""
 
-# A. 核心報價卡片
 st.markdown(f"""
 <div style="background-color: {bg_color}; padding: 30px; border-radius: 12px; margin-bottom: 25px; border-left: 8px solid {border_color}; border-top: 1px solid #334155; border-right: 1px solid #334155; border-bottom: 1px solid #334155; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
     <h2 style="margin:0; color:#94a3b8; font-size: 1.2rem; font-weight: 700; letter-spacing: 1px;">{option}</h2>
@@ -501,7 +462,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# B. 市場深度指標
 hide_volume = (is_tw_index or is_us_index or is_forex)
 safe_fmt = lambda x: f"{x:,.2f}" if isinstance(x, (int, float)) else x
 
@@ -522,25 +482,19 @@ else:
 
 st.divider()
 
-# C. 數據視覺化圖表
 col1, col2 = st.columns([1, 1])
 with col1:
     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-    if df_intra is not None and not df_intra.empty:
-        st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
-    else:
-        st.warning("暫無分時資料 (市場休市或限流)")
+    if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
+    else: st.warning("暫無分時資料 (市場休市或限流)")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-    if not df_daily.empty:
-        st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
-    else:
-        st.error("暫無歷史交易資料 (可能因資料源尚未收錄此板塊指數)")
+    if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
+    else: st.error("暫無歷史交易資料 (可能因資料源尚未收錄此板塊指數)")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# D. 戰略雷達：相對強勢
 if not df_bench.empty and not df_daily.empty:
     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
     rs_fig = plot_relative_strength(df_daily, df_bench, option.split(" ")[-1], bench_name)
@@ -549,10 +503,7 @@ if not df_bench.empty and not df_daily.empty:
         st.caption("🔍 **戰略註記**：將雙邊起漲點設為 100 基準化。當資產曲線（金）凌駕於大盤曲線（灰）之上，表彰該標的具備超越大環境之動能（Alpha）。")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# === 7. 高階幕僚戰略解讀 ===
-# (字典內容保持不變，為節省篇幅此處省略字典宣告，你原本的 strategic_commentary 字典維持即可)
 strategic_commentary = {
-    # ... (請保留你原有的 strategic_commentary 字典內容) ...
     "^TWII": {
         "title": "🇹🇼 台灣加權指數 (TAIEX)",
         "business_model": "反映台灣整體資本市場動能與外資流向，為評估集團旗下台股掛牌企業（如遠東新、亞泥）之系統性估值基準。",
@@ -565,14 +516,11 @@ strategic_commentary = {
         "high": "🔴 【風險溢酬升溫】代表市場流動性趨緊。建議啟動防禦機制，暫緩非必要之資本支出（CapEx），並重新檢視短期債務延展風險。",
         "low": "🟢 【市場情緒穩定】資金承擔風險意願高。有利於集團旗下事業體向金融機構取得具競爭力之長期融資，為戰略佈局之契機。"
     }
-    # ... 其他標的 ...
 }
 
 if code in strategic_commentary:
     st.markdown("<h3 style='color: #f8fafc; font-weight: 700; margin-top: 20px;'>📊 戰略洞察 (Tactical Insights)</h3>", unsafe_allow_html=True)
     info = strategic_commentary[code]
-    
-    # 戰略解讀卡片深色化
     st.markdown(f"""
     <div style="background-color: #151e2d; padding: 25px; border-radius: 12px; border-left: 5px solid #38bdf8; margin-bottom: 20px; border-top: 1px solid #334155; border-right: 1px solid #334155; border-bottom: 1px solid #334155;">
         <h4 style="margin-top: 0; color: #f8fafc; font-size: 1.2rem; border-bottom: 1px solid #334155; padding-bottom: 12px; font-weight: 700;">{info['title']}</h4>
