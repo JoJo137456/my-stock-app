@@ -20,17 +20,16 @@ requests.Session.request = patched_request
 
 # === 1. Dashboard Initialization ===
 st.set_page_config(page_title="FENC Audit HQ | Strategic Dashboard", layout="wide")
-tw_tz = pytz.timezone('Asia/Taipei') 
+tw_tz = pytz.timezone('Asia/Taipei')
 
-# === 1.5 Security & Authentication (High Contrast Apple Style) ===
+# === 1.5 Security & Authentication (全新 Apple 極簡風格) ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
-
     if st.session_state["password_correct"]:
         return True
 
-    # Load background image (bg.jpg)
+    # ==================== 背景圖 ====================
     if os.path.exists('bg.jpg'):
         with open('bg.jpg', 'rb') as f:
             encoded_bg = base64.b64encode(f.read()).decode()
@@ -40,135 +39,137 @@ def check_password():
             background-image: url("data:image/jpeg;base64,{encoded_bg}") !important;
             background-size: cover !important;
             background-position: center !important;
-            background-repeat: no-repeat !important;
+            background-attachment: fixed !important;
+        }}
+        .stApp::before {{
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.68);
+            z-index: -1;
         }}
         </style>
         """
         st.markdown(bg_css, unsafe_allow_html=True)
-        
-    st.markdown(
-        """
-        <style>
-            /* Apply Apple's native font stack globally */
-            html, body, [class*="css"] { 
-                font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; 
-            }
-            [data-testid="stSidebar"] {display: none;}
-            [data-testid="collapsedControl"] {display: none;}
-            header {visibility: hidden;}
-            
-            /* Main Container: Subtle dark translucent background */
-            [data-testid="stVerticalBlockBorderWrapper"] {
-                background-color: rgba(20, 20, 25, 0.75) !important;
-                backdrop-filter: blur(10px) !important;
-                -webkit-backdrop-filter: blur(10px) !important;
-                border-radius: 24px !important;
-                border: 1px solid rgba(255, 255, 255, 0.2) !important;
-                box-shadow: 0 30px 60px rgba(0, 0, 0, 0.7) !important;
-                padding: 40px !important;
-            }
-            
-            /* Custom Title Box (使用者提議的專屬標題框) */
-            .title-box {
-                background-color: rgba(0, 0, 0, 0.65);
-                padding: 20px;
-                border-radius: 16px;
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                margin-bottom: 30px;
-                text-align: center;
-                box-shadow: 0 10px 20px rgba(0,0,0,0.5);
-            }
-            .title-box h2 {
-                color: #ffffff !important;
-                margin: 0 !important;
-                font-weight: 800;
-                letter-spacing: 2px;
-                font-size: 2.2rem;
-                text-shadow: 0 2px 4px rgba(0,0,0,0.8);
-            }
-            
-            /* Inputs: Dark translucent background with white borders */
-            div[data-baseweb="input"] > div, div[data-baseweb="select"] > div {
-                background-color: rgba(0, 0, 0, 0.5) !important;
-                border: 1px solid rgba(255, 255, 255, 0.4) !important;
-                border-radius: 12px !important;
-                transition: all 0.3s ease !important;
-            }
-            div[data-baseweb="input"] > div:focus-within, div[data-baseweb="select"] > div:focus-within {
-                border: 1px solid #0A84FF !important; /* Apple Blue Focus */
-                background-color: rgba(0, 0, 0, 0.7) !important;
-            }
-            
-            /* Typography inside inputs: Pure White */
-            input, select, div[data-baseweb="select"] span { 
-                color: #ffffff !important; 
-                font-size: 1.1rem !important;
-                font-weight: 600 !important;
-                letter-spacing: 0.5px !important;
-                -webkit-text-fill-color: #ffffff !important; 
-            }
-            
-            /* Apple-style Primary Button */
-            button[kind="primary"] {
-                background-color: #ffffff !important; 
-                color: #000000 !important; 
-                font-weight: 700 !important;
-                font-size: 1.1rem !important;
-                letter-spacing: 0.5px !important;
-                border: none !important;
-                border-radius: 20px !important;
-                padding: 12px !important;
-                transition: all 0.2s ease !important;
-            }
-            button[kind="primary"]:hover {
-                background-color: #e5e5ea !important;
-                transform: scale(1.02);
-            }
-            
-            /* Custom minimalist labels: Pure White */
-            .apple-label {
-                font-size: 0.8rem;
-                font-weight: 700;
-                letter-spacing: 0.1em;
-                color: #ffffff;
-                text-transform: uppercase;
-                margin-bottom: 8px;
-                margin-top: 16px;
-                display: block;
-                text-shadow: 0 1px 3px rgba(0,0,0,0.8);
-            }
-        </style>
-        """, unsafe_allow_html=True
-    )
 
+    # ==================== Apple 極簡高級 CSS ====================
+    st.markdown("""
+    <style>
+        /* Apple 系統字體 + 全局清理 */
+        html, body, [class*="css"] {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif !important;
+        }
+        [data-testid="stSidebar"], [data-testid="collapsedControl"], header {display: none !important;}
+
+        /* 主登入卡片 - 高級玻璃擬態 */
+        .login-card {
+            background: rgba(255, 255, 255, 0.085);
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 26px;
+            padding: 52px 48px 48px;
+            box-shadow: 0 35px 70px -15px rgba(0, 0, 0, 0.65);
+            max-width: 420px;
+            margin: 0 auto;
+        }
+
+        .title {
+            font-size: 32px;
+            font-weight: 700;
+            color: #ffffff;
+            text-align: center;
+            letter-spacing: -0.8px;
+            margin-bottom: 6px;
+        }
+        .subtitle {
+            font-size: 17px;
+            color: #a1a1a6;
+            text-align: center;
+            margin-bottom: 42px;
+            line-height: 1.35;
+        }
+
+        /* 標籤 */
+        .apple-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #f5f5f7;
+            margin: 24px 0 8px 4px;
+            letter-spacing: 0.6px;
+            display: block;
+        }
+
+        /* 輸入框 - Apple 原生感 */
+        div[data-baseweb="input"] > div {
+            background-color: rgba(255,255,255,0.09) !important;
+            border: 1px solid rgba(255,255,255,0.25) !important;
+            border-radius: 14px !important;
+            height: 54px !important;
+            transition: all 0.25s ease !important;
+        }
+        div[data-baseweb="input"] input {
+            color: #ffffff !important;
+            font-size: 17px !important;
+            font-weight: 500 !important;
+        }
+        div[data-baseweb="input"]:focus-within > div {
+            border-color: #0A84FF !important;
+            box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.25) !important;
+            background-color: rgba(255,255,255,0.13) !important;
+        }
+
+        /* Sign In 按鈕 - Apple 藍 */
+        button[kind="primary"] {
+            background: linear-gradient(90deg, #0071E3, #0A84FF) !important;
+            color: #ffffff !important;
+            font-size: 17px !important;
+            font-weight: 600 !important;
+            height: 54px !important;
+            border-radius: 14px !important;
+            border: none !important;
+            margin-top: 12px;
+        }
+        button[kind="primary"]:hover {
+            transform: scale(1.015);
+            box-shadow: 0 12px 25px rgba(10, 132, 255, 0.35) !important;
+        }
+
+        /* 底部連結 */
+        .footer-links {
+            text-align: center;
+            margin-top: 38px;
+            font-size: 14.5px;
+            color: #8e8e93;
+        }
+        .footer-links a {
+            color: #0A84FF;
+            text-decoration: none;
+        }
+        .footer-links a:hover {text-decoration: underline;}
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ==================== 佈局 ====================
     st.markdown("<br><br><br><br>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1.2, 1]) 
+    
+    col1, col2, col3 = st.columns([1, 1.6, 1])
     
     with col2:
-        with st.container(border=True):
-            # Title wrapped in a dedicated dark box
-            st.markdown("""
-                <div class='title-box'>
-                    <h2>Audit HQ Portal</h2>
-                </div>
-            """, unsafe_allow_html=True)
+        with st.container():
+            st.markdown('<div class="login-card">', unsafe_allow_html=True)
             
-            st.markdown("<span class='apple-label'>Organization</span>", unsafe_allow_html=True)
+            st.markdown('<div class="title">Audit HQ</div>', unsafe_allow_html=True)
+            st.markdown('<div class="subtitle">Sign in with your FENC corporate account</div>', unsafe_allow_html=True)
+            
+            st.markdown('<span class="apple-label">ORGANIZATION</span>', unsafe_allow_html=True)
             st.selectbox("company", ["Far Eastern New Century (FENC)"], label_visibility="collapsed")
             
-            st.markdown("<span class='apple-label'>Account ID</span>", unsafe_allow_html=True)
+            st.markdown('<span class="apple-label">ACCOUNT ID</span>', unsafe_allow_html=True)
             st.text_input("account", value="Audit_HQ_Admin", label_visibility="collapsed")
             
-            st.markdown("<span class='apple-label'>Password</span>", unsafe_allow_html=True)
+            st.markdown('<span class="apple-label">PASSWORD</span>', unsafe_allow_html=True)
             pwd = st.text_input("password", type="password", label_visibility="collapsed")
-            
-            # Subtitle instructions in pure white with text-shadow for readability
-            st.markdown("""
-                <div style='font-size: 0.85rem; color: #ffffff; margin-top: 20px; margin-bottom: 30px; line-height: 1.6; text-align: center; font-weight: 500; text-shadow: 0 1px 3px rgba(0,0,0,0.8);'>
-                Use your corporate PC/Email credentials.<br>
-                For plant operations, use the leave/overtime password.
-                </div>
-            """, unsafe_allow_html=True)
             
             if st.button("Sign In", type="primary", use_container_width=True):
                 if pwd == "AUDIT@01":
@@ -178,18 +179,17 @@ def check_password():
                     st.error("Authentication failed. Please check your credentials.")
             
             st.markdown("""
-                <div style='display: flex; justify-content: center; gap: 20px; margin-top: 25px;'>
-                    <a href='#' style='color: #60A5FA; font-size: 0.9rem; font-weight: 600; text-decoration: none; text-shadow: 0 1px 2px rgba(0,0,0,0.8);'>Forgot Password?</a>
-                    <span style='color: #ffffff;'>|</span>
-                    <a href='#' style='color: #60A5FA; font-size: 0.9rem; font-weight: 600; text-decoration: none; text-shadow: 0 1px 2px rgba(0,0,0,0.8);'>Contact Support (Ext. 6855)</a>
-                </div>
+            <div class="footer-links">
+                <a href="#">Forgot password?</a> • <a href="#">Contact IT Support (ext. 6855)</a>
+            </div>
             """, unsafe_allow_html=True)
+            
+            st.markdown('</div>', unsafe_allow_html=True)
 
     return False
 
 if not check_password():
     st.stop()
-
 
 # === 2. Core Dashboard Module ===
 st.markdown("""
@@ -197,9 +197,9 @@ st.markdown("""
         .stApp { background: #000000 !important; color: #f5f5f7 !important; }
         .main-title { font-size: 2.5rem; font-weight: 700; color: #f5f5f7; text-align: center; margin: 1rem 0; letter-spacing: 1px;}
         .sub-title { font-size: 1.1rem; color: #86868b; text-align: center; margin-bottom: 2rem; font-weight: 400;}
-        .chart-container { 
-            background: #1c1c1e; padding: 20px; border-radius: 18px; 
-            margin-bottom: 20px; border: 1px solid #38383a; 
+        .chart-container {
+            background: #1c1c1e; padding: 20px; border-radius: 18px;
+            margin-bottom: 20px; border: 1px solid #38383a;
         }
         div[data-testid="metric-container"] {
             background-color: #1c1c1e; border: 1px solid #38383a; padding: 15px;
@@ -221,13 +221,13 @@ def check_market_status(market_type='TW'):
         else: return "closed", "🔴 Market Closed"
     current_time = now.time()
     market_open = dt_time(9, 0)
-    market_close = dt_time(13, 35) 
+    market_close = dt_time(13, 35)
     is_weekend = now.weekday() >= 5
     if is_weekend: return "closed", "🔴 Weekend Closed"
     elif market_open <= current_time <= market_close: return "open", "🟢 Trading Active"
     else: return "closed", "🔴 Market Closed"
 
-@st.cache_data(ttl=3600) 
+@st.cache_data(ttl=3600)
 def fetch_twse_history_proxy(stock_code):
     try:
         data_list = []
@@ -239,7 +239,7 @@ def fetch_twse_history_proxy(stock_code):
             dates_to_fetch.append(target_date.strftime('%Y%m01'))
         for date_str in dates_to_fetch:
             url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date={date_str}&stockNo={stock_code}"
-            r = requests.get(url) 
+            r = requests.get(url)
             json_data = r.json()
             if json_data['stat'] == 'OK':
                 for row in json_data['data']:
@@ -251,7 +251,7 @@ def fetch_twse_history_proxy(stock_code):
                         except: return 0.0
                     vol_shares = to_float(row[1])
                     data_list.append({
-                        'date': date_iso, 'volume': vol_shares, 
+                        'date': date_iso, 'volume': vol_shares,
                         'open': to_float(row[3]), 'high': to_float(row[4]),
                         'low': to_float(row[5]), 'close': to_float(row[6]),
                     })
@@ -274,7 +274,7 @@ def fetch_us_history(ticker_symbol):
         return data_list
     except: return None
 
-@st.cache_data(ttl=300) 
+@st.cache_data(ttl=300)
 def get_intraday_chart_data(stock_code, is_us_source=False):
     try:
         ticker_symbol = stock_code if is_us_source else f"{stock_code}.TW"
@@ -308,8 +308,8 @@ def plot_daily_k(df):
     df = df.tail(120)
     fig = go.Figure(data=[go.Candlestick(
         x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'],
-        increasing_line_color='#34c759', increasing_fillcolor='#34c759',  
-        decreasing_line_color='#ff3b30', decreasing_fillcolor='#ff3b30',  
+        increasing_line_color='#34c759', increasing_fillcolor='#34c759',
+        decreasing_line_color='#ff3b30', decreasing_fillcolor='#ff3b30',
         name="Daily K"
     )])
     layout = get_dark_layout("6-Month Price Trend")
@@ -326,7 +326,7 @@ def plot_intraday_line(df):
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=df.index, y=df['Close'], mode='lines',
-        line=dict(color='#0A84FF', width=2.5), 
+        line=dict(color='#0A84FF', width=2.5),
         fill='tozeroy', fillcolor='rgba(10, 132, 255, 0.1)', name='Quote'
     ))
     fig.add_hline(y=df['Open'].iloc[0], line_dash="dot", line_color="#86868b")
@@ -364,11 +364,11 @@ market_categories = {
 with st.sidebar:
     st.markdown("<h3 style='color:#f5f5f7; font-weight: 600;'>Target Selection</h3>", unsafe_allow_html=True)
     selected_category = st.selectbox("Category", list(market_categories.keys()))
-    
+   
     options_dict = market_categories[selected_category]
     option = st.radio("Asset", list(options_dict.keys()))
     code = options_dict[option]
-    
+   
     is_tw_stock = code.isdigit()
     is_tw_index = (code == "^TWII")
     is_us_index = (code in ["^GSPC", "^DJI", "^IXIC", "^SOX", "^VIX", "^TNX"])
@@ -376,11 +376,11 @@ with st.sidebar:
     is_forex = ("=X" in code or "DX" in code)
     is_futures = ("=F" in code)
     is_us_stock = not (is_tw_stock or is_tw_index or is_us_index or is_crypto or is_forex or is_futures)
-    
+   
     if is_tw_stock or is_tw_index or code == "TWD=X": market_type = 'TW'
     elif is_crypto: market_type = 'CRYPTO'
     else: market_type = 'US'
-    
+   
     st.divider()
     status_code, status_text = check_market_status(market_type=market_type)
     st.info(f"Status: {status_text}")
@@ -390,7 +390,6 @@ with st.sidebar:
 
 # === 5. Data Processing ===
 real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
-
 if is_tw_stock:
     try:
         real = twstock.realtime.get(code)
@@ -402,7 +401,7 @@ if is_tw_stock:
             real_data['high'] = info.get('high', '-')
             real_data['low'] = info.get('low', '-')
             real_data['open'] = info.get('open', '-')
-            real_data['volume'] = info.get('accumulate_trade_volume', '0') 
+            real_data['volume'] = info.get('accumulate_trade_volume', '0')
     except: pass
     hist_data = fetch_twse_history_proxy(code)
 else:
@@ -420,7 +419,6 @@ else:
 
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 df_intra = get_intraday_chart_data(code, is_us_source=not is_tw_stock)
-
 current_price = real_data['price']
 if (current_price == 0 or current_price is None) and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
@@ -432,10 +430,10 @@ if (current_price == 0 or current_price is None) and not df_daily.empty:
 
 prev_close = 0
 if not df_daily.empty:
-    if not is_tw_stock: 
+    if not is_tw_stock:
         try: prev_close = tk.fast_info.previous_close
         except: prev_close = df_daily.iloc[-2]['close'] if len(df_daily) > 1 else df_daily.iloc[-1]['close']
-    else: 
+    else:
         last_date = df_daily.iloc[-1]['date']
         today_str = datetime.now().strftime('%Y-%m-%d')
         prev_close = df_daily.iloc[-2]['close'] if last_date == today_str and len(df_daily) > 1 else df_daily.iloc[-1]['close']
@@ -445,7 +443,6 @@ pct = (change / prev_close) * 100 if prev_close != 0 else 0
 
 # === 6. UI Presentation ===
 font_color = "#34c759" if change >= 0 else "#ff3b30"
-
 currency_symbol = "NT$" if (is_tw_stock or is_tw_index or code == "TWD=X") else "$"
 unit_label = "Pts" if (is_tw_index or is_us_index or code == "DX-Y.NYB") else \
              "/ oz" if (is_futures and ("GC" in code or "SI" in code)) else \
@@ -468,7 +465,6 @@ st.markdown(f"""
 
 hide_volume = (is_tw_index or is_us_index or is_forex)
 safe_fmt = lambda x: f"{x:,.2f}" if isinstance(x, (int, float)) else x
-
 if hide_volume:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Open", safe_fmt(real_data.get('open')))
@@ -484,14 +480,12 @@ else:
     c5.metric("Volume", real_data.get('volume', '-'))
 
 st.divider()
-
 col1, col2 = st.columns([1, 1])
 with col1:
     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
     if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
     else: st.info("Intraday data unavailable.")
     st.markdown('</div>', unsafe_allow_html=True)
-
 with col2:
     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
