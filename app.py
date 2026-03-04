@@ -22,14 +22,14 @@ requests.Session.request = patched_request
 st.set_page_config(page_title="FENC Audit HQ | Strategic Dashboard", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-# === 1.5 Security & Authentication (全新 Apple 極簡風格) ===
+# === 全新工業控制室風格登入介面（根據你提供的圖片 100% 重做） ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if st.session_state["password_correct"]:
         return True
 
-    # ==================== 背景圖 ====================
+    # 背景圖（請把 bg.jpg 換成你上傳的那張工業控制面板圖片）
     if os.path.exists('bg.jpg'):
         with open('bg.jpg', 'rb') as f:
             encoded_bg = base64.b64encode(f.read()).decode()
@@ -45,116 +45,101 @@ def check_password():
             content: '';
             position: fixed;
             inset: 0;
-            background: rgba(0, 0, 0, 0.68);
+            background: linear-gradient(rgba(0,0,0,0.78), rgba(0,0,0,0.88));
             z-index: -1;
         }}
         </style>
         """
         st.markdown(bg_css, unsafe_allow_html=True)
 
-    # ==================== Apple 極簡高級 CSS ====================
+    # 工業控制室風格 CSS
     st.markdown("""
     <style>
-        /* Apple 系統字體 + 全局清理 */
-        html, body, [class*="css"] {
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif !important;
-        }
-        [data-testid="stSidebar"], [data-testid="collapsedControl"], header {display: none !important;}
-
-        /* 主登入卡片 - 高級玻璃擬態 */
+        [data-testid="stSidebar"], header, [data-testid="collapsedControl"] {display: none !important;}
+        
+        /* 登入卡片 - 工業深色半透明 */
         .login-card {
-            background: rgba(255, 255, 255, 0.085);
-            backdrop-filter: blur(28px);
-            -webkit-backdrop-filter: blur(28px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 26px;
-            padding: 52px 48px 48px;
-            box-shadow: 0 35px 70px -15px rgba(0, 0, 0, 0.65);
-            max-width: 420px;
-            margin: 0 auto;
+            background: rgba(20, 22, 28, 0.94);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 52px 48px;
+            max-width: 480px;
+            margin: 80px auto 40px;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.7);
+            border: 1px solid rgba(255,255,255,0.12);
         }
-
+        
         .title {
-            font-size: 32px;
+            font-size: 38px;
             font-weight: 700;
             color: #ffffff;
             text-align: center;
-            letter-spacing: -0.8px;
+            letter-spacing: 1px;
             margin-bottom: 6px;
         }
         .subtitle {
             font-size: 17px;
-            color: #a1a1a6;
+            color: #b0b0c0;
             text-align: center;
             margin-bottom: 42px;
-            line-height: 1.35;
         }
-
+        
         /* 標籤 */
-        .apple-label {
-            font-size: 13px;
+        .form-label {
+            font-size: 13.5px;
             font-weight: 600;
-            color: #f5f5f7;
-            margin: 24px 0 8px 4px;
-            letter-spacing: 0.6px;
+            color: #d0d0d0;
+            margin-bottom: 8px;
             display: block;
+            letter-spacing: 0.8px;
         }
-
-        /* 輸入框 - Apple 原生感 */
-        div[data-baseweb="input"] > div {
-            background-color: rgba(255,255,255,0.09) !important;
-            border: 1px solid rgba(255,255,255,0.25) !important;
-            border-radius: 14px !important;
+        
+        /* 白色輸入框（完全還原圖片） */
+        div[data-baseweb="input"] > div,
+        div[data-baseweb="select"] > div {
+            background-color: #ffffff !important;
+            border: 1px solid #bbbbbb !important;
+            border-radius: 12px !important;
             height: 54px !important;
-            transition: all 0.25s ease !important;
         }
         div[data-baseweb="input"] input {
-            color: #ffffff !important;
+            color: #1f1f1f !important;
             font-size: 17px !important;
             font-weight: 500 !important;
         }
-        div[data-baseweb="input"]:focus-within > div {
-            border-color: #0A84FF !important;
-            box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.25) !important;
-            background-color: rgba(255,255,255,0.13) !important;
-        }
-
-        /* Sign In 按鈕 - Apple 藍 */
+        
+        /* 藍色按鈕（還原圖片鮮藍） */
         button[kind="primary"] {
-            background: linear-gradient(90deg, #0071E3, #0A84FF) !important;
+            background-color: #0066FF !important;
             color: #ffffff !important;
-            font-size: 17px !important;
+            font-size: 17.5px !important;
             font-weight: 600 !important;
-            height: 54px !important;
-            border-radius: 14px !important;
-            border: none !important;
-            margin-top: 12px;
+            height: 56px !important;
+            border-radius: 12px !important;
+            margin-top: 18px;
         }
         button[kind="primary"]:hover {
-            transform: scale(1.015);
-            box-shadow: 0 12px 25px rgba(10, 132, 255, 0.35) !important;
+            background-color: #0052cc !important;
+            transform: scale(1.02);
         }
-
+        
         /* 底部連結 */
         .footer-links {
             text-align: center;
             margin-top: 38px;
             font-size: 14.5px;
-            color: #8e8e93;
+            color: #888888;
         }
         .footer-links a {
-            color: #0A84FF;
+            color: #4da3ff;
             text-decoration: none;
         }
-        .footer-links a:hover {text-decoration: underline;}
     </style>
     """, unsafe_allow_html=True)
 
-    # ==================== 佈局 ====================
-    st.markdown("<br><br><br><br>", unsafe_allow_html=True)
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns([1, 1.6, 1])
-    
+    col1, col2, col3 = st.columns([1, 1.7, 1])
     with col2:
         with st.container():
             st.markdown('<div class="login-card">', unsafe_allow_html=True)
@@ -162,21 +147,21 @@ def check_password():
             st.markdown('<div class="title">Audit HQ</div>', unsafe_allow_html=True)
             st.markdown('<div class="subtitle">Sign in with your FENC corporate account</div>', unsafe_allow_html=True)
             
-            st.markdown('<span class="apple-label">ORGANIZATION</span>', unsafe_allow_html=True)
-            st.selectbox("company", ["Far Eastern New Century (FENC)"], label_visibility="collapsed")
+            st.markdown('<span class="form-label">ORGANIZATION</span>', unsafe_allow_html=True)
+            st.selectbox("", ["Far Eastern New Century (FENC)"], label_visibility="collapsed")
             
-            st.markdown('<span class="apple-label">ACCOUNT ID</span>', unsafe_allow_html=True)
-            st.text_input("account", value="Audit_HQ_Admin", label_visibility="collapsed")
+            st.markdown('<span class="form-label">ACCOUNT ID</span>', unsafe_allow_html=True)
+            st.text_input("", value="Audit_HQ_Admin", label_visibility="collapsed")
             
-            st.markdown('<span class="apple-label">PASSWORD</span>', unsafe_allow_html=True)
-            pwd = st.text_input("password", type="password", label_visibility="collapsed")
+            st.markdown('<span class="form-label">PASSWORD</span>', unsafe_allow_html=True)
+            pwd = st.text_input("", type="password", label_visibility="collapsed")
             
             if st.button("Sign In", type="primary", use_container_width=True):
                 if pwd == "AUDIT@01":
                     st.session_state["password_correct"] = True
                     st.rerun()
                 elif pwd != "":
-                    st.error("Authentication failed. Please check your credentials.")
+                    st.error("❌ Authentication failed. Please check your credentials.")
             
             st.markdown("""
             <div class="footer-links">
@@ -195,11 +180,11 @@ if not check_password():
 st.markdown("""
     <style>
         .stApp { background: #000000 !important; color: #f5f5f7 !important; }
-        .main-title { font-size: 2.5rem; font-weight: 700; color: #f5f5f7; text-align: center; margin: 1rem 0; letter-spacing: 1px;}
-        .sub-title { font-size: 1.1rem; color: #86868b; text-align: center; margin-bottom: 2rem; font-weight: 400;}
+        .main-title { font-size: 2.6rem; font-weight: 700; color: #f5f5f7; text-align: center; margin: 1.5rem 0; letter-spacing: 1px;}
+        .sub-title { font-size: 1.15rem; color: #86868b; text-align: center; margin-bottom: 2.5rem; font-weight: 400;}
         .chart-container {
-            background: #1c1c1e; padding: 20px; border-radius: 18px;
-            margin-bottom: 20px; border: 1px solid #38383a;
+            background: #1c1c1e; padding: 24px; border-radius: 20px;
+            margin-bottom: 24px; border: 1px solid #38383a;
         }
         div[data-testid="metric-container"] {
             background-color: #1c1c1e; border: 1px solid #38383a; padding: 15px;
