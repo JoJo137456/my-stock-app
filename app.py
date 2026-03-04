@@ -27,10 +27,10 @@ def check_password():
     if st.session_state["password_correct"]:
         return True
 
-    # 注入 Google 字體與全版 CSS
+    # 注入 Google 字體與全版 CSS (包含 Noto Sans TC 以支援繁體中文設計)
     st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;800&family=Noto+Sans+TC:wght@500;700;900&display=swap');
 
         /* 隱藏預設元素 */
         [data-testid="stSidebar"], header, [data-testid="collapsedControl"] {display: none !important;}
@@ -38,7 +38,7 @@ def check_password():
         /* 全域背景設定 - 淺藍色系 */
         .stApp {
             background-color: #F0F8FF !important; 
-            font-family: 'Poppins', sans-serif !important;
+            font-family: 'Poppins', 'Noto Sans TC', sans-serif !important;
         }
         
         /* 左下角的巨大圓弧色塊 - 柔和的藍色 */
@@ -63,11 +63,12 @@ def check_password():
         /* === 左側文字排版 === */
         .hero-subtitle {
             font-size: 16px;
-            font-weight: 600;
+            font-weight: 700;
             color: #1A1B20;
             margin-bottom: 15px;
             display: flex;
             align-items: center;
+            letter-spacing: 0.5px;
         }
         .hero-subtitle::before {
             content: '';
@@ -85,14 +86,17 @@ def check_password():
             margin-bottom: 0;
             letter-spacing: -2px;
         }
+        
+        /* 強化的中文輪廓字體設計 */
         .hero-title-outline {
             font-size: 55px; 
-            font-weight: 800;
+            font-weight: 900;
             color: transparent;
             -webkit-text-stroke: 1.5px #1A1B20;
             line-height: 1.2;
+            margin-top: 5px;
             margin-bottom: 50px;
-            letter-spacing: -1px;
+            letter-spacing: 2px;
         }
         
         /* 左側 Dashboard 標籤 (純視覺，無點擊效果) */
@@ -101,14 +105,14 @@ def check_password():
             color: #ffffff;
             padding: 14px 32px;
             border-radius: 8px;
-            font-weight: 500;
+            font-weight: 600;
             font-size: 14px;
             display: inline-block;
             cursor: default; 
-            letter-spacing: 0.5px;
+            letter-spacing: 1px;
         }
 
-        /* === 右側白底登入卡片 === */
+        /* === 右側白底登入卡片 (將樣式直接綁定在第三個 Column 上，徹底消除白框 Bug) === */
         [data-testid="column"]:nth-of-type(3) {
             background: #ffffff;
             border-radius: 20px;
@@ -120,7 +124,7 @@ def check_password():
         .login-dept {
             font-size: 14px;
             color: #666666;
-            font-weight: 600;
+            font-weight: 700;
             margin-bottom: 5px;
             letter-spacing: 1px;
         }
@@ -134,7 +138,7 @@ def check_password():
             font-size: 13px;
             color: #888888;
             margin-bottom: 8px;
-            font-weight: 500;
+            font-weight: 600;
         }
         
         /* 覆寫 Streamlit 輸入框外觀 */
@@ -160,7 +164,7 @@ def check_password():
             font-size: 12px;
             color: #A0A0A0;
             margin: 20px 0;
-            font-weight: 400;
+            font-weight: 500;
         }
         .terms-text a { color: #A0A0A0; text-decoration: underline; }
 
@@ -186,7 +190,7 @@ def check_password():
             text-align: center;
             font-size: 12.5px;
             color: #888888;
-            font-weight: 500;
+            font-weight: 600;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -196,15 +200,13 @@ def check_password():
     
     with col_left:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        # 替換為 Strategic Command
-        st.markdown('<div class="hero-subtitle">Strategic Command</div>', unsafe_allow_html=True)
+        st.markdown('<div class="hero-subtitle">Strategic Command (戰略指揮)</div>', unsafe_allow_html=True)
         st.markdown('<div class="hero-title-solid">Audit. HQ</div>', unsafe_allow_html=True)
-        st.markdown('<div class="hero-title-outline">Far Eastone Group</div>', unsafe_allow_html=True)
-        # 替換為 Intelligence Nexus
-        st.markdown('<div class="label-dashboard">Intelligence Nexus</div>', unsafe_allow_html=True)
+        st.markdown('<div class="hero-title-outline">遠東聯合稽核總部</div>', unsafe_allow_html=True)
+        st.markdown('<div class="label-dashboard">Intelligence Nexus (情報樞紐)</div>', unsafe_allow_html=True)
         
     with col_right:
-        st.markdown('<div class="login-dept">聯合稽核總部</div>', unsafe_allow_html=True)
+        st.markdown('<div class="login-dept">遠東聯合稽核總部</div>', unsafe_allow_html=True)
         st.markdown('<div class="login-title">Login Now</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="login-label">Customer ID</div>', unsafe_allow_html=True)
@@ -224,7 +226,7 @@ def check_password():
                 elif pwd != "":
                     st.error("Invalid credentials")
         with link_col:
-            st.markdown('<div style="text-align: right; padding-top: 15px;"><a href="#" style="color: #888; font-size: 13px; font-weight: 500; text-decoration: underline;">Forgot Passcode</a></div>', unsafe_allow_html=True)
+            st.markdown('<div style="text-align: right; padding-top: 15px;"><a href="#" style="color: #888; font-size: 13px; font-weight: 600; text-decoration: underline;">Forgot Passcode</a></div>', unsafe_allow_html=True)
         
         st.markdown('<div class="it-contact">IT Contact Curt Lee (#6855)</div>', unsafe_allow_html=True)
 
