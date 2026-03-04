@@ -22,7 +22,7 @@ requests.Session.request = patched_request
 st.set_page_config(page_title="FENC Audit HQ | Strategic Dashboard", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-# === 最終版工業 SCADA 登入介面（已按你要求微調） ===
+# === 最終版工業 SCADA 登入介面 ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -52,7 +52,7 @@ def check_password():
         """
         st.markdown(bg_css, unsafe_allow_html=True)
 
-    # 調整後的 SCADA 工業風 CSS（已移除黑框 + 全 neon 發光 + 白色置中）
+    # 調整後的 SCADA 工業風 CSS
     st.markdown("""
     <style>
         [data-testid="stSidebar"], header, [data-testid="collapsedControl"] {display: none !important;}
@@ -90,37 +90,56 @@ def check_password():
             text-shadow: 0 0 12px #00ff9f;
         }
         
-        /* 標籤 - neon 發光 */
+        /* 標籤 - 強烈 neon 發光 (與標題相同風格) */
         .scada-label {
             font-size: 14px;
             font-weight: 700;
             color: #00ff9f;
-            margin: 22px 0 10px 4px;
+            margin: 25px 0 8px 0;
             letter-spacing: 2px;
             text-transform: uppercase;
             display: block;
-            text-shadow: 0 0 10px #00ff9f;
+            text-align: center;
+            text-shadow: 0 0 10px #00ff9f, 0 0 20px #00ff9f, 0 0 30px #00ff9f;
         }
         
-        /* 輸入框 - 深色高對比 + 白色置中文字 */
-        div[data-baseweb="input"] > div,
-        div[data-baseweb="select"] > div {
-            background-color: rgba(30, 35, 45, 0.95) !important;
-            border: 1px solid #00ff9f !important;
-            border-radius: 12px !important;
-            height: 58px !important;
-            box-shadow: inset 0 2px 6px rgba(0,0,0,0.6);
+        /* ORGANIZATION 的純白文字 */
+        .scada-org-text {
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: 600;
+            text-align: center;
+            letter-spacing: 1px;
+            margin-bottom: 25px;
+            text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
         }
-        div[data-baseweb="input"] input,
-        div[data-baseweb="select"] span {
+        
+        /* 輸入框 - 完全移除外框，改為透明與完美置中 */
+        div[data-baseweb="input"] > div {
+            background-color: transparent !important;
+            border: none !important;
+            border-bottom: 1px solid rgba(0, 255, 159, 0.3) !important;
+            border-radius: 0 !important;
+            height: 45px !important;
+            box-shadow: none !important;
+        }
+        div[data-baseweb="input"] input {
             color: #ffffff !important;
             text-align: center !important;
-            font-size: 18px !important;
+            font-size: 20px !important;
             font-weight: 500 !important;
+            padding: 0 !important; /* 確保完美置中 */
+            letter-spacing: 1.5px;
         }
+        /* 隱藏輸入框右側的清除 (X) 圖示，避免文字被擠歪 */
+        div[data-baseweb="input"] > div > div:nth-child(2) {
+            display: none !important;
+        }
+        /* 輸入時的底部發光特效 */
         div[data-baseweb="input"]:focus-within > div {
-            border-color: #00ff9f !important;
-            box-shadow: 0 0 0 4px rgba(0, 255, 159, 0.4) !important;
+            border-color: transparent !important;
+            border-bottom: 2px solid #00ff9f !important;
+            box-shadow: 0 15px 15px -15px rgba(0, 255, 159, 0.8) !important;
         }
         
         /* Sign In 按鈕 */
@@ -131,7 +150,7 @@ def check_password():
             font-weight: 700 !important;
             height: 60px !important;
             border-radius: 12px !important;
-            margin-top: 30px;
+            margin-top: 35px;
             text-transform: uppercase;
             letter-spacing: 1.5px;
         }
@@ -141,17 +160,18 @@ def check_password():
             transform: scale(1.03);
         }
         
-        /* 底部連結 - neon 發光 */
+        /* 底部連結 - 強烈 neon 發光 */
         .scada-footer {
             text-align: center;
             margin-top: 45px;
             font-size: 15px;
-            color: #88ccaa;
         }
-        .scada-footer a {
+        .scada-footer a, .scada-footer span {
             color: #00ff9f;
             text-decoration: none;
-            text-shadow: 0 0 8px #00ff9f;
+            font-weight: 700;
+            text-shadow: 0 0 10px #00ff9f, 0 0 20px #00ff9f;
+            letter-spacing: 0.5px;
         }
         .scada-footer a:hover { text-decoration: underline; }
     </style>
@@ -167,14 +187,16 @@ def check_password():
             st.markdown('<div class="scada-title">AUDIT HQ</div>', unsafe_allow_html=True)
             st.markdown('<div class="scada-subtitle">FENC Corporate Control Access</div>', unsafe_allow_html=True)
             
+            # 修改點 1 & 2: 螢光標籤與純白文字 (取代下拉選單)
             st.markdown('<span class="scada-label">ORGANIZATION</span>', unsafe_allow_html=True)
-            st.selectbox("", ["Far Eastern New Century (FENC)"], label_visibility="collapsed")
+            st.markdown('<div class="scada-org-text">Far Eastern New Century (FENC)</div>', unsafe_allow_html=True)
             
+            # 修改點 3 & 4: 螢光標籤與無框完美置中的輸入框
             st.markdown('<span class="scada-label">ACCOUNT ID</span>', unsafe_allow_html=True)
-            st.text_input("", value="Audit_HQ_Admin", label_visibility="collapsed")
+            st.text_input("", value="Audit_HQ_Admin", label_visibility="collapsed", key="acc_id")
             
             st.markdown('<span class="scada-label">PASSWORD</span>', unsafe_allow_html=True)
-            pwd = st.text_input("", type="password", label_visibility="collapsed")
+            pwd = st.text_input("", type="password", label_visibility="collapsed", key="pwd")
             
             if st.button("SIGN IN", type="primary", use_container_width=True):
                 if pwd == "AUDIT@01":
@@ -183,9 +205,10 @@ def check_password():
                 elif pwd != "":
                     st.error("❌ ACCESS DENIED — Invalid credentials")
             
+            # 修改點 5: 底部發光文字
             st.markdown("""
             <div class="scada-footer">
-                <a href="#">Forgot Password</a>  •  <a href="#">IT Support (ext. 6855)</a>
+                <a href="#">Forgot Password</a> <span style="color:#a0f0d0; text-shadow:none;">•</span> <a href="#">IT Support (ext. 6855)</a>
             </div>
             """, unsafe_allow_html=True)
             
@@ -196,7 +219,7 @@ def check_password():
 if not check_password():
     st.stop()
 
-# === 以下為你原本的主儀表板程式碼（完全不變）===
+# === 以下為主儀表板程式碼 (維持原樣) ===
 st.markdown("""
     <style>
         .stApp { background: #000000 !important; color: #f5f5f7 !important; }
@@ -370,7 +393,7 @@ with st.sidebar:
     options_dict = market_categories[selected_category]
     option = st.radio("Asset", list(options_dict.keys()))
     code = options_dict[option]
-   
+    
     is_tw_stock = code.isdigit()
     is_tw_index = (code == "^TWII")
     is_us_index = (code in ["^GSPC", "^DJI", "^IXIC", "^SOX", "^VIX", "^TNX"])
@@ -378,11 +401,11 @@ with st.sidebar:
     is_forex = ("=X" in code or "DX" in code)
     is_futures = ("=F" in code)
     is_us_stock = not (is_tw_stock or is_tw_index or is_us_index or is_crypto or is_forex or is_futures)
-   
+    
     if is_tw_stock or is_tw_index or code == "TWD=X": market_type = 'TW'
     elif is_crypto: market_type = 'CRYPTO'
     else: market_type = 'US'
-   
+    
     st.divider()
     status_code, status_text = check_market_status(market_type=market_type)
     st.info(f"Status: {status_text}")
