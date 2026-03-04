@@ -35,9 +35,9 @@ def check_password():
         /* 隱藏預設元素 */
         [data-testid="stSidebar"], header, [data-testid="collapsedControl"] {display: none !important;}
         
-        /* 全域背景設定 - 改為淺藍色系 */
+        /* 全域背景設定 - 淺藍色系 */
         .stApp {
-            background-color: #F0F8FF !important; /* 乾淨的 Alice Blue 淺藍底色 */
+            background-color: #F0F8FF !important; 
             font-family: 'Poppins', sans-serif !important;
         }
         
@@ -49,7 +49,7 @@ def check_password():
             left: -15vw;
             width: 65vw;
             height: 65vw;
-            background-color: #D6EAF8; /* 稍深的柔和藍色 */
+            background-color: #D6EAF8; 
             border-radius: 50%;
             z-index: 0;
         }
@@ -86,7 +86,7 @@ def check_password():
             letter-spacing: -2px;
         }
         .hero-title-outline {
-            font-size: 55px; /* 稍微縮小以容納長字串 */
+            font-size: 55px; 
             font-weight: 800;
             color: transparent;
             -webkit-text-stroke: 1.5px #1A1B20;
@@ -104,18 +104,18 @@ def check_password():
             font-weight: 500;
             font-size: 14px;
             display: inline-block;
-            cursor: default; /* 游標保持預設箭頭 */
+            cursor: default; 
         }
 
-        /* === 右側白底登入卡片 === */
-        .login-wrapper {
+        /* === 右側白底登入卡片 (將樣式直接綁定在第三個 Column 上) === */
+        [data-testid="column"]:nth-of-type(3) {
             background: #ffffff;
             border-radius: 20px;
-            padding: 50px 40px;
+            padding: 40px 35px;
             box-shadow: 0 15px 35px rgba(0,0,0,0.04);
             margin-top: 20px;
-            position: relative;
         }
+        
         .login-dept {
             font-size: 14px;
             color: #666666;
@@ -189,7 +189,7 @@ def check_password():
     </style>
     """, unsafe_allow_html=True)
 
-    # 頁面對齊佈局
+    # 頁面對齊佈局 (左、中、右)
     col_left, spacer, col_right = st.columns([1.1, 0.2, 0.9])
     
     with col_left:
@@ -197,12 +197,10 @@ def check_password():
         st.markdown('<div class="hero-subtitle">Net Banking</div>', unsafe_allow_html=True)
         st.markdown('<div class="hero-title-solid">Audit. HQ</div>', unsafe_allow_html=True)
         st.markdown('<div class="hero-title-outline">Far Eastone Group</div>', unsafe_allow_html=True)
-        # 移除了連結，改為純標籤
         st.markdown('<div class="label-dashboard">Dashboard</div>', unsafe_allow_html=True)
         
     with col_right:
-        st.markdown('<div class="login-wrapper">', unsafe_allow_html=True)
-        # 加上聯合稽核總部
+        # 在這裡，我們已經不用再放 <div class="login-wrapper"> 了，因為右欄本身已經被 CSS 變成白色卡片！
         st.markdown('<div class="login-dept">聯合稽核總部</div>', unsafe_allow_html=True)
         st.markdown('<div class="login-title">Login Now</div>', unsafe_allow_html=True)
         
@@ -225,10 +223,7 @@ def check_password():
         with link_col:
             st.markdown('<div style="text-align: right; padding-top: 15px;"><a href="#" style="color: #888; font-size: 13px; font-weight: 500; text-decoration: underline;">Forgot Passcode</a></div>', unsafe_allow_html=True)
         
-        # 加上專屬 IT 聯絡資訊
         st.markdown('<div class="it-contact">IT Contact Curt Lee (#6855)</div>', unsafe_allow_html=True)
-            
-        st.markdown('</div>', unsafe_allow_html=True)
 
     return False
 
