@@ -373,4 +373,135 @@ def plot_intraday_line(df):
     fig.add_trace(go.Scatter(
         x=df.index, y=df['Close'], mode='lines',
         line=dict(color='#0A84FF', width=2.5),
-        fill='tozeroy', fillcolor='rgba(10, 132,
+        fill='tozeroy', fillcolor='rgba(10, 132, 255, 0.1)', name='Quote'
+    ))
+    fig.add_hline(y=df['Open'].iloc[0], line_dash="dot", line_color="#86868b")
+    layout = get_dark_layout(f"Intraday Dynamics ({interval_str})")
+    layout['height'] = 350
+    layout['hovermode'] = "x unified"
+    layout['yaxis']['tickformat'] = '.2f'
+    layout['yaxis']['range'] = [y_min - padding, y_max + padding]
+    layout['xaxis']['tickformat'] = '%H:%M'
+    fig.update_layout(**layout)
+    return fig
+
+market_categories = {
+    "Global Macro & Risk": {
+        "TAIEX (Taiwan)": "^TWII", "S&P 500 (US)": "^GSPC",
+        "Dow Jones (US)": "^DJI", "Nasdaq (US)": "^IXIC",
+        "SOX (Semiconductor)": "^SOX", "VIX (Volatility)": "^VIX",
+        "U.S. 10Y Treasury": "^TNX", "Gold Futures": "GC=F",
+        "WTI Crude Oil": "CL=F", "Bitcoin (Crypto)": "BTC-USD",
+        "US Dollar Index (DXY)": "DX-Y.NYB", "USD/TWD": "TWD=X"
+    },
+    "Core Business Entities": {
+        "1402 FENC": "1402", "1102 ACC": "1102", "2606 U-Ming": "2606",
+        "1460 Everest": "1460", "2903 FEDS": "2903", "4904 FET": "4904", "1710 OUCC": "1710"
+    }
+}
+
+with st.sidebar:
+    st.markdown("<h3 style='color:#f5f5f7; font-weight: 600;'>Target Selection</h3>", unsafe_allow_html=True)
+    selected_category = st.selectbox("Category", list(market_categories.keys()))
+    options_dict = market_categories[selected_category]
+    option = st.radio("Asset", list(options_dict.keys()))
+    code = options_dict[option]
+    
+    is_tw_stock = code.isdigit()
+    is_tw_index = (code == "^TWII")
+    is_us_index = (code in ["^GSPC", "^DJI", "^IXIC", "^SOX", "^VIX", "^TNX"])
+    is_crypto = ("BTC" in code)
+    is_forex = ("=X" in code or "DX" in code)
+    is_futures = ("=F" in code)
+    is_us_stock = not (is_tw_stock or is_tw_index or is_us_index or is_crypto or is_forex or is_futures)
+    
+    if is_tw_stock or is_tw_index or code == "TWD=X": market_type = 'TW'
+    elif is_crypto: market_type = 'CRYPTO'
+    else: market_type = 'US'
+    
+    st.divider()
+    status_code, status_text = check_market_status(market_type=market_type)
+    st.info(f"Status: {status_text}")
+    if st.button("Sync Data", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
+if is_tw_stock:
+    try:
+        real = twstock.realtime.get(code)
+        if real['success']:
+            info = real['realtime']
+            latest = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else 0.0
+            if latest == 0.0: latest = float(info['open']) if info['open'] != '-' else 0.0
+            real_data['price'] = latest
+            real_data['high'] = info.get('high', '-')
+            real_data['low'] = info.get('low', '-')
+            real_data['open'] = info.get('open', '-')
+            real_data['volume'] = info.get('accumulate_trade_volume', '0')
+    except: pass
+    hist_data = fetch_twse_history_proxy(code)
+else:
+    try:
+        tk = yf.Ticker(code)
+        fi = tk.fast_info
+        latest = fi.last_price
+        real_data['price'] = latest
+        real_data['open'] = fi.open
+        real_data['high'] = fi.day_high
+        real_data['low'] = fi.day_low
+        real_data['volume'] = f"{int(fi.last_volume):,}"
+    except: pass
+    hist_data = fetch_us_history(code)
+
+df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
+df_intra = get_intraday_chart_data(code, is_us_source=not is_tw_stock)
+current_price = real_data['price']
+
+if (current_price == 0 or current_price is None) and not df_daily.empty:
+    current_price = df_daily.iloc[-1]['close']
+    real_data['high'] = df_daily.iloc[-1]['high']
+    real_data['low'] = df_daily.iloc[-1]['low']
+    real_data['open'] = df_daily.iloc[-1]['open']
+    vol_num = df_daily.iloc[-1]['volume']
+    real_data['volume'] = f"{int(vol_num / 1000):,}" if is_tw_stock else f"{int(vol_num):,}"
+
+prev_close = 0
+if not df_daily.empty:
+    if not is_tw_stock:
+        try: prev_close = tk.fast_info.previous_close
+        except: prev_close = df_daily.iloc[-2]['close'] if len(df_daily) > 1 else df_daily.iloc[-1]['close']
+    else:
+        last_date = df_daily.iloc[-1]['date']
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        prev_close = df_daily.iloc[-2]['close'] if last_date == today_str and len(df_daily) > 1 else df_daily.iloc[-1]['close']
+
+change = current_price - prev_close
+pct = (change / prev_close) * 100 if prev_close != 0 else 0
+
+font_color = "#34c759" if change >= 0 else "#ff3b30"
+currency_symbol = "NT$" if (is_tw_stock or is_tw_index or code == "TWD=X") else "$"
+
+st.markdown(f"""
+<div style="background-color: #1c1c1e; padding: 30px; border-radius: 20px; margin-bottom: 25px; border: 1px solid #38383a;">
+    <h2 style="margin:0; color:#86868b; font-size: 1.1rem;">{option}</h2>
+    <div style="display: flex; align-items: baseline; gap: 20px; margin-top: 8px;">
+        <span style="font-size: 3.8rem; font-weight: 700; color: #f5f5f7;">
+           {currency_symbol.replace('NT$', '') if code != '^TNX' else ''} {current_price:,.2f}
+        </span>
+        <span style="font-size: 1.8rem; font-weight: 600; color: {font_color};">
+             {change:+.2f} ({pct:+.2f}%)
+        </span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+col1, col2 = st.columns([1, 1])
+with col1:
+    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+    if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+with col2:
+    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+    if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
