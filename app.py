@@ -7,8 +7,6 @@ import pytz
 import requests
 import urllib3
 import yfinance as yf
-import base64
-import os
 
 # === 0. System Level Fixes ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -22,133 +20,194 @@ requests.Session.request = patched_request
 st.set_page_config(page_title="FENC Audit HQ | Strategic Dashboard", layout="wide")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-# === 新版清晰架構登入介面 ===
+# === 全新明亮系現代化登入介面 (依圖片模板打造) ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
     if st.session_state["password_correct"]:
         return True
 
-    # 背景圖
-    if os.path.exists('bg.jpg'):
-        with open('bg.jpg', 'rb') as f:
-            encoded_bg = base64.b64encode(f.read()).decode()
-        bg_css = f"""
-        <style>
-        .stApp {{
-            background-image: url("data:image/jpeg;base64,{encoded_bg}") !important;
-            background-size: cover !important;
-            background-position: center !important;
-            background-attachment: fixed !important;
-        }}
-        .stApp::before {{
-            content: '';
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.6); /* 稍微調淡背景圖的遮罩，突顯前方的灰底卡片 */
-            z-index: -1;
-        }}
-        </style>
-        """
-        st.markdown(bg_css, unsafe_allow_html=True)
-
-    # 清晰、帶有灰底與明顯框線的現代設計 CSS
+    # 注入 Google 字體與全版 CSS
     st.markdown("""
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;800&display=swap');
+
+        /* 隱藏預設元素 */
         [data-testid="stSidebar"], header, [data-testid="collapsedControl"] {display: none !important;}
         
-        /* 帶有透明灰底與明顯框線的主卡片，讓眼睛有底色可以聚焦 */
-        .login-card {
-            background: rgba(45, 45, 50, 0.85); 
-            border: 1px solid rgba(220, 220, 220, 0.5); 
-            border-radius: 12px;
-            padding: 50px 40px;
-            max-width: 420px;
-            margin: 100px auto;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        /* 全域背景設定 */
+        .stApp {
+            background-color: #FDF4EF !important; /* 模板的暖膚底色 */
+            font-family: 'Poppins', sans-serif !important;
         }
         
-        .login-title {
+        /* 左下角的巨大圓弧色塊 */
+        .stApp::before {
+            content: '';
+            position: fixed;
+            bottom: -30vh;
+            left: -15vw;
+            width: 65vw;
+            height: 65vw;
+            background-color: #F8DAC9;
+            border-radius: 50%;
+            z-index: 0;
+        }
+
+        /* 將內容層次推至最上層 */
+        .main .block-container {
+            z-index: 1;
+            padding-top: 10vh !important;
+        }
+
+        /* === 左側文字排版 === */
+        .hero-subtitle {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1A1B20;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+        .hero-subtitle::before {
+            content: '';
+            display: inline-block;
+            width: 40px;
+            height: 2px;
+            background-color: #1A1B20;
+            margin-right: 15px;
+        }
+        .hero-title-solid {
+            font-size: 80px;
+            font-weight: 800;
+            color: #1A1B20;
+            line-height: 1.1;
+            margin-bottom: 0;
+            letter-spacing: -2px;
+        }
+        .hero-title-outline {
+            font-size: 75px;
+            font-weight: 800;
+            color: transparent;
+            -webkit-text-stroke: 1.5px #1A1B20;
+            line-height: 1.1;
+            margin-bottom: 50px;
+            letter-spacing: -1px;
+        }
+        
+        /* 左側 Learn Now 按鈕 */
+        .btn-learn {
+            background-color: #1A1B20;
             color: #ffffff;
-            text-align: center;
-            font-size: 32px;
-            font-weight: 700;
-            margin-bottom: 5px;
-            letter-spacing: 1px;
-        }
-
-        .login-subtitle {
-            color: #aaaaaa;
-            text-align: center;
+            padding: 14px 32px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
             font-size: 14px;
-            margin-bottom: 35px;
+            display: inline-block;
+        }
+        .btn-learn:hover { color: #FDF4EF; }
+
+        /* === 右側白底登入卡片 === */
+        .login-wrapper {
+            background: #ffffff;
+            border-radius: 20px;
+            padding: 50px 40px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.04);
+            margin-top: 20px;
+            position: relative;
+        }
+        .login-title {
+            font-size: 26px;
+            font-weight: 800;
+            color: #1A1B20;
+            margin-bottom: 30px;
+        }
+        .login-label {
+            font-size: 13px;
+            color: #888888;
+            margin-bottom: 8px;
+            font-weight: 500;
         }
         
-        .login-label {
-            color: #eeeeee;
-            font-size: 14px;
-            font-weight: 500;
-            margin-bottom: 8px;
-            display: block;
-        }
-
-        /* 輸入框：帶有透明灰底與實體邊框 */
+        /* 覆寫 Streamlit 輸入框外觀 */
         div[data-baseweb="input"] > div {
-            background-color: rgba(255, 255, 255, 0.08) !important; 
-            border: 1px solid rgba(255, 255, 255, 0.4) !important; 
-            border-radius: 6px !important;
-            height: 48px !important;
+            border: 1px solid #E0E0E0 !important;
+            background-color: #ffffff !important;
+            border-radius: 8px !important;
+            height: 52px !important;
+            box-shadow: none !important;
         }
+        div[data-baseweb="input"] > div:hover { border-color: #1A1B20 !important; }
+        div[data-baseweb="input"]:focus-within > div { border: 1.5px solid #1A1B20 !important; }
         
         div[data-baseweb="input"] input {
-            color: #ffffff !important;
-            padding: 10px 15px !important;
-            font-size: 16px !important;
-        }
-
-        /* 點擊輸入時的視覺回饋 */
-        div[data-baseweb="input"]:focus-within > div {
-            border: 1px solid #00b8ff !important;
-            background-color: rgba(255, 255, 255, 0.15) !important;
-        }
-
-        button[kind="primary"] {
-            background-color: #007aff !important;
-            color: white !important;
-            border-radius: 6px !important;
-            height: 50px !important;
-            font-size: 16px !important;
-            font-weight: 600 !important;
-            margin-top: 30px;
-            border: 1px solid rgba(255,255,255,0.2) !important;
-            letter-spacing: 1px;
+            color: #1A1B20 !important;
+            padding: 12px 16px !important;
+            font-size: 15px !important;
+            font-weight: 500 !important;
         }
         
+        /* 條款文字 */
+        .terms-text {
+            font-size: 12px;
+            color: #A0A0A0;
+            margin: 20px 0;
+            font-weight: 400;
+        }
+        .terms-text a { color: #A0A0A0; text-decoration: underline; }
+
+        /* Login 按鈕 */
+        button[kind="primary"] {
+            background-color: #1A1B20 !important;
+            color: white !important;
+            border-radius: 8px !important;
+            height: 50px !important;
+            font-weight: 600 !important;
+            padding: 0 35px !important;
+            border: none !important;
+        }
         button[kind="primary"]:hover {
-            background-color: #0056b3 !important;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         }
     </style>
     """, unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns([1, 1.5, 1])
-    with col2:
-        st.markdown('<div class="login-card">', unsafe_allow_html=True)
-        st.markdown('<div class="login-title">FENC Audit HQ</div>', unsafe_allow_html=True)
-        st.markdown('<div class="login-subtitle">System Access Control</div>', unsafe_allow_html=True)
+    # 頁面對齊佈局
+    col_left, spacer, col_right = st.columns([1.1, 0.2, 0.9])
+    
+    with col_left:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown('<div class="hero-subtitle">Net Banking</div>', unsafe_allow_html=True)
+        st.markdown('<div class="hero-title-solid">Audit. HQ</div>', unsafe_allow_html=True)
+        st.markdown('<div class="hero-title-outline">Taiwan</div>', unsafe_allow_html=True)
+        st.markdown('<a href="#" class="btn-learn">Learn Now ──</a>', unsafe_allow_html=True)
         
-        st.markdown('<span class="login-label">Account ID</span>', unsafe_allow_html=True)
-        st.text_input("", value="Audit_HQ_Admin", label_visibility="collapsed", key="acc_id")
+    with col_right:
+        st.markdown('<div class="login-wrapper">', unsafe_allow_html=True)
+        st.markdown('<div class="login-title">Login Now</div>', unsafe_allow_html=True)
         
-        st.markdown('<br><span class="login-label">Password</span>', unsafe_allow_html=True)
+        st.markdown('<div class="login-label">Customer ID</div>', unsafe_allow_html=True)
+        st.text_input("", value="490.892.812-007", label_visibility="collapsed", key="acc_id")
+        
+        st.markdown('<div class="login-label" style="margin-top:20px;">Enter Passcode</div>', unsafe_allow_html=True)
         pwd = st.text_input("", type="password", label_visibility="collapsed", key="pwd")
         
-        if st.button("SIGN IN", type="primary", use_container_width=True):
-            if pwd == "AUDIT@01":
-                st.session_state["password_correct"] = True
-                st.rerun()
-            elif pwd != "":
-                st.error("Invalid credentials")
-                
+        st.markdown('<div class="terms-text">By login, you agree to our <a href="#">Terms & Conditions</a></div>', unsafe_allow_html=True)
+        
+        # 底部按鈕與忘記密碼區塊
+        btn_col, link_col = st.columns([1, 1])
+        with btn_col:
+            if st.button("Login Now ──", type="primary", use_container_width=True):
+                if pwd == "AUDIT@01":
+                    st.session_state["password_correct"] = True
+                    st.rerun()
+                elif pwd != "":
+                    st.error("Invalid credentials")
+        with link_col:
+            st.markdown('<div style="text-align: right; padding-top: 15px;"><a href="#" style="color: #888; font-size: 13px; font-weight: 500; text-decoration: underline;">Forgot Passcode</a></div>', unsafe_allow_html=True)
+            
         st.markdown('</div>', unsafe_allow_html=True)
 
     return False
@@ -156,10 +215,12 @@ def check_password():
 if not check_password():
     st.stop()
 
-# === 以下為主儀表板程式碼 (維持原樣) ===
+# === 以下為主儀表板程式碼 (登入後才會顯示，這部分需改回深色模式以避免排版衝突) ===
+# 為了避免登入頁面的亮色系影響內部儀表板，我們在登入成功後強制切換回黑色系 CSS
 st.markdown("""
     <style>
         .stApp { background: #000000 !important; color: #f5f5f7 !important; }
+        .stApp::before { display: none !important; } /* 隱藏登入頁的大圓圈 */
         .main-title { font-size: 2.6rem; font-weight: 700; color: #f5f5f7; text-align: center; margin: 1.5rem 0; letter-spacing: 1px;}
         .sub-title { font-size: 1.15rem; color: #86868b; text-align: center; margin-bottom: 2.5rem; font-weight: 400;}
         .chart-container {
@@ -310,17 +371,11 @@ market_categories = {
         "SOX (Semiconductor)": "^SOX", "VIX (Volatility)": "^VIX",
         "U.S. 10Y Treasury": "^TNX", "Gold Futures": "GC=F",
         "WTI Crude Oil": "CL=F", "Bitcoin (Crypto)": "BTC-USD",
-        "US Dollar Index (DXY)": "DX-Y.NYB", "USD/TWD": "TWD=X",
-        "Cotton Futures": "CT=F", "BDRY (Shipping ETF)": "BDRY"
+        "US Dollar Index (DXY)": "DX-Y.NYB", "USD/TWD": "TWD=X"
     },
     "Core Business Entities": {
         "1402 FENC": "1402", "1102 ACC": "1102", "2606 U-Ming": "2606",
         "1460 Everest": "1460", "2903 FEDS": "2903", "4904 FET": "4904", "1710 OUCC": "1710"
-    },
-    "Global Brand Peers (Apparel)": {
-        "Nike": "NKE", "Under Armour": "UAA", "Lululemon": "LULU",
-        "Adidas (ADR)": "ADDYY", "Puma (ADR)": "PUMSY", "Columbia": "COLM",
-        "Gap Inc": "GAP", "Fast Retailing (ADR)": "FRCOY", "VF Corp": "VFC"
     }
 }
 
@@ -385,72 +440,4 @@ if (current_price == 0 or current_price is None) and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
     real_data['high'] = df_daily.iloc[-1]['high']
     real_data['low'] = df_daily.iloc[-1]['low']
-    real_data['open'] = df_daily.iloc[-1]['open']
-    vol_num = df_daily.iloc[-1]['volume']
-    real_data['volume'] = f"{int(vol_num / 1000):,}" if is_tw_stock else f"{int(vol_num):,}"
-
-prev_close = 0
-if not df_daily.empty:
-    if not is_tw_stock:
-        try: prev_close = tk.fast_info.previous_close
-        except: prev_close = df_daily.iloc[-2]['close'] if len(df_daily) > 1 else df_daily.iloc[-1]['close']
-    else:
-        last_date = df_daily.iloc[-1]['date']
-        today_str = datetime.now().strftime('%Y-%m-%d')
-        prev_close = df_daily.iloc[-2]['close'] if last_date == today_str and len(df_daily) > 1 else df_daily.iloc[-1]['close']
-
-change = current_price - prev_close
-pct = (change / prev_close) * 100 if prev_close != 0 else 0
-
-font_color = "#34c759" if change >= 0 else "#ff3b30"
-currency_symbol = "NT$" if (is_tw_stock or is_tw_index or code == "TWD=X") else "$"
-unit_label = "Pts" if (is_tw_index or is_us_index or code == "DX-Y.NYB") else \
-             "/ oz" if (is_futures and ("GC" in code or "SI" in code)) else \
-             "/ bbl" if (is_futures and "CL" in code) else \
-             "%" if code == "^TNX" else ""
-
-st.markdown(f"""
-<div style="background-color: #1c1c1e; padding: 30px; border-radius: 20px; margin-bottom: 25px; border: 1px solid #38383a; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
-    <h2 style="margin:0; color:#86868b; font-size: 1.1rem; font-weight: 500; letter-spacing: 0.5px;">{option}</h2>
-    <div style="display: flex; align-items: baseline; gap: 20px; margin-top: 8px;">
-        <span style="font-size: 3.8rem; font-weight: 700; color: #f5f5f7; letter-spacing: -1.5px;">
-           {currency_symbol.replace('NT$', '') if code != '^TNX' else ''} {current_price:,.2f} <span style="font-size: 1.2rem; color:#86868b; font-weight: 400;">{unit_label}</span>
-        </span>
-        <span style="font-size: 1.8rem; font-weight: 600; color: {font_color};">
-             {change:+.2f} ({pct:+.2f}%)
-        </span>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-hide_volume = (is_tw_index or is_us_index or is_forex)
-safe_fmt = lambda x: f"{x:,.2f}" if isinstance(x, (int, float)) else x
-if hide_volume:
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Open", safe_fmt(real_data.get('open')))
-    c2.metric("High", safe_fmt(real_data.get('high')))
-    c3.metric("Low", safe_fmt(real_data.get('low')))
-    c4.metric("Prev Close", f"{prev_close:,.2f}")
-else:
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Open", safe_fmt(real_data.get('open')))
-    c2.metric("High", safe_fmt(real_data.get('high')))
-    c3.metric("Low", safe_fmt(real_data.get('low')))
-    c4.metric("Prev Close", f"{prev_close:,.2f}")
-    c5.metric("Volume", real_data.get('volume', '-'))
-
-st.divider()
-col1, col2 = st.columns([1, 1])
-with col1:
-    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-    if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
-    else: st.info("Intraday data unavailable.")
-    st.markdown('</div>', unsafe_allow_html=True)
-with col2:
-    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-    if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
-    else: st.info("Historical data unavailable.")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
-st.markdown(f"<div style='text-align: center; color: #86868b; font-size: 0.8rem; margin-top: 40px;'>Last synced: {update_time} (CST)</div>", unsafe_allow_html=True)
+    real_data['open'] = df_daily.iloc[-1]['
