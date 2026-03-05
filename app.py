@@ -7,8 +7,6 @@ import pytz
 import requests
 import urllib3
 import yfinance as yf
-import base64
-import os
 
 # === 0. System Level Fixes ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -19,146 +17,154 @@ def patched_request(self, method, url, *args, **kwargs):
 requests.Session.request = patched_request
 
 # === 1. Dashboard Initialization ===
-st.set_page_config(page_title="FENC Audit HQ | Strategic Dashboard", layout="wide")
-tw_tz = pytz.timezone('Asia/Taipei') 
+st.set_page_config(page_title="FENC Audit Department | Strategic Dashboard", layout="wide")
+tw_tz = pytz.timezone('Asia/Taipei')
 
-# === 1.5 Security & Authentication (Solid Apple Dark Mode UI) ===
+# === 淺藍系現代化登入介面 ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
-
     if st.session_state["password_correct"]:
         return True
 
-    # Load background image (bg.jpg)
-    if os.path.exists('bg.jpg'):
-        with open('bg.jpg', 'rb') as f:
-            encoded_bg = base64.b64encode(f.read()).decode()
-        bg_css = f"""
-        <style>
-        .stApp {{
-            background-image: url("data:image/jpeg;base64,{encoded_bg}") !important;
-            background-size: cover !important;
-            background-position: center !important;
-            background-repeat: no-repeat !important;
-        }}
-        </style>
-        """
-        st.markdown(bg_css, unsafe_allow_html=True)
+    st.markdown("""
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;800&family=Noto+Sans+TC:wght@500;700;900&display=swap');
+        [data-testid="stSidebar"], header, [data-testid="collapsedControl"] {display: none !important;}
         
-    st.markdown(
-        """
-        <style>
-            /* Apply Apple's native font stack globally */
-            html, body, [class*="css"] { 
-                font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; 
-            }
-            [data-testid="stSidebar"] {display: none;}
-            [data-testid="collapsedControl"] {display: none;}
-            header {visibility: hidden;}
-            
-            /* 1. Bulletproof Dark Container (防彈級太空灰底框) */
-            [data-testid="stVerticalBlockBorderWrapper"] {
-                background-color: rgba(28, 28, 30, 0.95) !important; /* iOS 系統級深灰色，95%不透明 */
-                border-radius: 20px !important;
-                border: 1px solid rgba(255, 255, 255, 0.15) !important;
-                box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8) !important;
-                padding: 40px !important;
-            }
-            
-            /* 2. Bulletproof Input Fields (強制覆寫輸入框為深灰底、白字) */
-            input[type="text"], input[type="password"], div[data-baseweb="select"] > div {
-                background-color: #2C2C2E !important; 
-                color: #FFFFFF !important;
-                border: 1px solid #3A3A3C !important;
-                border-radius: 10px !important;
-                font-size: 1.05rem !important;
-                font-weight: 500 !important;
-                -webkit-text-fill-color: #FFFFFF !important; /* 強制文字填色為白 */
-            }
-            div[data-baseweb="select"] span {
-                color: #FFFFFF !important;
-            }
-            
-            /* 輸入框點擊時的藍色光暈 */
-            div[data-baseweb="input"] > div:focus-within, div[data-baseweb="select"] > div:focus-within {
-                border: 1px solid #0A84FF !important;
-            }
-            
-            /* 3. Apple-style Primary Button (白色圓角按鈕) */
-            button[kind="primary"] {
-                background-color: #FFFFFF !important; 
-                color: #000000 !important; 
-                font-weight: 700 !important;
-                font-size: 1.1rem !important;
-                border: none !important;
-                border-radius: 20px !important;
-                padding: 12px !important;
-                transition: all 0.2s ease !important;
-            }
-            button[kind="primary"]:hover {
-                background-color: #E5E5EA !important;
-                transform: scale(1.02);
-            }
-            
-            /* Custom minimalist labels */
-            .apple-label {
-                font-size: 0.75rem;
-                font-weight: 600;
-                letter-spacing: 0.1em;
-                color: #86868B;
-                text-transform: uppercase;
-                margin-bottom: 8px;
-                margin-top: 16px;
-                display: block;
-            }
-        </style>
-        """, unsafe_allow_html=True
-    )
+        .stApp {
+            background-color: #F0F8FF !important;
+            font-family: 'Poppins', 'Noto Sans TC', sans-serif !important;
+        }
+        
+        .stApp::before {
+            content: '';
+            position: fixed;
+            bottom: -30vh;
+            left: -15vw;
+            width: 65vw;
+            height: 65vw;
+            background-color: #D6EAF8; 
+            border-radius: 50%;
+            z-index: 0;
+        }
 
-    st.markdown("<br><br><br><br>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1.2, 1]) 
+        .main .block-container {
+            z-index: 1;
+            padding-top: 10vh !important;
+        }
+
+        .hero-subtitle {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1A1B20;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            letter-spacing: 0.5px;
+        }
+        .hero-subtitle::before {
+            content: '';
+            display: inline-block;
+            width: 40px;
+            height: 2px;
+            background-color: #1A1B20;
+            margin-right: 15px;
+        }
+        
+        .hero-title-solid {
+            font-size: 70px;
+            font-weight: 800;
+            color: #1A1B20;
+            line-height: 1.1;
+            margin-bottom: 0;
+            letter-spacing: -2px;
+        }
+        
+        .hero-title-outline {
+            font-size: 55px;
+            font-weight: 900;
+            color: transparent;
+            -webkit-text-stroke: 1.5px #1A1B20;
+            line-height: 1.2;
+            margin-top: 5px;
+            margin-bottom: 50px;
+            letter-spacing: 1px;
+        }
+        
+        .label-dashboard {
+            background-color: #1A1B20;
+            color: #ffffff;
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            display: inline-block;
+            cursor: default; 
+            letter-spacing: 1px;
+        }
+
+        [data-testid="column"]:nth-of-type(3) {
+            background: #ffffff;
+            border-radius: 20px;
+            padding: 40px 35px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.04);
+            margin-top: 20px;
+        }
+        
+        .login-dept {
+            font-size: 28px;
+            color: #1A1B20;
+            font-weight: 900;
+            margin-bottom: 2px;
+            letter-spacing: 1.5px;
+        }
+        .login-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #888888;
+            margin-bottom: 30px;
+        }
+        
+        .login-label { font-size: 13px; color: #888888; margin-bottom: 8px; font-weight: 600; }
+        div[data-baseweb="input"] > div { border: 1px solid #E0E0E0 !important; background-color: #ffffff !important; border-radius: 8px !important; height: 52px !important; }
+        div[data-baseweb="input"] input { color: #1A1B20 !important; padding: 12px 16px !important; font-size: 15px !important; }
+        button[kind="primary"] { background-color: #1A1B20 !important; color: white !important; border-radius: 8px !important; height: 50px !important; font-weight: 600 !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    col_left, spacer, col_right = st.columns([1.1, 0.2, 0.9])
     
-    with col2:
-        with st.container(border=True):
-            st.markdown("<h2 style='text-align: center; color: #F5F5F7; font-weight: 700; margin-bottom: 30px; letter-spacing: 1px; font-size: 2.2rem;'>Audit HQ Portal</h2>", unsafe_allow_html=True)
-            
-            st.markdown("<span class='apple-label'>Organization</span>", unsafe_allow_html=True)
-            st.selectbox("company", ["Far Eastern New Century (FENC)"], label_visibility="collapsed")
-            
-            st.markdown("<span class='apple-label'>Account ID</span>", unsafe_allow_html=True)
-            st.text_input("account", value="Audit_HQ_Admin", label_visibility="collapsed")
-            
-            st.markdown("<span class='apple-label'>Password</span>", unsafe_allow_html=True)
-            pwd = st.text_input("password", type="password", label_visibility="collapsed")
-            
-            st.markdown("""
-                <div style='font-size: 0.8rem; color: #86868B; margin-top: 16px; margin-bottom: 30px; line-height: 1.5; text-align: center; font-weight: 400;'>
-                Use your corporate PC/Email credentials.<br>
-                For plant operations, use the leave/overtime password.
-                </div>
-            """, unsafe_allow_html=True)
-            
-            if st.button("Sign In", type="primary", use_container_width=True):
-                if pwd == "AUDIT@01":
-                    st.session_state["password_correct"] = True
-                    st.rerun()
-                elif pwd != "":
-                    st.error("Authentication failed. Please check your credentials.")
-            
-            st.markdown("""
-                <div style='display: flex; justify-content: center; gap: 20px; margin-top: 25px;'>
-                    <a href='#' style='color: #0A84FF; font-size: 0.85rem; text-decoration: none;'>Forgot Password?</a>
-                    <span style='color: #424245;'>|</span>
-                    <a href='#' style='color: #0A84FF; font-size: 0.85rem; text-decoration: none;'>Contact Support (Ext. 6855)</a>
-                </div>
-            """, unsafe_allow_html=True)
+    with col_left:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown('<div class="hero-subtitle">Strategic Command</div>', unsafe_allow_html=True)
+        st.markdown('<div class="hero-title-solid">Audit. Department</div>', unsafe_allow_html=True)
+        st.markdown('<div class="hero-title-outline">Far Eastern Group</div>', unsafe_allow_html=True)
+        st.markdown('<div class="label-dashboard">Intelligence Nexus</div>', unsafe_allow_html=True)
+        
+    with col_right:
+        st.markdown('<div class="login-dept">遠東聯合稽核總部</div>', unsafe_allow_html=True)
+        st.markdown('<div class="login-title">Login Now</div>', unsafe_allow_html=True)
+        
+        st.markdown('<div class="login-label">Customer ID</div>', unsafe_allow_html=True)
+        st.text_input("", value="fenc07822", label_visibility="collapsed", key="acc_id")
+        
+        st.markdown('<div class="login-label" style="margin-top:20px;">Enter Passcode</div>', unsafe_allow_html=True)
+        pwd = st.text_input("", type="password", label_visibility="collapsed", key="pwd")
+        
+        if st.button("Login Now ──", type="primary", use_container_width=True):
+            if pwd == "AUDIT@01":
+                st.session_state["password_correct"] = True
+                st.rerun()
+            elif pwd != "":
+                st.error("Invalid credentials")
+        
+        st.markdown('<div class="it-contact" style="text-align:center; margin-top:20px; color:#888; font-size:12px;">IT Contact Curt Lee (#6855)</div>', unsafe_allow_html=True)
 
     return False
 
 if not check_password():
     st.stop()
-
 
 # === 2. Core Dashboard Module ===
 st.markdown("""
@@ -168,7 +174,7 @@ st.markdown("""
         .sub-title { font-size: 1.1rem; color: #86868b; text-align: center; margin-bottom: 2rem; font-weight: 400;}
         .chart-container { 
             background: #1c1c1e; padding: 20px; border-radius: 18px; 
-            margin-bottom: 20px; border: 1px solid #38383a; 
+            margin-bottom: 20px; border: 1px solid #38383a;
         }
         div[data-testid="metric-container"] {
             background-color: #1c1c1e; border: 1px solid #38383a; padding: 15px;
@@ -179,7 +185,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">Strategic Control Center</div><div class="sub-title">FENC Audit Headquarters</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">Strategic Control Center</div><div class="sub-title">FENC Audit Department</div>', unsafe_allow_html=True)
 
 def check_market_status(market_type='TW'):
     now = datetime.now(tw_tz)
