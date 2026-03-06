@@ -5,3 +5,4 @@ numpy
 twstock
 lxml
 yfinance
+openpyxl
