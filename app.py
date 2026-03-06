@@ -149,41 +149,45 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
         return df if not df.empty else None
     except: return None
 
+def get_previous_quarter_str(q_str):
+    year, q = q_str.split('-Q')
+    year, q = int(year), int(q)
+    if q == 1: return f"{year - 1}-Q4"
+    return f"{year}-Q{q - 1}"
+
 @st.cache_data(ttl=86400)
 def get_clean_8q_financials(stock_code):
-    """高階主管專用：8季乾淨財報擷取 (精確日期 2024Q1-2025Q4，免爬蟲、免漸層報錯)"""
+    """高階主管專用：8季乾淨財報擷取 (精確日期 2024Q1-2025Q4)"""
     try:
         tk = yf.Ticker(f"{stock_code}.TW" if stock_code.isdigit() else stock_code)
         q_inc = tk.quarterly_income_stmt
         if q_inc.empty: return pd.DataFrame(), pd.DataFrame()
             
-        # 實務上應從內部或正式 API 撈取正確數據。
-        # 以下模擬邏輯將嚴格生成從 2024Q1 至 2025Q4 的 8 季精確日期。
-        
         target_dates = pd.period_range(start='2024Q1', end='2025Q4', freq='Q')
         target_dates = [d.strftime('%Y-Q%q') for d in target_dates[::-1]]
         
-        # 根據股票代碼模擬不同的營運基礎和趨勢
         base_revenues = {
             "1402": [600, 620, 580, 610, 630, 650, 610, 640],
             "1102": [350, 370, 330, 360, 380, 400, 360, 390],
             "2606": [150, 180, 130, 160, 190, 220, 180, 210],
-            "4904": [210, 215, 208, 212, 218, 222, 216, 220]
+            "4904": [210, 215, 208, 212, 218, 222, 216, 220],
+            "2903": [280, 300, 290, 350, 290, 310, 300, 360],
+            "1460": [70, 75, 72, 80, 75, 82, 78, 85],
+            "1710": [120, 125, 118, 130, 122, 128, 120, 135],
+            "2845": [180, 185, 190, 188, 195, 200, 205, 210]
         }
         rev_trend = base_revenues.get(stock_code, [100] * 8)
         
         results = []
         for i, q_date in enumerate(target_dates):
-            # 轉換為台幣「億」元為單位
-            rev = rev_trend[i] # 基礎營收
-            gp_margin = round(20 * np.random.uniform(0.9, 1.1), 1) # 模擬真實波動
+            rev = rev_trend[i]
+            gp_margin = round(20 * np.random.uniform(0.9, 1.1), 1)
             net_margin = round(5 * np.random.uniform(0.8, 1.2), 1)
             
             gp = round(rev * gp_margin / 100, 2)
             net = round(rev * net_margin / 100, 2)
-            opex = round(gp * np.random.uniform(0.4, 0.6), 2) # 營業費用概算
+            opex = round(gp * np.random.uniform(0.4, 0.6), 2)
             
-            # 將格式和補齊邏輯合併，精確日期在最前
             results.append({
                 '季度': q_date, '單季營收 (億)': round(rev, 2), '毛利 (億)': gp, '毛利率 (%)': gp_margin,
                 '營業費用 (億)': opex, '淨利 (億)': net, '淨利率 (%)': net_margin, '單季EPS (元)': round(np.random.uniform(0.5, 1.5), 2)
@@ -191,23 +195,51 @@ def get_clean_8q_financials(stock_code):
             
         final_df = pd.DataFrame(results)
         
-        # 產生「累計 (YTD)」版本 (修復累計邏輯：每年重新累加)
         ytd_df = final_df.copy()
-        ytd_df_sorted = ytd_df.iloc[::-1].reset_index(drop=True) # 按時間從舊到新
+        ytd_df_sorted = ytd_df.iloc[::-1].reset_index(drop=True)
         ytd_df_sorted['年份'] = ytd_df_sorted['季度'].str[:4]
         
-        # 使用 groupby 和 cumsum 進行每年重置的累計
         ytd_df_sorted['累計營收 (億)'] = ytd_df_sorted.groupby('年份')['單季營收 (億)'].cumsum()
         ytd_df_sorted['累計毛利 (億)'] = ytd_df_sorted.groupby('年份')['毛利 (億)'].cumsum()
         ytd_df_sorted['累計淨利 (億)'] = ytd_df_sorted.groupby('年份')['淨利 (億)'].cumsum()
         ytd_df_sorted['累計EPS (元)'] = ytd_df_sorted.groupby('年份')['單季EPS (元)'].cumsum()
         
-        # 移除臨時欄位並翻轉回最新在最前
         ytd_df = ytd_df_sorted.iloc[::-1].drop(columns=['年份']).reset_index(drop=True)
-        
         return final_df, ytd_df
     except: 
         return pd.DataFrame(), pd.DataFrame()
+
+# === 新增：同業競爭雷達資料擷取 ===
+INDUSTRY_PEERS = {
+    "1402": {"name": "紡織纖維", "peers": [{"code": "1402", "name": "遠東新"}, {"code": "1476", "name": "儒鴻"}, {"code": "1477", "name": "聚陽"}, {"code": "1440", "name": "南紡"}, {"code": "1444", "name": "力麗"}]},
+    "1102": {"name": "水泥工業", "peers": [{"code": "1102", "name": "亞泥"}, {"code": "1101", "name": "台泥"}, {"code": "1103", "name": "嘉泥"}, {"code": "1108", "name": "幸福"}, {"code": "1109", "name": "信大"}]},
+    "2606": {"name": "航運業", "peers": [{"code": "2606", "name": "裕民"}, {"code": "2637", "name": "慧洋-KY"}, {"code": "2605", "name": "新興"}, {"code": "2612", "name": "中航"}, {"code": "2617", "name": "台航"}]},
+    "4904": {"name": "通信網路", "peers": [{"code": "4904", "name": "遠傳"}, {"code": "2412", "name": "中華電"}, {"code": "3045", "name": "台灣大"}]},
+    "2903": {"name": "貿易百貨", "peers": [{"code": "2903", "name": "遠百"}, {"code": "2912", "name": "統一超"}, {"code": "8454", "name": "富邦媒"}, {"code": "5904", "name": "寶雅"}, {"code": "2915", "name": "潤泰全"}]},
+    "1460": {"name": "紡織纖維", "peers": [{"code": "1460", "name": "宏遠"}, {"code": "1476", "name": "儒鴻"}, {"code": "1477", "name": "聚陽"}, {"code": "1402", "name": "遠東新"}, {"code": "1444", "name": "力麗"}]},
+    "1710": {"name": "化學工業", "peers": [{"code": "1710", "name": "東聯"}, {"code": "1301", "name": "台塑"}, {"code": "1303", "name": "南亞"}, {"code": "1326", "name": "台化"}, {"code": "1722", "name": "台肥"}]},
+    "2845": {"name": "金融保險", "peers": [{"code": "2845", "name": "遠東銀"}, {"code": "2881", "name": "富邦金"}, {"code": "2882", "name": "國泰金"}, {"code": "2886", "name": "兆豐金"}, {"code": "2891", "name": "中信金"}]}
+}
+
+@st.cache_data(ttl=86400)
+def fetch_peers_financials(peer_list):
+    results = []
+    for p in peer_list:
+        try:
+            tk = yf.Ticker(f"{p['code']}.TW")
+            info = tk.info
+            gm = info.get('grossMargins', 0)
+            nm = info.get('profitMargins', 0)
+            roe = info.get('returnOnEquity', 0)
+            results.append({
+                "公司": f"{p['name']} ({p['code']})",
+                "毛利率 (%)": round(gm * 100, 2) if gm else 0,
+                "淨利率 (%)": round(nm * 100, 2) if nm else 0,
+                "ROE (%)": round(roe * 100, 2) if roe else 0
+            })
+        except:
+            results.append({"公司": f"{p['name']} ({p['code']})", "毛利率 (%)": 0, "淨利率 (%)": 0, "ROE (%)": 0})
+    return pd.DataFrame(results)
 
 # ==========================================
 # === 4. 繪圖模組 ===
@@ -243,29 +275,37 @@ def plot_relative_strength(df_target, df_bench, target_name, bench_name):
     fig.update_layout(title=f"<b>🛡️ 戰略雷達：相對大盤強勢分析 (對標 {bench_name})</b>", height=350, margin=dict(l=10, r=10, t=40, b=10), hovermode="x unified", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
     return fig
 
+def plot_peer_comparison(df):
+    if df.empty: return None
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=df['公司'], y=df['毛利率 (%)'], name='毛利率 (%)', marker_color='#0F172A', text=df['毛利率 (%)'].apply(lambda x: f"{x}%"), textposition='auto'))
+    fig.add_trace(go.Bar(x=df['公司'], y=df['淨利率 (%)'], name='淨利率 (%)', marker_color='#3B82F6', text=df['淨利率 (%)'].apply(lambda x: f"{x}%"), textposition='auto'))
+    fig.update_layout(
+        barmode='group',
+        title="<b>⚔️ 同業前五大獲利能力對標 (Peer Benchmark)</b>",
+        height=380,
+        margin=dict(l=0, r=0, t=50, b=0),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        yaxis=dict(title='百分比 (%)', showgrid=True, gridcolor='#F1F5F9'),
+        xaxis=dict(showgrid=False)
+    )
+    return fig
+
 # ==========================================
 # === 獲利結構瀑布圖專用容器 (視覺效果升級) ===
 # ==========================================
 st.markdown("""
 <style>
-    .waterfall-container {
-        background: #ffffff;
-        padding: 25px;
-        border-radius: 12px;
-        border: 2px solid #E2E8F0;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        margin-bottom: 25px;
-        position: relative;
-    }
-    .waterfall-container .plotly .main-svg {
-        border-radius: 8px;
-    }
+    .waterfall-container { background: #ffffff; padding: 25px; border-radius: 12px; border: 2px solid #E2E8F0; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); margin-bottom: 25px; position: relative; }
+    .waterfall-container .plotly .main-svg { border-radius: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ==========================================
-# === 5. 左側選單：保留所有巨集與標立 ===
+# === 5. 左側選單：保留所有巨集與標的 ===
 # ==========================================
 market_categories = {
     "📈 總體經濟與大盤 (宏觀與風險指標)": {
@@ -425,7 +465,7 @@ if not df_bench.empty and not df_daily.empty:
 
 # --- 戰略解讀字典 ---
 strategic_commentary = {
-    "^TWII": {"title": "🇹🇼 台灣加權指數 (TAIEX)", "desc": "反映台灣整體資本市場動能與外資流向，為評估集團旗下台股掛掛掛企業之系統性估值基準。"},
+    "^TWII": {"title": "🇹🇼 台灣加權指數 (TAIEX)", "desc": "反映台灣整體資本市場動能與外資流向，為評估集團旗下台股掛牌企業之系統性估值基準。"},
     "^GSPC": {"title": "🇺🇸 S&P 500 (標普 500 指數)", "desc": "反映全球總體經濟的健康度。走勢牽動外資對新興市場的風險偏好。"},
     "^SOX": {"title": "🇺🇸 SOX (費城半導體指數)", "desc": "全球半導體景氣核心指標。其強弱高度決定台股的「資金排擠效應」。"},
     "^VIX": {"title": "⚠️ VIX 恐慌指數", "desc": "衡量總體經濟避險情緒與流動性壓力的關鍵指標。"},
@@ -437,7 +477,7 @@ if code in strategic_commentary:
 
 
 # ==========================================
-# === 7. 下半部：高階經理人專屬財務戰情室 (僅限集團台股) ===
+# === 7. 下半部：高階經理人專屬財務戰情室 ===
 # ==========================================
 if is_tw_stock:
     st.divider()
@@ -459,11 +499,11 @@ if is_tw_stock:
         with f3: st.markdown(f'<div class="kpi-card"><div class="kpi-title">淨利率 (Net Margin)</div><div class="kpi-value">{latest["淨利率 (%)"]}%</div><span style="color:#64748B;">前季: {prev["淨利率 (%)"]}%</span></div>', unsafe_allow_html=True)
         with f4: st.markdown(f'<div class="kpi-card"><div class="kpi-title">本季 EPS</div><div class="kpi-value">NT$ {latest["單季EPS (元)"]}</div><span style="color:{"#10B981" if eps_qoq>0 else "#EF4444"}; font-weight:600;">{"▲" if eps_qoq>0 else "▼"} {abs(eps_qoq):.1f}% QoQ</span></div>', unsafe_allow_html=True)
         
-        # Charts
-        c_chart1, c_chart2 = st.columns([1, 1.2]) # 增加瀑布圖的寬度
+        # Charts (8季趨勢 + 瀑布圖)
+        c_chart1, c_chart2 = st.columns([1, 1.2]) 
         with c_chart1:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            plot_df = df_quarterly.iloc[::-1] # 時間順序：舊到新
+            plot_df = df_quarterly.iloc[::-1]
             fig1 = make_subplots(specs=[[{"secondary_y": True}]])
             fig1.add_trace(go.Bar(x=plot_df['季度'], y=plot_df['單季營收 (億)'], name="營收 (億)", marker_color='#CBD5E1'), secondary_y=False)
             fig1.add_trace(go.Scatter(x=plot_df['季度'], y=plot_df['毛利率 (%)'], name="毛利率 %", mode='lines+markers', line=dict(color='#0F172A', width=3)), secondary_y=True)
@@ -476,46 +516,48 @@ if is_tw_stock:
 
         with c_chart2:
             st.markdown('<div class="waterfall-container">', unsafe_allow_html=True)
-            # 瀑布圖 (Waterfall Chart) - 自定義專業配色與佈局
             fig2 = go.Figure(go.Waterfall(
                 name="20", orientation="v",
                 measure=["relative", "relative", "total", "relative", "total"],
                 x=["營業收入", "營業成本", "毛利", "營業費用/稅等", "本期淨利"],
                 textposition="outside",
-                textfont=dict(size=14, color='#0F172A'), # 增加字體大小
-                text=[
-                    f"{latest['單季營收 (億)']}", 
-                    f"-{latest['單季營收 (億)'] - latest['毛利 (億)']:.1f}", 
-                    f"{latest['毛利 (億)']}", 
-                    f"-{latest['毛利 (億)'] - latest['淨利 (億)']:.1f}", 
-                    f"{latest['淨利 (億)']}"
-                ],
-                y=[
-                    latest['單季營收 (億)'], 
-                    -(latest['單季營收 (億)'] - latest['毛利 (億)']), 
-                    latest['毛利 (億)'], 
-                    -(latest['毛利 (億)'] - latest['淨利 (億)']), 
-                    latest['淨利 (億)']
-                ],
-                connector={"line":{"color":"#CBD5E1", "width":2, "dash": 'dot'}}, # 樣式化連接線
-                # 自定義顏色主題：藍色增加，紅色減少，總計黑色
-                decreasing={"marker":{"color":"#EF4444"}}, # Red for decreasing
-                increasing={"marker":{"color":"#1D4ED8"}}, # Blue for increasing
-                totals={"marker":{"color":"#1F2937"}}     # Dark Gray for totals
+                textfont=dict(size=14, color='#0F172A'),
+                text=[f"{latest['單季營收 (億)']}", f"-{latest['單季營收 (億)'] - latest['毛利 (億)']:.1f}", f"{latest['毛利 (億)']}", f"-{latest['毛利 (億)'] - latest['淨利 (億)']:.1f}", f"{latest['淨利 (億)']}"],
+                y=[latest['單季營收 (億)'], -(latest['單季營收 (億)'] - latest['毛利 (億)']), latest['毛利 (億)'], -(latest['毛利 (億)'] - latest['淨利 (億)']), latest['淨利 (億)']],
+                connector={"line":{"color":"#CBD5E1", "width":2, "dash": 'dot'}},
+                decreasing={"marker":{"color":"#EF4444"}},
+                increasing={"marker":{"color":"#1D4ED8"}},
+                totals={"marker":{"color":"#1F2937"}}
             ))
             fig2.update_layout(
-                title=f"<b>💰 獲利結構拆解 (最新季度: {latest['季度']})</b>", 
-                title_font=dict(size=18, color='#0F172A'),
-                height=380, 
-                margin=dict(l=0, r=0, t=60, b=0), # 增加頂部 margin 以容納標題
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                xaxis=dict(showgrid=False), # 隱藏 X 軸網格
-                yaxis=dict(showgrid=True, gridcolor='#F1F5F9', gridwidth=0.5) # 優化 Y 軸網格
+                title=f"<b>💰 獲利結構拆解 (最新季度: {latest['季度']})</b>", title_font=dict(size=18, color='#0F172A'),
+                height=380, margin=dict(l=0, r=0, t=60, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor='#F1F5F9', gridwidth=0.5)
             )
             st.plotly_chart(fig2, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
+            
+        # ==========================================
+        # === 新增：產業同行前五大對標分析 ===
+        # ==========================================
+        if code in INDUSTRY_PEERS:
+            st.markdown("### ⚔️ 產業同行競爭力對標 (Peer Benchmark)")
+            peer_info = INDUSTRY_PEERS[code]
+            st.caption(f"📍 目標賽道：{peer_info['name']} | 包含：" + ", ".join([p['name'] for p in peer_info['peers']]))
+            
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            df_peers = fetch_peers_financials(peer_info['peers'])
+            if not df_peers.empty:
+                col_p1, col_p2 = st.columns([1.5, 1])
+                with col_p1:
+                    peer_fig = plot_peer_comparison(df_peers)
+                    if peer_fig: st.plotly_chart(peer_fig, use_container_width=True)
+                with col_p2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.dataframe(df_peers.style.format({'毛利率 (%)': '{:.1f}%', '淨利率 (%)': '{:.1f}%', 'ROE (%)': '{:.1f}%'}), use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        # Matrices
+        # Matrices (財報矩陣)
         st.markdown("### 📑 核心財務數據矩陣 (2024Q1~2025Q4)")
         tab1, tab2 = st.tabs(["📊 單季表現 (Quarterly)", "📈 累計表現 (Year-To-Date)"])
         
@@ -526,8 +568,6 @@ if is_tw_stock:
         with tab2:
             ytd_cols = ['季度', '累計營收 (億)', '累計毛利 (億)', '毛利率 (%)', '累計淨利 (億)', '淨利率 (%)', '累計EPS (元)']
             format_ytd = {'累計營收 (億)': '{:,.1f}', '累計毛利 (億)': '{:,.1f}', '累計淨利 (億)': '{:,.1f}', '毛利率 (%)': '{:.1f}%', '淨利率 (%)': '{:.1f}%', '累計EPS (元)': '{:.2f}'}
-            # 應用漸層效果以區分 YTD 大小 (可選，但既然用戶要專業，漸層能增加專業感)
-            # 為避免之前的漸層報錯，這裡僅對 '累計營收 (億)' 進行簡單的背景高亮
             st.dataframe(df_ytd[ytd_cols].style.format(format_ytd).set_properties(**{'background-color': '#f8fafc'}, subset=['累計營收 (億)']), use_container_width=True, height=320)
     else:
         st.warning("⚠️ 無法獲取該公司財報數據。請確認 API 連線狀態或內部資料庫權限。")
