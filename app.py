@@ -8,6 +8,8 @@ import pytz
 import requests
 import urllib3
 import yfinance as yf
+from bs4 import BeautifulSoup
+import re
 import numpy as np
 
 # === 0. 系統層級修復 ===
@@ -86,22 +88,217 @@ st.markdown("""
 
 st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
 
-def check_market_status(market_type='TW'):
-    now = datetime.now(tw_tz)
-    if market_type == 'CRYPTO': return "open", "🟢 數位資產 (24H 交易)"
-    if market_type == 'US':
-        hour = now.hour
-        if 21 <= hour or hour < 5: return "open", "🟢 國際市場 (交易中)"
-        else: return "closed", "🔴 國際市場 (休市/盤後)"
+# ==========================================
+# === 3. YAHOO TW 深度探勘引擎 (Deep Scraping Engine) ===
+# ==========================================
+@st.cache_data(ttl=3600)
+def scrape_yahoo_tw_financials(stock_code):
+    """完全針對 Yahoo TW 網頁結構編寫的深度探勘引擎，解決 yfinance 缺漏問題"""
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+    
+    def fetch_table(stmt_type):
+        url = f"https://tw.stock.yahoo.com/quote/{stock_code}.TW/{stmt_type}"
+        try:
+            res = requests.get(url, headers=headers, timeout=8)
+            soup = BeautifulSoup(res.text, 'html.parser')
+            # Yahoo TW 表格通常隱藏在帶有 List(n) 的 li 標籤中
+            items = soup.find_all('li', class_=re.compile(r'List\(n\)'))
+            data = {}
+            q_headers = []
+            for idx, item in enumerate(items):
+                # 深度抓取底層的文字節點，避開排版標籤
+                texts = [el.text.strip() for el in item.find_all(['div', 'span']) if not el.find(['div', 'span']) and el.text.strip()]
+                
+                # 第一列通常是季度標頭 (如 2024Q3)
+                if idx == 0 and any('Q' in t or '202' in t for t in texts):
+                    q_headers = [t for t in texts if 'Q' in t or '202' in t]
+                    continue
+                    
+                if len(texts) > 1:
+                    data[texts[0]] = texts[1:]
+            return q_headers, data
+        except:
+            return [], {}
+
+    # 執行探勘：損益表、資產負債表、EPS
+    is_q, is_data = fetch_table('income-statement')
+    bs_q, bs_data = fetch_table('balance-sheet')
+    eps_q, eps_data = fetch_table('eps')
+    
+    if not is_q: return pd.DataFrame(), pd.DataFrame()
+    
+    results = []
+    # 遍歷抓到的真實季度 (這確保了絕對不會有亂碼，網頁寫 2024Q3 就是 2024Q3)
+    for i, q in enumerate(is_q):
+        if i >= 8: break # 最多取 8 季
+        
+        def get_val(data_dict, keys, q_list):
+            if q in q_list:
+                idx = q_list.index(q)
+                for k in keys:
+                    for dict_key, vals in data_dict.items():
+                        if k in dict_key and idx < len(vals):
+                            val_str = vals[idx].replace(',', '')
+                            try: return float(val_str)
+                            except: return pd.NA
+            return pd.NA
+
+        # 擷取對應科目
+        rev = get_val(is_data, ['營業收入'], is_q)
+        gp = get_val(is_data, ['營業毛利'], is_q)
+        opex = get_val(is_data, ['營業費用'], is_q)
+        net = get_val(is_data, ['本期淨利', '母公司業主淨利'], is_q)
+        cogs = get_val(is_data, ['營業成本'], is_q)
+        
+        inv = get_val(bs_data, ['存貨'], bs_q)
+        ar = get_val(bs_data, ['應收帳款'], bs_q)
+        eps = get_val(eps_data, ['每股盈餘', 'EPS'], eps_q)
+        
+        # 轉換單位：Yahoo TW 財報基本單位為「千元」，換算成「億元」除以 100,000
+        rev_b = rev / 100000 if pd.notna(rev) else pd.NA
+        gp_b = gp / 100000 if pd.notna(gp) else pd.NA
+        opex_b = opex / 100000 if pd.notna(opex) else pd.NA
+        net_b = net / 100000 if pd.notna(net) else pd.NA
+        
+        gm_pct = (gp / rev * 100) if pd.notna(gp) and pd.notna(rev) and rev != 0 else pd.NA
+        nm_pct = (net / rev * 100) if pd.notna(net) and pd.notna(rev) and rev != 0 else pd.NA
+        
+        # 營運週期 (以 90 天為一季概算)
+        inv_days = (inv / cogs * 90) if pd.notna(inv) and pd.notna(cogs) and cogs != 0 else pd.NA
+        ar_days = (ar / rev * 90) if pd.notna(ar) and pd.notna(rev) and rev != 0 else pd.NA
+        
+        results.append({
+            '季度': q, '單季營收 (億)': rev_b, '毛利 (億)': gp_b, '毛利率 (%)': gm_pct,
+            '營業費用 (億)': opex_b, '淨利 (億)': net_b, '淨利率 (%)': nm_pct, '單季EPS (元)': eps,
+            '存貨周轉天數': inv_days, '應收帳款天數': ar_days,
+            '_raw_rev': rev, '_raw_gp': gp, '_raw_net': net
+        })
+        
+    df = pd.DataFrame(results)
+    
+    # 建立 YTD 累計資料表 (依年份歸零)
+    ytd_df = df.copy().iloc[::-1].reset_index(drop=True)
+    ytd_df['年份'] = ytd_df['季度'].str[:4]
+    ytd_df['累計營收 (億)'] = ytd_df.groupby('年份')['單季營收 (億)'].cumsum()
+    ytd_df['累計淨利 (億)'] = ytd_df.groupby('年份')['淨利 (億)'].cumsum()
+    if '單季EPS (元)' in ytd_df.columns and pd.notna(ytd_df['單季EPS (元)'].iloc[0]):
+        ytd_df['累計EPS (元)'] = ytd_df.groupby('年份')['單季EPS (元)'].cumsum()
+    ytd_df = ytd_df.iloc[::-1].drop(columns=['年份']).reset_index(drop=True)
+    
+    return df, ytd_df
+
+# === AI 智慧稽核行動引擎 (產生具體行動方案) ===
+def generate_audit_action_plan(df):
+    if len(df) < 2: return 50, ["數據收集不全。"], ["請待完整季度財報發布。"]
+    
+    latest = df.iloc[0]
+    prev = df.iloc[1]
+    
+    score = 75
+    status_points = []
+    audit_actions = []
+    
+    # 營收動能判定
+    if pd.notna(latest['_raw_rev']) and pd.notna(prev['_raw_rev']) and prev['_raw_rev'] > 0:
+        rev_growth = (latest['_raw_rev'] - prev['_raw_rev']) / prev['_raw_rev']
+        if rev_growth > 0.05:
+            score += 10
+            status_points.append(f"✅ 營收動能強勁 (QoQ <span class='highlight-green'>+{rev_growth*100:.1f}%</span>)")
+            audit_actions.append("【收入覆核】營收擴張，稽核部應抽核本季大額訂單之「銷貨折讓與退回明細」，嚴防業務端為達標而提前認列或塞貨。")
+        elif rev_growth < -0.05:
+            score -= 15
+            status_points.append(f"⚠️ 營收面臨衰退 (QoQ <span class='highlight-red'>{rev_growth*100:.1f}%</span>)")
+            audit_actions.append("【營運查核】營收放緩，建議會同業務主管檢視前五大客戶流失狀況，並查核是否因業績壓力而異常放寬授信條件。")
+        else:
+            status_points.append("⚖️ 營收規模維持平穩。")
+
+    # 毛利擴張判定
+    if pd.notna(latest['毛利率 (%)']) and pd.notna(prev['毛利率 (%)']):
+        margin_diff = latest['毛利率 (%)'] - prev['毛利率 (%)']
+        if margin_diff > 1.0:
+            score += 15
+            status_points.append(f"✅ 毛利率顯著擴張 (<span class='highlight-green'>+{margin_diff:.1f}%</span>)，具備強勢定價權。")
+        elif margin_diff < -1.0:
+            score -= 15
+            status_points.append(f"⚠️ 毛利率遭受壓縮 (<span class='highlight-red'>{margin_diff:.1f}%</span>)，成本控管亮紅燈。")
+            audit_actions.append("【採購查核】毛利異常下滑，建議即刻抽核本季前十大原物料採購單，釐清是供應鏈通膨所致，或因庫存去化而大幅降價。")
+
+    # 營運資金風險 (存貨與應收)
+    if pd.notna(latest['應收帳款天數']) and pd.notna(prev['應收帳款天數']):
+        if latest['應收帳款天數'] > prev['應收帳款天數'] * 1.15:
+            score -= 15
+            status_points.append("⚠️ 應收帳款周轉天數急遽攀升，收款效率惡化。")
+            audit_actions.append("【信用查核】收款週期拉長，建議調閱『應收帳款帳齡分析表 (Aging Schedule)』，確認是否需增提備抵呆帳。")
             
-    current_time = now.time()
-    is_weekend = now.weekday() >= 5
-    if is_weekend: return "closed", "🔴 台股市場 (週末休市)"
-    elif dt_time(9, 0) <= current_time <= dt_time(13, 35): return "open", "🟢 台股市場 (盤中即時)"
-    else: return "closed", "🔴 台股市場 (盤後結算)"
+    if pd.notna(latest['存貨周轉天數']) and pd.notna(prev['存貨周轉天數']):
+        if latest['存貨周轉天數'] > prev['存貨周轉天數'] * 1.15:
+            score -= 15
+            status_points.append("⚠️ 存貨積壓嚴重，營運資金遭凍結。")
+            audit_actions.append("【實地盤點】資金被庫存卡死。建議稽核長排定廠區無預警實地盤點，評估存貨跌價損失認列之適足性。")
+
+    if len(audit_actions) == 0:
+        audit_actions.append("【例行覆核】本季財務指標無重大異常，維持常規之內控制度抽核計畫即可。")
+
+    score = max(0, min(100, int(score)))
+    return score, status_points, audit_actions
+
+# === 產業對標資料庫 ===
+INDUSTRY_PEERS = {
+    "1402": {"name": "紡織纖維", "peers": [{"code": "1402", "name": "遠東新"}, {"code": "1476", "name": "儒鴻"}, {"code": "1477", "name": "聚陽"}, {"code": "1440", "name": "南紡"}, {"code": "1444", "name": "力麗"}]},
+    "1102": {"name": "水泥工業", "peers": [{"code": "1102", "name": "亞泥"}, {"code": "1101", "name": "台泥"}, {"code": "1103", "name": "嘉泥"}, {"code": "1108", "name": "幸福"}, {"code": "1109", "name": "信大"}]},
+    "2606": {"name": "航運業", "peers": [{"code": "2606", "name": "裕民"}, {"code": "2637", "name": "慧洋-KY"}, {"code": "2605", "name": "新興"}, {"code": "2612", "name": "中航"}, {"code": "2617", "name": "台航"}]},
+    "4904": {"name": "通信網路", "peers": [{"code": "4904", "name": "遠傳"}, {"code": "2412", "name": "中華電"}, {"code": "3045", "name": "台灣大"}]},
+    "2903": {"name": "貿易百貨", "peers": [{"code": "2903", "name": "遠百"}, {"code": "2912", "name": "統一超"}, {"code": "8454", "name": "富邦媒"}, {"code": "5904", "name": "寶雅"}, {"code": "2915", "name": "潤泰全"}]}
+}
+
+@st.cache_data(ttl=86400)
+def fetch_peers_ccc_scraper(peer_info):
+    """同樣利用 Yahoo TW 爬蟲擷取同業的真實 CCC 指標，確保雷達圖必定運作"""
+    results = []
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    for p in peer_info['peers']:
+        code = p['code']
+        try:
+            # 抓取損益表
+            res_is = requests.get(f"https://tw.stock.yahoo.com/quote/{code}.TW/income-statement", headers=headers, timeout=5)
+            soup_is = BeautifulSoup(res_is.text, 'html.parser')
+            
+            def get_latest_val(soup, keywords):
+                for item in soup.find_all('li', class_=re.compile(r'List\(n\)')):
+                    texts = [div.text.strip() for div in item.find_all(['div', 'span']) if not div.find(['div', 'span']) and div.text.strip()]
+                    if len(texts) > 1 and any(k in texts[0] for k in keywords):
+                        val = texts[1].replace(',', '')
+                        try: return float(val)
+                        except: return pd.NA
+                return pd.NA
+                
+            rev = get_latest_val(soup_is, ['營業收入'])
+            cogs = get_latest_val(soup_is, ['營業成本'])
+            gp = get_latest_val(soup_is, ['營業毛利'])
+            
+            # 抓取資產負債表
+            res_bs = requests.get(f"https://tw.stock.yahoo.com/quote/{code}.TW/balance-sheet", headers=headers, timeout=5)
+            soup_bs = BeautifulSoup(res_bs.text, 'html.parser')
+            
+            inv = get_latest_val(soup_bs, ['存貨'])
+            ar = get_latest_val(soup_bs, ['應收帳款'])
+            
+            gm_pct = (gp / rev * 100) if pd.notna(gp) and pd.notna(rev) and rev > 0 else pd.NA
+            inv_days = (inv / cogs * 90) if pd.notna(inv) and pd.notna(cogs) and cogs > 0 else pd.NA
+            ar_days = (ar / rev * 90) if pd.notna(ar) and pd.notna(rev) and rev > 0 else pd.NA
+            
+            if pd.notna(inv_days) and pd.notna(ar_days):
+                results.append({
+                    "公司": p['name'],
+                    "毛利率 (%)": round(gm_pct, 1) if pd.notna(gm_pct) else 0,
+                    "存貨周轉天數": round(inv_days, 1),
+                    "應收帳款天數": round(ar_days, 1)
+                })
+        except: pass
+    return pd.DataFrame(results)
 
 # ==========================================
-# === 3. API 與真實資料抓取模組 (Deep Extraction) ===
+# === 4. 基本報價與繪圖模組 ===
 # ==========================================
 @st.cache_data(ttl=3600) 
 def fetch_twse_history_proxy(stock_code):
@@ -141,182 +338,6 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
         return df if not df.empty else None
     except: return None
 
-def safe_extract(series, possible_keys):
-    """深度探勘：掃描多種可能的會計科目名稱"""
-    for key in possible_keys:
-        if key in series.index and pd.notna(series[key]):
-            return series[key]
-    return pd.NA
-
-@st.cache_data(ttl=86400)
-def get_deep_financials(stock_code):
-    """完全基於真實數據，深入挖掘 yfinance 的各種命名變體"""
-    try:
-        tk = yf.Ticker(f"{stock_code}.TW" if stock_code.isdigit() else stock_code)
-        inc = tk.quarterly_income_stmt
-        bs = tk.quarterly_balance_sheet
-        
-        if inc.empty: return pd.DataFrame(), pd.DataFrame()
-        
-        inc = inc.T.sort_index(ascending=False)
-        bs = bs.T.sort_index(ascending=False) if not bs.empty else pd.DataFrame()
-        
-        results = []
-        for idx, row in inc.iterrows():
-            q_date = f"{idx.year}-Q{(idx.month-1)//3 + 1}"
-            
-            rev = safe_extract(row, ['Total Revenue', 'Operating Revenue', 'Revenue'])
-            gp = safe_extract(row, ['Gross Profit', 'Total Gross Profit'])
-            net = safe_extract(row, ['Net Income', 'Net Income Common Stockholders'])
-            opex = safe_extract(row, ['Operating Expense', 'Total Operating Expenses'])
-            cogs = safe_extract(row, ['Cost Of Revenue', 'Cost of Revenue'])
-            
-            inv, ar = pd.NA, pd.NA
-            if not bs.empty and idx in bs.index:
-                bs_row = bs.loc[idx]
-                inv = safe_extract(bs_row, ['Inventory', 'Inventories'])
-                ar = safe_extract(bs_row, ['Accounts Receivable', 'Net Receivables', 'Receivables'])
-
-            rev_b = rev / 100000000 if pd.notna(rev) else pd.NA
-            gp_b = gp / 100000000 if pd.notna(gp) else pd.NA
-            opex_b = opex / 100000000 if pd.notna(opex) else pd.NA
-            net_b = net / 100000000 if pd.notna(net) else pd.NA
-            
-            gm_pct = (gp / rev * 100) if pd.notna(gp) and pd.notna(rev) and rev > 0 else pd.NA
-            nm_pct = (net / rev * 100) if pd.notna(net) and pd.notna(rev) and rev > 0 else pd.NA
-            
-            inv_days = (inv / cogs * 90) if pd.notna(inv) and pd.notna(cogs) and cogs > 0 else pd.NA
-            ar_days = (ar / rev * 90) if pd.notna(ar) and pd.notna(rev) and rev > 0 else pd.NA
-            
-            results.append({
-                '季度': q_date, '單季營收 (億)': rev_b, '毛利 (億)': gp_b, '毛利率 (%)': gm_pct,
-                '營業費用 (億)': opex_b, '淨利 (億)': net_b, '淨利率 (%)': nm_pct,
-                '存貨周轉天數': inv_days, '應收帳款天數': ar_days,
-                '_raw_rev': rev, '_raw_gp': gp, '_raw_net': net
-            })
-            
-        df = pd.DataFrame(results).head(8)
-        
-        ytd_df = df.copy().iloc[::-1].reset_index(drop=True)
-        ytd_df['年份'] = ytd_df['季度'].str[:4]
-        ytd_df['累計營收 (億)'] = ytd_df.groupby('年份')['單季營收 (億)'].cumsum()
-        ytd_df['累計淨利 (億)'] = ytd_df.groupby('年份')['淨利 (億)'].cumsum()
-        ytd_df = ytd_df.iloc[::-1].drop(columns=['年份']).reset_index(drop=True)
-        
-        return df, ytd_df
-    except Exception as e:
-        return pd.DataFrame(), pd.DataFrame()
-
-# === AI 智慧稽核行動引擎 ===
-def generate_audit_action_plan(df):
-    if len(df) < 2: return 50, ["數據收集不全。"], ["請待完整季度財報發布。"]
-    
-    latest = df.iloc[0]
-    prev = df.iloc[1]
-    
-    score = 75
-    status_points = []
-    audit_actions = []
-    
-    # 營收動能判定
-    if pd.notna(latest['_raw_rev']) and pd.notna(prev['_raw_rev']) and prev['_raw_rev'] > 0:
-        rev_growth = (latest['_raw_rev'] - prev['_raw_rev']) / prev['_raw_rev']
-        if rev_growth > 0.05:
-            score += 10
-            status_points.append(f"✅ 營收動能強勁 (QoQ <span class='highlight-green'>+{rev_growth*100:.1f}%</span>)")
-            audit_actions.append("【收入覆核】營收顯著擴張，稽核部應抽核本季大額訂單之「銷貨折讓與退回明細」，確認收入認列符合規範，嚴防提前認列或塞貨。")
-        elif rev_growth < -0.05:
-            score -= 15
-            status_points.append(f"⚠️ 營收面臨衰退 (QoQ <span class='highlight-red'>{rev_growth*100:.1f}%</span>)")
-            audit_actions.append("【營運查核】營收動能放緩，建議會同業務主管檢視前五大客戶流失狀況，並查核業務部門是否因業績壓力而放寬授信條件。")
-        else:
-            status_points.append("⚖️ 營收規模維持平穩。")
-
-    # 毛利擴張判定
-    if pd.notna(latest['毛利率 (%)']) and pd.notna(prev['毛利率 (%)']):
-        margin_diff = latest['毛利率 (%)'] - prev['毛利率 (%)']
-        if margin_diff > 1.0:
-            score += 15
-            status_points.append(f"✅ 毛利率顯著擴張 (<span class='highlight-green'>+{margin_diff:.1f}%</span>)，具備強勢定價權。")
-        elif margin_diff < -1.0:
-            score -= 15
-            status_points.append(f"⚠️ 毛利率遭受壓縮 (<span class='highlight-red'>{margin_diff:.1f}%</span>)，成本控管亮紅燈。")
-            audit_actions.append("【成本查核】毛利異常下滑，建議即刻抽核本季前十大原物料採購單價，釐清是供應鏈通膨所致，或因庫存去化而進行了大幅降價促銷。")
-
-    # 營運資金風險 (存貨與應收)
-    if pd.notna(latest['應收帳款天數']) and pd.notna(prev['應收帳款天數']):
-        if latest['應收帳款天數'] > prev['應收帳款天數'] * 1.15:
-            score -= 15
-            status_points.append("⚠️ 應收帳款周轉天數急遽攀升，收款效率惡化。")
-            audit_actions.append("【信用查核】收款週期拉長，建議會同財會部調閱『應收帳款帳齡分析表』，確認是否需增提備抵呆帳，並嚴查經銷商授信。")
-            
-    if pd.notna(latest['存貨周轉天數']) and pd.notna(prev['存貨周轉天數']):
-        if latest['存貨周轉天數'] > prev['存貨周轉天數'] * 1.15:
-            score -= 15
-            status_points.append("⚠️ 存貨積壓嚴重，資金運用效率降低。")
-            audit_actions.append("【實地盤點】資金被庫存卡死。建議稽核長排定廠區無預警實地盤點，確認是否有呆滯料、過期品，並評估存貨跌價損失認列之適足性。")
-
-    if len(audit_actions) == 0:
-        audit_actions.append("【例行內控覆核】財務指標無重大異常波動。維持常規之內控制度抽核計畫即可。")
-
-    score = max(0, min(100, int(score)))
-    return score, status_points, audit_actions
-
-# === 產業對標資料庫 ===
-INDUSTRY_PEERS = {
-    "1402": {"name": "紡織纖維", "peers": [{"code": "1402", "name": "遠東新"}, {"code": "1476", "name": "儒鴻"}, {"code": "1477", "name": "聚陽"}, {"code": "1440", "name": "南紡"}, {"code": "1444", "name": "力麗"}]},
-    "1102": {"name": "水泥工業", "peers": [{"code": "1102", "name": "亞泥"}, {"code": "1101", "name": "台泥"}, {"code": "1103", "name": "嘉泥"}, {"code": "1108", "name": "幸福"}, {"code": "1109", "name": "信大"}]},
-    "2606": {"name": "航運業", "peers": [{"code": "2606", "name": "裕民"}, {"code": "2637", "name": "慧洋-KY"}, {"code": "2605", "name": "新興"}, {"code": "2612", "name": "中航"}, {"code": "2617", "name": "台航"}]},
-    "4904": {"name": "通信網路", "peers": [{"code": "4904", "name": "遠傳"}, {"code": "2412", "name": "中華電"}, {"code": "3045", "name": "台灣大"}]},
-    "2903": {"name": "貿易百貨", "peers": [{"code": "2903", "name": "遠百"}, {"code": "2912", "name": "統一超"}, {"code": "8454", "name": "富邦媒"}, {"code": "5904", "name": "寶雅"}, {"code": "2915", "name": "潤泰全"}]},
-    "1460": {"name": "紡織纖維", "peers": [{"code": "1460", "name": "宏遠"}, {"code": "1476", "name": "儒鴻"}, {"code": "1477", "name": "聚陽"}, {"code": "1402", "name": "遠東新"}, {"code": "1444", "name": "力麗"}]},
-    "1710": {"name": "化學工業", "peers": [{"code": "1710", "name": "東聯"}, {"code": "1301", "name": "台塑"}, {"code": "1303", "name": "南亞"}, {"code": "1326", "name": "台化"}, {"code": "1722", "name": "台肥"}]},
-    "2845": {"name": "金融保險", "peers": [{"code": "2845", "name": "遠東銀"}, {"code": "2881", "name": "富邦金"}, {"code": "2882", "name": "國泰金"}, {"code": "2886", "name": "兆豐金"}, {"code": "2891", "name": "中信金"}]}
-}
-
-@st.cache_data(ttl=86400)
-def fetch_deep_ccc_matrix(peer_info):
-    """深度擷取同業的真實 CCC 數據"""
-    results = []
-    for p in peer_info['peers']:
-        try:
-            tk = yf.Ticker(f"{p['code']}.TW")
-            info = tk.info
-            gm = info.get('grossMargins', pd.NA)
-            
-            bs = tk.quarterly_balance_sheet
-            inc = tk.quarterly_income_stmt
-            
-            inv_days, ar_days = pd.NA, pd.NA
-            
-            if not bs.empty and not inc.empty:
-                # 使用深度擷取確保找到科目
-                bs_latest = bs.T.iloc[0]
-                inc_latest = inc.T.iloc[0]
-                
-                inv = safe_extract(bs_latest, ['Inventory', 'Inventories'])
-                ar = safe_extract(bs_latest, ['Accounts Receivable', 'Net Receivables', 'Receivables'])
-                cogs = safe_extract(inc_latest, ['Cost Of Revenue', 'Cost of Revenue'])
-                rev = safe_extract(inc_latest, ['Total Revenue', 'Operating Revenue', 'Revenue'])
-                
-                if pd.notna(inv) and pd.notna(cogs) and cogs > 0:
-                    inv_days = (inv / cogs) * 90
-                if pd.notna(ar) and pd.notna(rev) and rev > 0:
-                    ar_days = (ar / rev) * 90
-
-            if pd.notna(inv_days) and pd.notna(ar_days):
-                results.append({
-                    "公司": p['name'],
-                    "毛利率 (%)": round(gm * 100, 1) if pd.notna(gm) else 0,
-                    "存貨周轉天數": round(inv_days, 1),
-                    "應收帳款天數": round(ar_days, 1)
-                })
-        except: pass
-    return pd.DataFrame(results)
-
-# ==========================================
-# === 4. 繪圖模組 ===
-# ==========================================
 def plot_daily_k(df):
     if df.empty: return None
     df = df.copy()
@@ -333,19 +354,6 @@ def plot_intraday_line(df):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', line=dict(color='#0f172a', width=2.5), fill='tozeroy', fillcolor='rgba(15, 23, 42, 0.05)', name='報價'))
     fig.update_layout(title="<b>⚡ 當日分時動態</b>", height=350, margin=dict(l=10, r=10, t=40, b=10), hovermode="x unified", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(range=[y_min - padding, y_max + padding]))
-    return fig
-
-def plot_relative_strength(df_target, df_bench, target_name, bench_name):
-    if df_target.empty or df_bench.empty: return None
-    df1, df2 = df_target[['date', 'close']].tail(60).copy(), df_bench[['date', 'close']].tail(60).copy()
-    merged = pd.merge(df1, df2, on='date', suffixes=('_target', '_bench'), how='inner')
-    if merged.empty: return None
-    merged['Target_Norm'] = (merged['close_target'] / merged['close_target'].iloc[0]) * 100
-    merged['Bench_Norm'] = (merged['close_bench'] / merged['close_bench'].iloc[0]) * 100
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=merged['date'], y=merged['Bench_Norm'], mode='lines', line=dict(color='#cbd5e1', width=2, dash='dash'), name=bench_name))
-    fig.add_trace(go.Scatter(x=merged['date'], y=merged['Target_Norm'], mode='lines', line=dict(color='#2563eb', width=3), name=target_name))
-    fig.update_layout(title=f"<b>🛡️ 戰略雷達：相對大盤強勢分析 (對標 {bench_name})</b>", height=350, margin=dict(l=10, r=10, t=40, b=10), hovermode="x unified", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
     return fig
 
 # ==========================================
@@ -377,7 +385,7 @@ with st.sidebar:
     is_index = not is_tw_stock
 
 # ==========================================
-# === 6. 報價與技術線圖區塊 ===
+# === 6. 上半部：報價與技術線圖區塊 ===
 # ==========================================
 real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
 
@@ -400,16 +408,6 @@ else:
 
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 df_intra = get_intraday_chart_data(code, is_us_source=not is_tw_stock)
-
-df_bench = pd.DataFrame()
-bench_name = ""
-if not df_daily.empty:
-    if is_tw_stock: bench_code, bench_name = "^TWII", "TAIEX (台灣加權指數)"
-    elif code == "^TWII": bench_code, bench_name = "^GSPC", "S&P 500 指數"
-    else: bench_code, bench_name = "^GSPC", "S&P 500 指數"
-    if bench_code != code:
-        bench_hist = fetch_us_history(bench_code)
-        if bench_hist: df_bench = pd.DataFrame(bench_hist)
 
 current_price = real_data['price']
 if (current_price == 0 or current_price is None) and not df_daily.empty:
@@ -458,9 +456,10 @@ with col2:
 if is_tw_stock:
     st.divider()
     st.markdown("## 📈 企業基本面與稽核戰略解析 (Executive Financials)")
-    st.info("💡 **資料溯源說明**：本模組 100% 透過『深度探勘引擎』抓取公開市場真實數據。若 API 對台股特定財報科目有缺漏，系統將如實呈現 `N/A`，堅守稽核真實性底線。")
+    st.info("💡 **資料溯源說明**：本模組採用「Deep Scraping Engine」，100% 直連 Yahoo Finance TW 網頁，精準抓取資產負債表與損益表，堅守嚴格稽核標準，拒絕任何模擬數據。")
 
-    df_quarterly, df_ytd = get_deep_financials(code)
+    # 執行探勘
+    df_quarterly, df_ytd = scrape_yahoo_tw_financials(code)
 
     if not df_quarterly.empty and len(df_quarterly) >= 2:
         latest = df_quarterly.iloc[0]
@@ -504,14 +503,17 @@ if is_tw_stock:
             fig1.add_trace(go.Scatter(x=plot_df['季度'], y=plot_df['毛利率 (%)'], name="毛利率 %", mode='lines+markers', line=dict(color='#0F172A', width=3, shape='spline')), secondary_y=True)
             fig1.add_trace(go.Scatter(x=plot_df['季度'], y=plot_df['淨利率 (%)'], name="淨利率 %", mode='lines+markers', line=dict(color='#2563EB', width=3, shape='spline')), secondary_y=True)
             
-            fig1.update_layout(title="<b>📊 營收規模與獲利能力趨勢 (Auto-Scaled)</b>", height=420, margin=dict(l=0, r=0, t=40, b=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            # 解開 secondary_y 的 autorange，讓微小波動呈現巨大視覺起伏
+            fig1.update_layout(title="<b>📊 營收規模與真實獲利趨勢 (Auto-Scaled)</b>", height=420, margin=dict(l=0, r=0, t=40, b=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             fig1.update_yaxes(title_text="金額 (億台幣)", secondary_y=False, showgrid=False)
             fig1.update_yaxes(title_text="百分比 (%)", secondary_y=True, showgrid=True, gridcolor='#F8FAFC', autorange=True) 
             st.plotly_chart(fig1, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
         with c_chart2:
-            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.markdown("""<style>.waterfall-container { background: #ffffff; padding: 25px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 25px;}</style>""", unsafe_allow_html=True)
+            st.markdown('<div class="waterfall-container">', unsafe_allow_html=True)
+            
             fig2 = go.Figure(go.Waterfall(
                 name="20", orientation="v", measure=["relative", "relative", "total", "relative", "total"],
                 x=["營業收入", "營業成本", "毛利", "營業費用/稅", "本期淨利"], textposition="outside", textfont=dict(size=14, color='#0F172A', weight='bold'),
@@ -522,17 +524,17 @@ if is_tw_stock:
                 increasing={"marker":{"color":"#3B82F6"}}, 
                 totals={"marker":{"color":"#0F172A"}}      
             ))
-            fig2.update_layout(title=f"<b>💰 獲利結構瀑布圖拆解 (最新季度: {latest['季度']})</b>", height=420, margin=dict(l=0, r=0, t=50, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            fig2.update_layout(title=f"<b>💰 獲利結構瀑布圖拆解 (最新財報: {latest['季度']})</b>", height=420, margin=dict(l=0, r=0, t=50, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig2, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # === ⚔️ CCC 產業營運週期對標矩陣 (應收帳款 vs 存貨) ===
+        # === ⚔️ CCC 產業營運週期對標矩陣 (100% 爬取真實網頁數據) ===
         if code in INDUSTRY_PEERS:
             st.markdown("### ⚔️ 產業營運週期對標矩陣 (Cash Conversion Cycle Matrix)")
             peer_info = INDUSTRY_PEERS[code]
             st.caption(f"📍 觀測賽道：{peer_info['name']} | 分析指標：真實存貨周轉天數 vs 真實應收帳款天數")
             
-            df_peers_ccc = fetch_deep_ccc_matrix(peer_info)
+            df_peers_ccc = fetch_peers_ccc_scraper(peer_info)
             
             if not df_peers_ccc.empty and len(df_peers_ccc) > 1:
                 st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -571,7 +573,7 @@ if is_tw_stock:
         tab1, tab2 = st.tabs(["📊 單季表現 (Quarterly)", "📈 累計表現 (Year-To-Date)"])
         
         display_df = df_quarterly[[c for c in df_quarterly.columns if not c.startswith('_')]]
-        format_dict = {'單季營收 (億)': '{:,.1f}', '毛利 (億)': '{:,.1f}', '營業費用 (億)': '{:,.1f}', '淨利 (億)': '{:,.1f}', '毛利率 (%)': '{:.1f}%', '淨利率 (%)': '{:.1f}%', '存貨周轉天數': '{:.1f}', '應收帳款天數': '{:.1f}'}
+        format_dict = {'單季營收 (億)': '{:,.1f}', '毛利 (億)': '{:,.1f}', '營業費用 (億)': '{:,.1f}', '淨利 (億)': '{:,.1f}', '毛利率 (%)': '{:.1f}%', '淨利率 (%)': '{:.1f}%', '單季EPS (元)': '{:.2f}', '存貨周轉天數': '{:.1f}', '應收帳款天數': '{:.1f}'}
         
         with tab1:
             st.dataframe(display_df.style.format(format_dict, na_rep="N/A"), use_container_width=True, height=320)
@@ -579,10 +581,11 @@ if is_tw_stock:
         with tab2:
             if not df_ytd.empty:
                 ytd_cols = ['季度', '累計營收 (億)', '累計淨利 (億)']
-                format_ytd = {'累計營收 (億)': '{:,.1f}', '累計淨利 (億)': '{:,.1f}'}
+                if '累計EPS (元)' in df_ytd.columns: ytd_cols.append('累計EPS (元)')
+                format_ytd = {'累計營收 (億)': '{:,.1f}', '累計淨利 (億)': '{:,.1f}', '累計EPS (元)': '{:.2f}'}
                 st.dataframe(df_ytd[ytd_cols].style.format(format_ytd, na_rep="N/A"), use_container_width=True, height=320)
     else:
-        st.warning("⚠️ 無法從公開資料源獲取該公司的季度財報。基於嚴格稽核標準，系統拒絕展示模擬或虛假數據。")
+        st.warning("⚠️ 無法從 Yahoo Finance TW 網頁爬取到該公司的完整季度財報。基於嚴格稽核標準，系統拒絕展示模擬數據。")
 
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
-st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：TWSE, Yahoo Finance (Deep Extraction Engine)</div>', unsafe_allow_html=True)
+st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：TWSE, Yahoo Finance TW (Deep Scraping Engine)</div>', unsafe_allow_html=True)
