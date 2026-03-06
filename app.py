@@ -21,8 +21,10 @@ st.set_page_config(page_title="FENC Audit Department | Executive Dashboard", lay
 tw_tz = pytz.timezone('Asia/Taipei') 
 
 # ==========================================
-# === 1. 登入介面與防護機制定義 ===
+# === 1. 核心函數與資料引擎宣告 (徹底解決 NameError) ===
 # ==========================================
+# 【重要】：所有 Function 必須在被呼叫前宣告完畢
+
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -61,14 +63,6 @@ def check_password():
             elif pwd != "":
                 st.error("Invalid credentials")
     return False
-
-# 執行阻擋機制 (未登入則停止執行後續程式)
-if not check_password(): 
-    st.stop()
-
-# ==========================================
-# === 2. 核心資料探勘與演算法引擎宣告 ===
-# ==========================================
 
 @st.cache_data(ttl=3600) 
 def fetch_twse_history_proxy(stock_code):
@@ -110,7 +104,7 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
 
 @st.cache_data(ttl=86400)
 def get_real_financials_api(stock_code):
-    """100% 依賴 yfinance 官方 JSON API 獲取真實季報，杜絕網頁爬蟲亂碼與假資料"""
+    """100% 真實數據引擎：只讀取結構化 JSON API，拒絕任何假資料與亂碼"""
     try:
         tk = yf.Ticker(f"{stock_code}.TW" if stock_code.isdigit() else stock_code)
         inc = tk.quarterly_income_stmt
@@ -123,6 +117,7 @@ def get_real_financials_api(stock_code):
         
         results = []
         for idx, row in inc.iterrows():
+            # 精準計算商務季度格式，徹底消滅 %q 亂碼
             q_date = f"{idx.year}-Q{(idx.month-1)//3 + 1}"
             
             rev = row.get('Total Revenue', pd.NA)
@@ -167,7 +162,7 @@ def get_real_financials_api(stock_code):
         return pd.DataFrame(), pd.DataFrame()
 
 def generate_audit_action_plan(df):
-    """AI 稽核長引擎：針對真實數據生成查核行動"""
+    """AI 稽核長引擎：基於真實財務指標生成戰略指示"""
     if len(df) < 2: return 50, ["數據不足以進行趨勢判定。"], ["請等待下一季度完整財報發布。"]
     
     latest = df.iloc[0]
@@ -182,7 +177,7 @@ def generate_audit_action_plan(df):
         if rev_growth > 0.05:
             score += 10
             status_points.append(f"✅ 營收動能強勁 (QoQ <span class='highlight-green'>+{rev_growth*100:.1f}%</span>)")
-            audit_actions.append("【收入覆核】營收顯著擴張，稽核部應抽核本季大額訂單之「銷貨折讓與退回明細」，嚴防業務端提前認列或塞貨。")
+            audit_actions.append("【收入覆核】營收顯著擴張，稽核部應抽核本季大額訂單之「銷貨折讓與退回明細」，嚴防業務端為達標而提前認列或塞貨。")
         elif rev_growth < -0.05:
             score -= 15
             status_points.append(f"⚠️ 營收面臨衰退 (QoQ <span class='highlight-red'>{rev_growth*100:.1f}%</span>)")
@@ -209,7 +204,7 @@ def generate_audit_action_plan(df):
     if pd.notna(latest['存貨周轉天數']) and pd.notna(prev['存貨周轉天數']):
         if latest['存貨周轉天數'] > prev['存貨周轉天數'] * 1.15:
             score -= 15
-            status_points.append("⚠️ 存貨積壓嚴重，營運資金遭凍結。")
+            status_points.append("⚠️ 存貨積壓嚴重，資金運用效率降低。")
             audit_actions.append("【實地盤點】資金被庫存卡死。建議稽核長排定廠區無預警實地盤點，評估存貨跌價損失認列之適足性。")
 
     if len(audit_actions) == 0:
@@ -218,51 +213,30 @@ def generate_audit_action_plan(df):
     score = max(0, min(100, int(score)))
     return score, status_points, audit_actions
 
-INDUSTRY_PEERS = {
-    "1402": {"name": "紡織纖維", "peers": [{"code": "1402", "name": "遠東新"}, {"code": "1476", "name": "儒鴻"}, {"code": "1477", "name": "聚陽"}, {"code": "1440", "name": "南紡"}, {"code": "1444", "name": "力麗"}]},
-    "1102": {"name": "水泥工業", "peers": [{"code": "1102", "name": "亞泥"}, {"code": "1101", "name": "台泥"}, {"code": "1103", "name": "嘉泥"}, {"code": "1108", "name": "幸福"}, {"code": "1109", "name": "信大"}]},
-    "2606": {"name": "航運業", "peers": [{"code": "2606", "name": "裕民"}, {"code": "2637", "name": "慧洋-KY"}, {"code": "2605", "name": "新興"}, {"code": "2612", "name": "中航"}, {"code": "2617", "name": "台航"}]},
-    "4904": {"name": "通信網路", "peers": [{"code": "4904", "name": "遠傳"}, {"code": "2412", "name": "中華電"}, {"code": "3045", "name": "台灣大"}]},
-    "2903": {"name": "貿易百貨", "peers": [{"code": "2903", "name": "遠百"}, {"code": "2912", "name": "統一超"}, {"code": "8454", "name": "富邦媒"}, {"code": "5904", "name": "寶雅"}, {"code": "2915", "name": "潤泰全"}]}
-}
-
 @st.cache_data(ttl=86400)
-def fetch_peers_ccc_real_api(peer_info):
-    """100% 透過 yfinance API 獲取同業 CCC，拒絕報錯"""
+def fetch_robust_peer_matrix(peer_info):
+    """100% 真實數據，不摻雜任何 np.random，若無資料則優雅跳過該企業"""
     results = []
     for p in peer_info['peers']:
         try:
             tk = yf.Ticker(f"{p['code']}.TW")
             info = tk.info
-            gm = info.get('grossMargins', pd.NA)
+            rev_growth = info.get('revenueGrowth')
+            pm = info.get('profitMargins')
+            mkt_cap = info.get('marketCap')
             
-            bs = tk.quarterly_balance_sheet
-            inc = tk.quarterly_income_stmt
-            
-            inv_days, ar_days = pd.NA, pd.NA
-            
-            if not bs.empty and not inc.empty:
-                inv = bs.T.iloc[0].get('Inventory', pd.NA)
-                ar = bs.T.iloc[0].get('Accounts Receivable', pd.NA)
-                cogs = inc.T.iloc[0].get('Cost Of Revenue', pd.NA)
-                rev = inc.T.iloc[0].get('Total Revenue', pd.NA)
-                
-                if pd.notna(inv) and pd.notna(cogs) and cogs > 0:
-                    inv_days = (inv / cogs) * 90
-                if pd.notna(ar) and pd.notna(rev) and rev > 0:
-                    ar_days = (ar / rev) * 90
-
-            if pd.notna(inv_days) and pd.notna(ar_days):
+            # 只有當三個真實數據都存在時，才畫進矩陣中，確保嚴格稽核標準
+            if rev_growth is not None and pm is not None and mkt_cap is not None:
                 results.append({
                     "公司": p['name'],
-                    "毛利率 (%)": round(gm * 100, 1) if pd.notna(gm) else 0,
-                    "存貨周轉天數": round(inv_days, 1),
-                    "應收帳款天數": round(ar_days, 1)
+                    "代碼": p['code'],
+                    "營收成長率 YoY (%)": round(rev_growth * 100, 2),
+                    "淨利率 (%)": round(pm * 100, 2),
+                    "市值 (億)": round(mkt_cap / 100000000, 1)
                 })
         except: pass
     return pd.DataFrame(results)
 
-# === 繪圖共用模組 ===
 def plot_daily_k(df):
     if df.empty: return None
     df = df.copy()
@@ -282,8 +256,12 @@ def plot_intraday_line(df):
     return fig
 
 # ==========================================
-# === 3. 主頁 UI 樣式宣告與戰情室本體 ===
+# === 2. 登入防護啟動與 UI 樣式宣告 ===
 # ==========================================
+# 確保在任何 UI 渲染前先檢查密碼，阻擋未授權存取
+if not check_password(): 
+    st.stop()
+
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-family: 'Microsoft JhengHei', 'Segoe UI', sans-serif !important; }
@@ -304,6 +282,9 @@ st.markdown("""
 
 st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
 
+# ==========================================
+# === 3. 左側選單設定 ===
+# ==========================================
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
         "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC", 
@@ -313,7 +294,9 @@ market_categories = {
     "🏢 遠東集團核心事業體": {
         "🇹🇼 1402 遠東新": "1402", "🇹🇼 1102 亞泥": "1102", "🇹🇼 2606 裕民": "2606", "🇹🇼 1460 宏遠": "1460", 
         "🇹🇼 2903 遠百": "2903", "🇹🇼 4904 遠傳": "4904", "🇹🇼 1710 東聯": "1710", "🇹🇼 2845 遠東銀": "2845"
-    }
+    },
+    "👕 國際品牌終端 (紡織板塊)": {"🇺🇸 Nike": "NKE", "🇺🇸 Under Armour": "UAA", "🇺🇸 Lululemon": "LULU"},
+    "🥤 國際品牌終端 (化纖板塊)": {"🇺🇸 Coca-Cola": "KO", "🇺🇸 PepsiCo": "PEP"}
 }
 
 with st.sidebar:
@@ -326,7 +309,7 @@ with st.sidebar:
     is_tw_stock = code.isdigit()
 
 # ==========================================
-# === 4. 上半部：即時報價與技術線圖區塊 ===
+# === 4. 股價與技術線圖區塊 ===
 # ==========================================
 real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
 
@@ -393,12 +376,20 @@ with col2:
 # ==========================================
 # === 5. 下半部：高階經理人專屬財務戰情室 (100% 絕對真實數據) ===
 # ==========================================
+INDUSTRY_PEERS = {
+    "1402": {"name": "紡織纖維", "peers": [{"code": "1402", "name": "遠東新"}, {"code": "1476", "name": "儒鴻"}, {"code": "1477", "name": "聚陽"}, {"code": "1440", "name": "南紡"}, {"code": "1444", "name": "力麗"}]},
+    "1102": {"name": "水泥工業", "peers": [{"code": "1102", "name": "亞泥"}, {"code": "1101", "name": "台泥"}, {"code": "1103", "name": "嘉泥"}, {"code": "1108", "name": "幸福"}, {"code": "1109", "name": "信大"}]},
+    "2606": {"name": "航運業", "peers": [{"code": "2606", "name": "裕民"}, {"code": "2637", "name": "慧洋-KY"}, {"code": "2605", "name": "新興"}, {"code": "2612", "name": "中航"}, {"code": "2617", "name": "台航"}]},
+    "4904": {"name": "通信網路", "peers": [{"code": "4904", "name": "遠傳"}, {"code": "2412", "name": "中華電"}, {"code": "3045", "name": "台灣大"}]},
+    "2903": {"name": "貿易百貨", "peers": [{"code": "2903", "name": "遠百"}, {"code": "2912", "name": "統一超"}, {"code": "8454", "name": "富邦媒"}, {"code": "5904", "name": "寶雅"}, {"code": "2915", "name": "潤泰全"}]}
+}
+
 if is_tw_stock:
     st.divider()
     st.markdown("## 📈 企業基本面與稽核戰略解析 (Executive Financials)")
-    st.info("💡 **資料溯源說明**：本系統已全面切換至 `yfinance API 企業級 JSON 通道`，保證數據 100% 真實。若遇特定台股之季度財報在國際資料庫缺漏，系統將依據高階稽核標準，如實顯示 `N/A` 而非使用假資料。")
+    st.info("💡 **資料溯源說明**：本系統已全面切換至 `yfinance API 企業級 JSON 通道`，保證數據 100% 真實。若遇特定台股之季度財報在國際資料庫缺漏，系統將依據高階稽核標準，如實顯示 `N/A` 而非使用假資料。在實務企業環境中，建議透過 Cron Job 排程從公開資訊觀測站(MOPS) 匯入內部 SQL 資料庫以達最完美呈現。")
 
-    # 使用絕對不會亂碼的 API 數據獲取
+    # 取得真實 API 數據
     df_quarterly, df_ytd = get_real_financials_api(code)
 
     if not df_quarterly.empty and len(df_quarterly) >= 2:
@@ -458,14 +449,14 @@ if is_tw_stock:
                 name="20", orientation="v", measure=["relative", "relative", "total", "relative", "total"],
                 x=["營業收入", "營業成本", "毛利", "營業費用/稅", "本期淨利"], textposition="outside", textfont=dict(size=14, color='#0F172A', weight='bold'),
                 text=[f"{latest['單季營收 (億)']:.1f}" if pd.notna(latest['單季營收 (億)']) else "N/A", 
-                      f"-{latest['單季營收 (億)'] - latest['毛利 (億)']:.1f}" if pd.notna(latest['毛利 (億)']) else "N/A", 
+                      f"-{latest['單季營收 (億)'] - latest['毛利 (億)']:.1f}" if pd.notna(latest['毛利 (億)']) and pd.notna(latest['單季營收 (億)']) else "N/A", 
                       f"{latest['毛利 (億)']:.1f}" if pd.notna(latest['毛利 (億)']) else "N/A", 
-                      f"-{latest['毛利 (億)'] - latest['淨利 (億)']:.1f}" if pd.notna(latest['淨利 (億)']) else "N/A", 
+                      f"-{latest['毛利 (億)'] - latest['淨利 (億)']:.1f}" if pd.notna(latest['淨利 (億)']) and pd.notna(latest['毛利 (億)']) else "N/A", 
                       f"{latest['淨利 (億)']:.1f}" if pd.notna(latest['淨利 (億)']) else "N/A"],
                 y=[latest['單季營收 (億)'] if pd.notna(latest['單季營收 (億)']) else 0, 
-                   -(latest['單季營收 (億)'] - latest['毛利 (億)']) if pd.notna(latest['毛利 (億)']) else 0, 
+                   -(latest['單季營收 (億)'] - latest['毛利 (億)']) if pd.notna(latest['毛利 (億)']) and pd.notna(latest['單季營收 (億)']) else 0, 
                    latest['毛利 (億)'] if pd.notna(latest['毛利 (億)']) else 0, 
-                   -(latest['毛利 (億)'] - latest['淨利 (億)']) if pd.notna(latest['淨利 (億)']) else 0, 
+                   -(latest['毛利 (億)'] - latest['淨利 (億)']) if pd.notna(latest['淨利 (億)']) and pd.notna(latest['毛利 (億)']) else 0, 
                    latest['淨利 (億)'] if pd.notna(latest['淨利 (億)']) else 0],
                 connector={"line":{"color":"#CBD5E1", "dash": 'dot', "width": 2}}, 
                 decreasing={"marker":{"color":"#EF4444"}}, 
@@ -476,45 +467,51 @@ if is_tw_stock:
             st.plotly_chart(fig2, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # === ⚔️ CCC 產業營運週期對標矩陣 ===
+        # === ⚔️ 同業成長與獲利矩陣 (防報錯版本) ===
         if code in INDUSTRY_PEERS:
-            st.markdown("### ⚔️ 產業營運週期對標矩陣 (Cash Conversion Cycle Matrix)")
+            st.markdown("### ⚔️ 產業競爭力雷達：成長 vs 獲利護城河矩陣")
             peer_info = INDUSTRY_PEERS[code]
-            st.caption(f"📍 觀測賽道：{peer_info['name']} | 分析指標：真實存貨周轉天數 vs 真實應收帳款天數")
+            st.caption(f"📍 觀測賽道：{peer_info['name']} | 數據源：公開市場真實 TTM (近四季滾動) 指標")
             
-            df_peers_ccc = fetch_peers_ccc_real_api(peer_info)
+            df_peers_matrix = fetch_robust_peer_matrix(peer_info)
             
-            if not df_peers_ccc.empty and len(df_peers_ccc) > 1:
+            if not df_peers_matrix.empty and len(df_peers_matrix) > 1:
                 st.markdown('<div class="chart-container">', unsafe_allow_html=True)
                 
-                ccc_fig = go.Figure()
-                ccc_fig.add_trace(go.Scatter(
-                    x=df_peers_ccc['應收帳款天數'], y=df_peers_ccc['存貨周轉天數'],
-                    mode='markers+text', text=df_peers_ccc['公司'].str.split(' ').str[0], textposition="top center", textfont=dict(weight='bold', color='#1E293B'),
+                moat_fig = go.Figure()
+                moat_fig.add_trace(go.Scatter(
+                    x=df_peers_matrix['營收成長率 YoY (%)'], y=df_peers_matrix['淨利率 (%)'],
+                    mode='markers+text', text=df_peers_matrix['公司'], textposition="top center", textfont=dict(weight='bold', color='#1E293B'),
                     marker=dict(
-                        size=25, color=df_peers_ccc['毛利率 (%)'], colorscale='Viridis', showscale=True, colorbar=dict(title="毛利率%"),
+                        size=np.sqrt(df_peers_matrix['市值 (億)']) * 2,
+                        color=df_peers_matrix['淨利率 (%)'], colorscale='Blues', showscale=False,
                         line=dict(width=2, color='#0F172A')
                     ),
-                    hovertemplate="<b>%{text}</b><br>應收帳款天數: %{x}<br>存貨周轉天數: %{y}<br>毛利率: %{marker.color}%<extra></extra>"
+                    hovertemplate="<b>%{text}</b><br>營收成長 YoY: %{x}%<br>淨利率: %{y}%<br>市值: %{customdata} 億<extra></extra>",
+                    customdata=df_peers_matrix['市值 (億)']
                 ))
                 
-                ccc_fig.add_hline(y=df_peers_ccc['存貨周轉天數'].median(), line_dash="dash", line_color="#94A3B8")
-                ccc_fig.add_vline(x=df_peers_ccc['應收帳款天數'].median(), line_dash="dash", line_color="#94A3B8")
+                x_mid = df_peers_matrix['營收成長率 YoY (%)'].median()
+                y_mid = df_peers_matrix['淨利率 (%)'].median()
+                moat_fig.add_hline(y=y_mid, line_dash="dash", line_color="#94A3B8")
+                moat_fig.add_vline(x=x_mid, line_dash="dash", line_color="#94A3B8")
                 
-                ccc_fig.update_layout(
-                    title=f"<b>🎯 營運資金變現能力矩陣 (越靠左下角越佳)</b>",
-                    xaxis=dict(title="應收帳款周轉天數 (天) 👉 左方代表收款極快", showgrid=False),
-                    yaxis=dict(title="存貨周轉天數 (天) 👇 下方代表產品熱銷無積壓", showgrid=True, gridcolor='#F8FAFC'),
+                moat_fig.update_layout(
+                    title=f"<b>🎯 企業戰略定位 (矩陣中心點為產業中位數)</b>",
+                    xaxis=dict(title="營收成長率 YoY (%) 👉 越靠右成長越快", showgrid=False),
+                    yaxis=dict(title="淨利率 (%) 👆 越靠上本業越賺錢", showgrid=True, gridcolor='#F8FAFC'),
                     height=450, margin=dict(l=20, r=20, t=60, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                     annotations=[
-                        dict(x=0.05, y=0.05, xref="paper", yref="paper", text="<b>🥇 變現王者</b><br>貨賣得快/錢收得快", showarrow=False, font=dict(color="#10B981")),
-                        dict(x=0.95, y=0.95, xref="paper", yref="paper", text="<b>⚠️ 資金卡死區</b><br>庫存高/被客戶欠款", showarrow=False, font=dict(color="#EF4444"))
+                        dict(x=0.98, y=0.95, xref="paper", yref="paper", text="<b>🥇 護城河王者</b><br>高成長/高獲利", showarrow=False, font=dict(color="#10B981"), align="right"),
+                        dict(x=0.02, y=0.95, xref="paper", yref="paper", text="<b>💵 現金牛</b><br>低成長/高獲利", showarrow=False, font=dict(color="#3B82F6"), align="left"),
+                        dict(x=0.98, y=0.05, xref="paper", yref="paper", text="<b>⚔️ 積極擴張區</b><br>高成長/低獲利", showarrow=False, font=dict(color="#F59E0B"), align="right"),
+                        dict(x=0.02, y=0.05, xref="paper", yref="paper", text="<b>⚠️ 營運警示區</b><br>低成長/低獲利", showarrow=False, font=dict(color="#EF4444"), align="left")
                     ]
                 )
-                st.plotly_chart(ccc_fig, use_container_width=True)
+                st.plotly_chart(moat_fig, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
             else:
-                st.info("⚠️ 公開資料庫中缺乏該產業同業的季度資產負債表 (BS) 完整數據，為堅守真實原則，無法生成營運週期矩陣。")
+                st.info("⚠️ 該產業目前在公開庫中缺乏足夠的同業財報，矩陣無法生成。")
 
         # Matrices (財報矩陣)
         st.markdown("### 📑 核心財務數據矩陣 (絕對真實數據)")
@@ -532,7 +529,7 @@ if is_tw_stock:
                 format_ytd = {'累計營收 (億)': '{:,.1f}', '累計淨利 (億)': '{:,.1f}'}
                 st.dataframe(df_ytd[ytd_cols].style.format(format_ytd, na_rep="N/A"), use_container_width=True, height=320)
     else:
-        st.warning("⚠️ 無法從公開資料庫獲取該公司的完整季度財報。這通常是因為該台股企業尚未在國際 API 中更新最新季報。")
+        st.warning("⚠️ 國際資料庫 (Yahoo Finance API) 尚未更新該台股企業之最新季度財報。為堅守嚴格稽核標準，系統拒絕展示不完整或模擬之數據。")
 
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
 st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：TWSE, Yahoo Finance API (Zero Fake Data Engine)</div>', unsafe_allow_html=True)
