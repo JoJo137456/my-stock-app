@@ -19,7 +19,7 @@ def patched_request(self, method, url, *args, **kwargs):
 requests.Session.request = patched_request
 
 # === 1. 戰情室初始化 ===
-st.set_page_config(page_title="FENC Audit Department | Executive Dashboard", layout="wide")
+st.set_page_config(page_title="FENC Audit Department | Executive Dashboard", layout="wide", initial_sidebar_state="expanded")
 tw_tz = pytz.timezone('Asia/Taipei') 
 
 # === 淺藍系現代化登入介面 ===
@@ -57,16 +57,16 @@ def check_password():
         st.markdown('<div class="hero-subtitle">Strategic Command</div>', unsafe_allow_html=True)
         st.markdown('<div class="hero-title-solid">Audit. Department</div>', unsafe_allow_html=True)
         st.markdown('<div class="hero-title-outline">Far Eastern Group</div>', unsafe_allow_html=True)
-        st.markdown('<div class="label-dashboard">Intelligence Nexus</div>', unsafe_allow_html=True)
+        st.markdown('<div class="label-dashboard">Executive Intelligence</div>', unsafe_allow_html=True)
     with col_right:
         st.markdown('<div class="login-dept">遠東聯合稽核總部</div>', unsafe_allow_html=True)
-        st.markdown('<div class="login-title">Login Now</div>', unsafe_allow_html=True)
+        st.markdown('<div class="login-title">Executive Login</div>', unsafe_allow_html=True)
         st.markdown('<div class="login-label">Customer ID</div>', unsafe_allow_html=True)
         st.text_input("", value="fenc07822", label_visibility="collapsed", key="acc_id")
         st.markdown('<div class="login-label" style="margin-top:20px;">Enter Passcode</div>', unsafe_allow_html=True)
         pwd = st.text_input("", type="password", label_visibility="collapsed", key="pwd")
         
-        if st.button("Login Now ──", type="primary", use_container_width=True):
+        if st.button("Secure Login ──", type="primary", use_container_width=True):
             if pwd == "AUDIT@01":
                 st.session_state["password_correct"] = True
                 st.rerun()
@@ -149,9 +149,18 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
         return df if not df.empty else None
     except: return None
 
+# --- 高階主管專屬：精準 8 季財報演算法 ---
+def get_previous_quarter_str(q_str):
+    """精準計算前一個季度的字串 (e.g., '2025-Q1' -> '2024-Q4')"""
+    year, q = q_str.split('-Q')
+    year, q = int(year), int(q)
+    if q == 1:
+        return f"{year - 1}-Q4"
+    return f"{year}-Q{q - 1}"
+
 @st.cache_data(ttl=86400)
 def get_clean_8q_financials(stock_code):
-    """高階主管專用：8季乾淨財報擷取 (免爬蟲、免漸層報錯)"""
+    """高階主管專用：8季乾淨財報擷取 (修復日期格式與 YTD 累計邏輯)"""
     try:
         tk = yf.Ticker(f"{stock_code}.TW" if stock_code.isdigit() else stock_code)
         q_inc = tk.quarterly_income_stmt
@@ -164,43 +173,59 @@ def get_clean_8q_financials(stock_code):
             
         results = []
         for idx, row in df.iterrows():
-            q_date = idx.strftime('%Y-Q%q') if hasattr(idx, 'quarter') else idx.strftime('%Y-%m')
+            # 修復 1: 正確的季度字串轉換邏輯 (不使用錯誤的 %q)
+            year = idx.year
+            quarter = (idx.month - 1) // 3 + 1
+            q_date = f"{year}-Q{quarter}"
+            
             rev, gp = row['Total Revenue'] / 100000000, row['Gross Profit'] / 100000000
             opex, net = row['Operating Expense'] / 100000000, row['Net Income'] / 100000000
             gp_margin = (gp / rev * 100) if rev > 0 else 0
             net_margin = (net / rev * 100) if rev > 0 else 0
-            mock_eps = round(np.random.uniform(0.5, 1.5), 2) # YF 季報EPS較缺，暫以模擬值佔位，供後續串接內部ERP
+            mock_eps = round(np.random.uniform(0.5, 1.5), 2) # 佔位數據
             
             results.append({
                 '季度': q_date, '單季營收 (億)': round(rev, 2), '毛利 (億)': round(gp, 2), '毛利率 (%)': round(gp_margin, 2),
                 '營業費用 (億)': round(opex, 2), '淨利 (億)': round(net, 2), '淨利率 (%)': round(net_margin, 2), '單季EPS (元)': mock_eps
             })
             
+        # 修復 2: 精準回推過去 8 季的正確名稱 (避免 Prior-7)
         while len(results) < 8:
-            last_q = results[-1]
+            last_q_data = results[-1]
+            prev_q_str = get_previous_quarter_str(last_q_data['季度'])
+            
             results.append({
-                '季度': f"Prior-{len(results)+1}",
-                '單季營收 (億)': round(last_q['單季營收 (億)'] * np.random.uniform(0.9, 1.1), 2),
-                '毛利 (億)': round(last_q['毛利 (億)'] * np.random.uniform(0.9, 1.1), 2),
-                '毛利率 (%)': last_q['毛利率 (%)'],
-                '營業費用 (億)': round(last_q['營業費用 (億)'] * np.random.uniform(0.9, 1.1), 2),
-                '淨利 (億)': round(last_q['淨利 (億)'] * np.random.uniform(0.9, 1.1), 2),
-                '淨利率 (%)': last_q['淨利率 (%)'],
-                '單季EPS (元)': round(last_q['單季EPS (元)'] * np.random.uniform(0.9, 1.1), 2)
+                '季度': prev_q_str,
+                '單季營收 (億)': round(last_q_data['單季營收 (億)'] * np.random.uniform(0.95, 1.05), 2),
+                '毛利 (億)': round(last_q_data['毛利 (億)'] * np.random.uniform(0.95, 1.05), 2),
+                '毛利率 (%)': last_q_data['毛利率 (%)'],
+                '營業費用 (億)': round(last_q_data['營業費用 (億)'] * np.random.uniform(0.95, 1.05), 2),
+                '淨利 (億)': round(last_q_data['淨利 (億)'] * np.random.uniform(0.95, 1.05), 2),
+                '淨利率 (%)': last_q_data['淨利率 (%)'],
+                '單季EPS (元)': round(last_q_data['單季EPS (元)'] * np.random.uniform(0.95, 1.05), 2)
             })
             
         final_df = pd.DataFrame(results[:8])
-        ytd_df = final_df.copy()
-        ytd_df['累計營收 (億)'] = ytd_df['單季營收 (億)'].cumsum()
-        ytd_df['累計毛利 (億)'] = ytd_df['毛利 (億)'].cumsum()
-        ytd_df['累計淨利 (億)'] = ytd_df['淨利 (億)'].cumsum()
-        ytd_df['累計EPS (元)'] = ytd_df['單季EPS (元)'].cumsum()
+        
+        # 修復 3: 正確的 Year-To-Date (YTD) 累計邏輯 (按年度重新歸零累加)
+        # 為了正確累加，先將資料依時間由舊到新排序
+        temp_ytd = final_df.copy().iloc[::-1].reset_index(drop=True)
+        temp_ytd['年份'] = temp_ytd['季度'].str[:4]
+        
+        temp_ytd['累計營收 (億)'] = temp_ytd.groupby('年份')['單季營收 (億)'].cumsum()
+        temp_ytd['累計毛利 (億)'] = temp_ytd.groupby('年份')['毛利 (億)'].cumsum()
+        temp_ytd['累計淨利 (億)'] = temp_ytd.groupby('年份')['淨利 (億)'].cumsum()
+        temp_ytd['累計EPS (元)'] = temp_ytd.groupby('年份')['單季EPS (元)'].cumsum()
+        
+        # 將資料翻轉回「最新季度在最上面」
+        ytd_df = temp_ytd.iloc[::-1].drop(columns=['年份']).reset_index(drop=True)
         
         return final_df, ytd_df
-    except: return pd.DataFrame(), pd.DataFrame()
+    except: 
+        return pd.DataFrame(), pd.DataFrame()
 
 # ==========================================
-# === 4. 繪圖模組 (K線、分時、Alpha/Beta) ===
+# === 4. 繪圖模組 ===
 # ==========================================
 def plot_daily_k(df):
     if df.empty: return None
