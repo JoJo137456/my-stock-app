@@ -9,6 +9,8 @@ import requests
 import urllib3
 import yfinance as yf
 import os
+import re
+import numpy as np
 
 # === 0. 系統層級修復與環境設定 ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -45,6 +47,7 @@ def check_password():
 
     col_left, spacer, col_right = st.columns([1.2, 0.2, 0.8])
     with col_left:
+        st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown('<div class="hero-title-solid">Audit Department</div>', unsafe_allow_html=True)
         st.markdown('<div class="hero-title-outline">Far Eastern Group</div>', unsafe_allow_html=True)
         st.markdown('<div class="label-dashboard">AI Executive Intelligence</div>', unsafe_allow_html=True)
@@ -66,10 +69,26 @@ if not check_password(): st.stop()
 # ==========================================
 # === 2. 智慧型內部 Excel 數據探勘引擎 ===
 # ==========================================
+def robust_read_excel(file_path):
+    """智慧跳過 Excel 表頭宣告(如TEJ版權列)，精準定位標題行"""
+    df = pd.read_excel(file_path, header=None, dtype=str)
+    header_row = 0
+    for i in range(min(15, len(df))):
+        row_str = "".join(df.iloc[i].fillna("").astype(str)).upper()
+        # 尋找最具標誌性的財報關鍵字作為表頭
+        if any(k in row_str for k in ["代碼", "股號", "公司", "營收", "營業收入", "資產"]):
+            header_row = i
+            break
+    df.columns = df.iloc[header_row].astype(str).str.strip().str.replace('\n', '')
+    df = df.iloc[header_row+1:].reset_index(drop=True)
+    df = df.dropna(how='all', axis=1).dropna(how='all', axis=0)
+    return df
+
 def find_column(df, keywords):
-    """智慧模糊比對：自動尋找 Excel 中的目標欄位"""
+    """模糊比對尋找欄位名稱"""
     for col in df.columns:
-        if any(k in str(col).upper() for k in keywords):
+        col_clean = str(col).upper().replace(" ", "").replace("\n", "")
+        if any(k in col_clean for k in keywords):
             return col
     return None
 
@@ -77,7 +96,6 @@ def find_column(df, keywords):
 def parse_internal_excel_data(stock_code):
     """讀取內部上傳的 Excel 檔案，並透過 AI 模糊比對萃取會計科目"""
     try:
-        # 動態判斷是否為遠東銀，讀取對應的檔案
         if stock_code == '2845':
             is_file = '遠東集團上市公司_遠東銀_損益表_2015~2025Q3.xlsx'
             bs_file = '遠東集團上市公司_遠東銀_資產負債表_2015~2025Q3.xlsx'
@@ -85,50 +103,64 @@ def parse_internal_excel_data(stock_code):
             is_file = '遠東集團上市公司_損益表_2015~2025Q3.xlsx'
             bs_file = '遠東集團上市公司_資產負債表_2015~2025Q3.xlsx'
 
-        if not os.path.exists(is_file) or not os.path.exists(bs_file):
-            st.error(f"找不到檔案！請確認 GitHub 上是否存在 `{is_file}` 與 `{bs_file}`。")
-            return pd.DataFrame(), pd.DataFrame()
+        if not os.path.exists(is_file):
+            return pd.DataFrame(), pd.DataFrame(), f"找不到 `{is_file}`，請確認檔案是否已上傳。"
 
-        df_is = pd.read_excel(is_file)
-        df_bs = pd.read_excel(bs_file)
+        df_is = robust_read_excel(is_file)
+        df_bs = robust_read_excel(bs_file) if os.path.exists(bs_file) else pd.DataFrame()
 
-        # 智慧尋找損益表欄位
         col_is_code = find_column(df_is, ['代碼', '公司', '證券', '股號', 'CODE'])
-        col_is_date = find_column(df_is, ['季', '年', '期', 'DATE', '年月'])
-        col_rev = find_column(df_is, ['營業收入', '淨收益', '營收', 'REVENUE'])
-        col_gp = find_column(df_is, ['毛利', '營業毛利', 'GROSS PROFIT'])
-        col_net = find_column(df_is, ['淨利', '本期損益', 'NET INCOME'])
-        col_opex = find_column(df_is, ['營業費用', '費用', 'OPEX'])
-        col_cogs = find_column(df_is, ['營業成本', '成本', 'COGS'])
-        col_eps = find_column(df_is, ['EPS', '每股盈餘'])
+        col_bs_code = find_column(df_bs, ['代碼', '公司', '證券', '股號', 'CODE']) if not df_bs.empty else None
 
-        # 智慧尋找資產負債表欄位
-        col_bs_code = find_column(df_bs, ['代碼', '公司', '證券', '股號', 'CODE'])
-        col_bs_date = find_column(df_bs, ['季', '年', '期', 'DATE', '年月'])
-        col_inv = find_column(df_bs, ['存貨', 'INVENTORY'])
-        col_ar = find_column(df_bs, ['應收', 'RECEIVABLE'])
+        if not col_is_code:
+            return pd.DataFrame(), pd.DataFrame(), "在損益表中找不到『代碼』欄位，請檢查 Excel 格式。"
 
-        # 篩選出該檔股票的資料，並轉字串確保比對成功
+        # 篩選該公司資料
         df_is_stock = df_is[df_is[col_is_code].astype(str).str.contains(stock_code, na=False)].copy()
-        df_bs_stock = df_bs[df_bs[col_bs_code].astype(str).str.contains(stock_code, na=False)].copy()
-
         if df_is_stock.empty:
-            st.warning(f"在 Excel 檔案中找不到代碼 `{stock_code}` 的資料。")
-            return pd.DataFrame(), pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame(), f"在 Excel 檔案中找不到代碼 `{stock_code}` 的資料。"
 
-        # 依據日期排序 (最新的在最上面)
+        df_bs_stock = df_bs[df_bs[col_bs_code].astype(str).str.contains(stock_code, na=False)].copy() if col_bs_code else pd.DataFrame()
+
+        col_is_date = find_column(df_is_stock, ['季', '年', '期', 'DATE', '年月'])
+        col_bs_date = find_column(df_bs_stock, ['季', '年', '期', 'DATE', '年月']) if not df_bs_stock.empty else None
+
         df_is_stock = df_is_stock.sort_values(by=col_is_date, ascending=False).head(8)
+
+        # 智慧尋找財務欄位
+        col_rev = find_column(df_is_stock, ['營業收入', '淨收益', '營收', 'REVENUE'])
+        col_gp = find_column(df_is_stock, ['毛利', '營業毛利', 'GROSSPROFIT'])
+        col_net = find_column(df_is_stock, ['淨利', '本期損益', 'NETINCOME'])
+        col_opex = find_column(df_is_stock, ['營業費用', '費用', 'OPEX'])
+        col_cogs = find_column(df_is_stock, ['營業成本', '成本', 'COGS'])
+        col_eps = find_column(df_is_stock, ['EPS', '每股盈餘'])
+
+        col_inv = find_column(df_bs_stock, ['存貨', 'INVENTORY']) if not df_bs_stock.empty else None
+        col_ar = find_column(df_bs_stock, ['應收', 'RECEIVABLE']) if not df_bs_stock.empty else None
 
         results = []
         for _, row_is in df_is_stock.iterrows():
-            q_date = str(row_is[col_is_date]).strip()
+            raw_date = str(row_is[col_is_date]).strip()
             
-            # 尋找對應季度的 BS 資料
-            bs_match = df_bs_stock[df_bs_stock[col_bs_date].astype(str).str.strip() == q_date]
+            # 精準日期格式化 (支援 2024Q3, 202409, 2024/09, 2024第3季 等)
+            q_date = raw_date
+            if 'Q' in raw_date.upper(): q_date = raw_date.upper().replace(' ', '')
+            elif '第' in raw_date and '季' in raw_date:
+                nums = re.findall(r'\d+', raw_date)
+                if len(nums) >= 2: q_date = f"{nums[0]}-Q{nums[1]}"
+            else:
+                nums = re.findall(r'\d+', raw_date)
+                if len(nums) > 0 and len(nums[0]) == 6: q_date = f"{nums[0][:4]}-Q{(int(nums[0][4:6])-1)//3 + 1}"
+                elif len(nums) >= 2: q_date = f"{nums[0]}-Q{(int(nums[1])-1)//3 + 1}"
+
+            bs_match = df_bs_stock[df_bs_stock[col_bs_date].astype(str).str.strip() == raw_date] if col_bs_date else pd.DataFrame()
             row_bs = bs_match.iloc[0] if not bs_match.empty else None
 
-            # 取值並防呆
-            def safe_val(val): return float(val) if pd.notna(val) and str(val).replace('.','',1).isdigit() else pd.NA
+            def safe_val(val):
+                if pd.isna(val): return pd.NA
+                v_str = str(val).replace(',', '').strip()
+                try: return float(v_str)
+                except: return pd.NA
             
             rev = safe_val(row_is[col_rev]) if col_rev else pd.NA
             gp = safe_val(row_is[col_gp]) if col_gp else pd.NA
@@ -136,12 +168,14 @@ def parse_internal_excel_data(stock_code):
             opex = safe_val(row_is[col_opex]) if col_opex else pd.NA
             cogs = safe_val(row_is[col_cogs]) if col_cogs else pd.NA
             eps = safe_val(row_is[col_eps]) if col_eps else pd.NA
-            
             inv = safe_val(row_bs[col_inv]) if row_bs is not None and col_inv else pd.NA
             ar = safe_val(row_bs[col_ar]) if row_bs is not None and col_ar else pd.NA
 
-            # 智慧單位轉換 (如果是千元，通常營收會大於百萬，自動除以10萬換算成億)
-            scale = 100000 if pd.notna(rev) and rev > 1000000 else 1 
+            # 智慧單位轉換 (自動判斷千元或億元)
+            scale = 1
+            if pd.notna(rev):
+                if rev > 1000000: scale = 100000 # 假設是千元，轉億
+                elif rev > 1000: scale = 100     # 假設是百萬，轉億
 
             rev_b = rev / scale if pd.notna(rev) else pd.NA
             gp_b = gp / scale if pd.notna(gp) else pd.NA
@@ -154,9 +188,7 @@ def parse_internal_excel_data(stock_code):
             inv_days = (inv / cogs * 90) if pd.notna(inv) and pd.notna(cogs) and cogs != 0 else pd.NA
             ar_days = (ar / rev * 90) if pd.notna(ar) and pd.notna(rev) and rev != 0 else pd.NA
 
-            # 針對銀行業 (無存貨、無毛利) 做特殊處理
-            if stock_code == '2845':
-                gm_pct, inv_days, cogs, gp_b = pd.NA, pd.NA, pd.NA, pd.NA
+            if stock_code == '2845': gm_pct, inv_days, cogs, gp_b = pd.NA, pd.NA, pd.NA, pd.NA
 
             results.append({
                 '季度': q_date, '單季營收 (億)': rev_b, '毛利 (億)': gp_b, '毛利率 (%)': gm_pct,
@@ -167,9 +199,8 @@ def parse_internal_excel_data(stock_code):
             
         df_final = pd.DataFrame(results)
 
-        # YTD 計算
+        # YTD 累計計算
         ytd_df = df_final.copy().iloc[::-1].reset_index(drop=True)
-        # 嘗試擷取年份 (前四個字元通常是年份)
         ytd_df['年份'] = ytd_df['季度'].astype(str).str[:4]
         ytd_df['累計營收 (億)'] = ytd_df.groupby('年份')['單季營收 (億)'].cumsum()
         ytd_df['累計淨利 (億)'] = ytd_df.groupby('年份')['淨利 (億)'].cumsum()
@@ -177,14 +208,13 @@ def parse_internal_excel_data(stock_code):
             ytd_df['累計EPS (元)'] = ytd_df.groupby('年份')['單季EPS (元)'].cumsum()
         ytd_df = ytd_df.iloc[::-1].drop(columns=['年份']).reset_index(drop=True)
 
-        return df_final, ytd_df
+        return df_final, ytd_df, ""
     except Exception as e:
-        st.error(f"讀取內部 Excel 發生錯誤：{str(e)}。請確認欄位格式是否正確。")
-        return pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), f"讀取或解析 Excel 發生錯誤：{str(e)}"
 
 # === AI 智慧稽核行動引擎 ===
 def generate_audit_action_plan(df):
-    if len(df) < 2: return 50, ["數據不足以進行趨勢判定。"], ["請等待下一季度完整財報發布。"]
+    if len(df) < 2: return 50, ["歷史數據不足以進行趨勢判定。"], ["請在 Excel 補充更多季度數據。"]
     
     latest, prev = df.iloc[0], df.iloc[1]
     score = 75
@@ -225,7 +255,40 @@ def generate_audit_action_plan(df):
 
     return max(0, min(100, int(score))), status_points, audit_actions
 
-# === 即時股價與繪圖模組 ===
+# === 產業對標資料庫 (使用穩健的 YF API 取得同業概況，確保矩陣一定畫得出來) ===
+INDUSTRY_PEERS = {
+    "1402": {"name": "紡織纖維", "peers": [{"code": "1402", "name": "遠東新"}, {"code": "1476", "name": "儒鴻"}, {"code": "1477", "name": "聚陽"}, {"code": "1440", "name": "南紡"}, {"code": "1444", "name": "力麗"}]},
+    "1102": {"name": "水泥工業", "peers": [{"code": "1102", "name": "亞泥"}, {"code": "1101", "name": "台泥"}, {"code": "1103", "name": "嘉泥"}, {"code": "1108", "name": "幸福"}, {"code": "1109", "name": "信大"}]},
+    "2606": {"name": "航運業", "peers": [{"code": "2606", "name": "裕民"}, {"code": "2637", "name": "慧洋-KY"}, {"code": "2605", "name": "新興"}, {"code": "2612", "name": "中航"}, {"code": "2617", "name": "台航"}]},
+    "4904": {"name": "通信網路", "peers": [{"code": "4904", "name": "遠傳"}, {"code": "2412", "name": "中華電"}, {"code": "3045", "name": "台灣大"}]},
+    "2903": {"name": "貿易百貨", "peers": [{"code": "2903", "name": "遠百"}, {"code": "2912", "name": "統一超"}, {"code": "8454", "name": "富邦媒"}, {"code": "5904", "name": "寶雅"}, {"code": "2915", "name": "潤泰全"}]}
+}
+
+@st.cache_data(ttl=86400)
+def fetch_robust_peer_matrix(peer_info):
+    """100% 真實數據，不摻雜任何模擬。取得同業成長與淨利。"""
+    results = []
+    for p in peer_info['peers']:
+        try:
+            tk = yf.Ticker(f"{p['code']}.TW")
+            info = tk.info
+            rev_growth = info.get('revenueGrowth')
+            pm = info.get('profitMargins')
+            mkt_cap = info.get('marketCap')
+            
+            if rev_growth is not None and pm is not None and mkt_cap is not None:
+                results.append({
+                    "公司": p['name'], "代碼": p['code'],
+                    "營收成長率 YoY (%)": round(rev_growth * 100, 2),
+                    "淨利率 (%)": round(pm * 100, 2),
+                    "市值 (億)": round(mkt_cap / 100000000, 1)
+                })
+        except: pass
+    df = pd.DataFrame(results)
+    if not df.empty: df = df[(df['營收成長率 YoY (%)'] > -100) & (df['營收成長率 YoY (%)'] < 300)]
+    return df
+
+# === 即時股價與技術線圖區塊 ===
 @st.cache_data(ttl=3600) 
 def fetch_twse_history_proxy(stock_code):
     try:
@@ -241,15 +304,6 @@ def fetch_twse_history_proxy(stock_code):
                     date_iso = f"{int(parts[0])+1911}-{parts[1]}-{parts[2]}"
                     data_list.append({'date': date_iso, 'volume': float(row[1].replace(',', '')), 'open': float(row[3].replace(',', '')), 'high': float(row[4].replace(',', '')), 'low': float(row[5].replace(',', '')), 'close': float(row[6].replace(',', ''))})
         return sorted(data_list, key=lambda x: x['date'])
-    except: return None
-
-@st.cache_data(ttl=3600)
-def fetch_us_history(ticker_symbol):
-    try:
-        tk = yf.Ticker(ticker_symbol)
-        hist = tk.history(period="6mo")
-        data_list = [{'date': idx.strftime('%Y-%m-%d'), 'volume': float(row['Volume']), 'open': float(row['Open']), 'high': float(row['High']), 'low': float(row['Low']), 'close': float(row['Close'])} for idx, row in hist.iterrows()]
-        return data_list
     except: return None
 
 @st.cache_data(ttl=300) 
@@ -287,8 +341,10 @@ st.markdown("""
         .main-title { font-size: 2.2rem; font-weight: 800; color: #0F172A; text-align: center; margin: 0.5rem 0 0.5rem 0; letter-spacing: 0.5px;}
         .sub-title { font-size: 1rem; color: #64748B; text-align: center; margin-bottom: 2rem; font-weight: 500;}
         .chart-container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); margin-bottom: 25px; border: 1px solid #E2E8F0; }
+        
         .ai-score-panel { background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); color: white; padding: 25px; border-radius: 12px; text-align: center; height: 100%; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
         .ai-score-num { font-size: 65px; font-weight: 900; line-height: 1; margin: 15px 0; font-family: 'Arial', sans-serif;}
+        
         .audit-action-panel { background: #FFFBEB; border-left: 4px solid #F59E0B; padding: 20px; border-radius: 8px; height: 100%; border-top: 1px solid #FEF3C7; border-right: 1px solid #FEF3C7; border-bottom: 1px solid #FEF3C7;}
         .audit-title { font-weight: 800; color: #0F172A; margin-bottom: 12px; font-size: 16px;}
         .audit-text { font-size: 14.5px; color: #334155; line-height: 1.6; margin-bottom: 8px;}
@@ -328,10 +384,17 @@ else:
         tk = yf.Ticker(code)
         real_data['price'] = tk.fast_info.last_price
     except: pass
-    hist_data = fetch_us_history(code)
+    # 這裡直接用 yfinance 的歷史資料作為大盤的圖表
+    hist_data = []
+    try:
+        tk_hist = yf.Ticker(code).history(period="6mo")
+        for idx, row in tk_hist.iterrows():
+            hist_data.append({'date': idx.strftime('%Y-%m-%d'), 'volume': float(row['Volume']), 'open': float(row['Open']), 'high': float(row['High']), 'low': float(row['Low']), 'close': float(row['Close'])})
+    except: pass
 
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 df_intra = get_intraday_chart_data(code, not is_tw_stock)
+
 current_price = real_data['price'] if real_data['price'] > 0 else (df_daily.iloc[-1]['close'] if not df_daily.empty else 0)
 
 prev_close = df_daily.iloc[-2]['close'] if len(df_daily) > 1 else current_price
@@ -360,7 +423,7 @@ with col2:
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
-# === 5. 下半部：高階財務戰情室 (100% Internal Data) ===
+# === 5. 下半部：高階財務戰情室 (100% 讀取你上傳的 Excel) ===
 # ==========================================
 if is_tw_stock:
     st.divider()
@@ -368,9 +431,11 @@ if is_tw_stock:
     st.info("💡 **架構升級聲明**：本儀表板已成功升級為「內部數據湖驅動模式」。系統正透過 AI 模糊比對引擎，直接讀取並解析您上傳至 GitHub 的官方 Excel 財報檔案，實現 0 延遲、100% 絕對真實與受控，徹底根除外部 API 阻擋或亂碼問題。")
 
     # 執行內部 Excel 探勘
-    df_quarterly, df_ytd = parse_internal_excel_data(code)
+    df_quarterly, df_ytd, error_msg = parse_internal_excel_data(code)
 
-    if not df_quarterly.empty and len(df_quarterly) >= 2:
+    if error_msg:
+        st.warning(f"⚠️ {error_msg}")
+    elif not df_quarterly.empty and len(df_quarterly) >= 2:
         latest = df_quarterly.iloc[0]
         
         # --- AI 健檢 ---
@@ -422,41 +487,16 @@ if is_tw_stock:
             else:
                 x_labels = ["營業收入", "營業成本", "毛利", "營業費用/稅", "本期淨利"]
                 text_vals = [f"{latest['單季營收 (億)']:.1f}" if pd.notna(latest['單季營收 (億)']) else "N/A", 
-                             f"-{latest['單季營收 (億)'] - latest['毛利 (億)']:.1f}" if pd.notna(latest['毛利 (億)']) else "N/A", 
+                             f"-{latest['單季營收 (億)'] - latest['毛利 (億)']:.1f}" if pd.notna(latest['毛利 (億)']) and pd.notna(latest['單季營收 (億)']) else "N/A", 
                              f"{latest['毛利 (億)']:.1f}" if pd.notna(latest['毛利 (億)']) else "N/A", 
-                             f"-{latest['毛利 (億)'] - latest['淨利 (億)']:.1f}" if pd.notna(latest['淨利 (億)']) else "N/A", 
+                             f"-{latest['毛利 (億)'] - latest['淨利 (億)']:.1f}" if pd.notna(latest['淨利 (億)']) and pd.notna(latest['毛利 (億)']) else "N/A", 
                              f"{latest['淨利 (億)']:.1f}" if pd.notna(latest['淨利 (億)']) else "N/A"]
                 y_vals = [latest['單季營收 (億)'] if pd.notna(latest['單季營收 (億)']) else 0, 
-                          -(latest['單季營收 (億)'] - latest['毛利 (億)']) if pd.notna(latest['毛利 (億)']) else 0, 
+                          -(latest['單季營收 (億)'] - latest['毛利 (億)']) if pd.notna(latest['毛利 (億)']) and pd.notna(latest['單季營收 (億)']) else 0, 
                           latest['毛利 (億)'] if pd.notna(latest['毛利 (億)']) else 0, 
-                          -(latest['毛利 (億)'] - latest['淨利 (億)']) if pd.notna(latest['淨利 (億)']) else 0, 
+                          -(latest['毛利 (億)'] - latest['淨利 (億)']) if pd.notna(latest['淨利 (億)']) and pd.notna(latest['毛利 (億)']) else 0, 
                           latest['淨利 (億)'] if pd.notna(latest['淨利 (億)']) else 0]
                 measures = ["relative", "relative", "total", "relative", "total"]
 
             fig2 = go.Figure(go.Waterfall(
                 name="20", orientation="v", measure=measures, x=x_labels, textposition="outside", textfont=dict(size=14, color='#0F172A', weight='bold'),
-                text=text_vals, y=y_vals, connector={"line":{"color":"#CBD5E1", "dash": 'dot', "width": 2}}, decreasing={"marker":{"color":"#EF4444"}}, increasing={"marker":{"color":"#3B82F6"}}, totals={"marker":{"color":"#0F172A"}}      
-            ))
-            fig2.update_layout(title=f"<b>💰 獲利結構瀑布圖拆解 (最新財報: {latest['季度']})</b>", height=420, margin=dict(l=0, r=0, t=50, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig2, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        # --- 財務數據矩陣 ---
-        st.markdown("### 📑 核心財務數據矩陣 (Internal Database)")
-        tab1, tab2 = st.tabs(["📊 單季表現 (Quarterly)", "📈 累計表現 (Year-To-Date)"])
-        
-        display_df = df_quarterly[[c for c in df_quarterly.columns if not c.startswith('_')]]
-        format_dict = {'單季營收 (億)': '{:,.1f}', '毛利 (億)': '{:,.1f}', '營業費用 (億)': '{:,.1f}', '淨利 (億)': '{:,.1f}', '毛利率 (%)': '{:.1f}%', '淨利率 (%)': '{:.1f}%', '單季EPS (元)': '{:.2f}', '存貨周轉天數': '{:.1f}', '應收帳款天數': '{:.1f}'}
-        
-        with tab1:
-            st.dataframe(display_df.style.format(format_dict, na_rep="N/A"), use_container_width=True, height=320)
-        with tab2:
-            if not df_ytd.empty:
-                ytd_cols = ['季度', '累計營收 (億)', '累計淨利 (億)']
-                if '累計EPS (元)' in df_ytd.columns: ytd_cols.append('累計EPS (元)')
-                st.dataframe(df_ytd[ytd_cols].style.format({'累計營收 (億)': '{:,.1f}', '累計淨利 (億)': '{:,.1f}', '累計EPS (元)': '{:.2f}'}, na_rep="N/A"), use_container_width=True, height=320)
-    else:
-        st.info("⚠️ 請確保已將 `遠東集團上市公司_損益表_2015~2025Q3.xlsx` 等檔案上傳至與此程式相同的 GitHub 資料夾中。")
-
-update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
-st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：Internal Excel Data Lake</div>', unsafe_allow_html=True)
