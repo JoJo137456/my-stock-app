@@ -8,7 +8,8 @@ import pytz
 import requests
 import urllib3
 import yfinance as yf
-import numpy as np
+from bs4 import BeautifulSoup
+import re
 
 # === 0. 系統層級修復 ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -89,12 +90,13 @@ st.markdown("""
         .fin-card { background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center; }
         .fin-card h4 { margin: 0; color: #64748b; font-size: 0.9rem; font-weight: 500; }
         .fin-card h2 { margin: 5px 0 0 0; color: #0f172a; font-size: 1.5rem; font-weight: 700; }
+        .eli3-box { background: #fdfae1; padding: 20px; border-left: 5px solid #facc15; border-radius: 5px; margin-bottom: 20px; font-size: 1.05rem; line-height: 1.6; color: #422006;}
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
 
-# === API 與資料抓取模組 (整合既有與新增) ===
+# === API 與資料抓取模組 ===
 @st.cache_data(ttl=3600)
 def fetch_twse_history_proxy(stock_code):
     try:
@@ -113,6 +115,42 @@ def fetch_twse_history_proxy(stock_code):
         return sorted(data_list, key=lambda x: x['date'])
     except: return None
 
+@st.cache_data(ttl=3600)
+def scrape_yahoo_tw_financials(stock_code):
+    """強行爬取 Yahoo TW 的單月營收與單季 EPS"""
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'}
+    data = {"revenue": [], "eps": []}
+    
+    # 爬取單月營收
+    try:
+        rev_url = f"https://tw.stock.yahoo.com/quote/{stock_code}.TW/revenue"
+        res = requests.get(rev_url, headers=headers, timeout=5)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        # 尋找包含資料的清單項目 (Yahoo TW 結構經常變動，這裡抓取常見的 div 網格)
+        list_items = soup.find_all('li', class_='List(n)')
+        for item in list_items[:6]: # 取近6個月
+            cols = item.find_all('div')
+            if len(cols) >= 3:
+                month = cols[0].text.strip()
+                rev = cols[1].text.strip()
+                data["revenue"].append({"月度": month, "單月營收 (千)": rev})
+    except: pass
+    
+    # 爬取 EPS
+    try:
+        eps_url = f"https://tw.stock.yahoo.com/quote/{stock_code}.TW/eps"
+        res = requests.get(eps_url, headers=headers, timeout=5)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        list_items = soup.find_all('li', class_='List(n)')
+        for item in list_items[:4]: # 取近4季
+            cols = item.find_all('div')
+            if len(cols) >= 3:
+                quarter = cols[0].text.strip()
+                eps = cols[1].text.strip()
+                data["eps"].append({"季度": quarter, "單季EPS": eps})
+    except: pass
+    return data
+
 @st.cache_data(ttl=300) 
 def get_intraday_chart_data(stock_code, is_us_source=False):
     try:
@@ -124,87 +162,99 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
         return df if not df.empty else None
     except: return None
 
-@st.cache_data(ttl=86400)
-def fetch_fundamental_data(stock_code, is_tw_stock):
-    """抓取財務基本面資料"""
-    try:
-        ticker = yf.Ticker(f"{stock_code}.TW" if is_tw_stock else stock_code)
-        info = ticker.info
-        
-        # 取得最新年度與季度財報
-        inc_stmt_ann = ticker.income_stmt
-        inc_stmt_qtr = ticker.quarterly_income_stmt
-        cf_ann = ticker.cashflow
-        cf_qtr = ticker.quarterly_cashflow
-        
-        return {
-            "info": info,
-            "annual_inc": inc_stmt_ann,
-            "quarterly_inc": inc_stmt_qtr,
-            "annual_cf": cf_ann,
-            "quarterly_cf": cf_qtr
-        }
-    except:
-        return None
-
-# === 同業競爭對標清單 (自動分類) ===
+# === 同業競爭對標清單 (中英雙語 + 基準定義) ===
 INDUSTRY_PEERS = {
-    "1402": {"name": "紡織纖維", "peers": ["1402", "1476", "1477", "1440", "1444"]},
-    "1102": {"name": "水泥工業", "peers": ["1101", "1102", "1103", "1108", "1109"]},
-    "2606": {"name": "航運業", "peers": ["2606", "2603", "2609", "2615", "2637"]},
-    "4904": {"name": "通信網路", "peers": ["2412", "3045", "4904"]},
-    "2903": {"name": "貿易百貨", "peers": ["2903", "2912", "2915", "5904"]},
-    "1710": {"name": "化學工業", "peers": ["1710", "1301", "1303", "1326", "1722"]},
-    "2845": {"name": "金融保險", "peers": ["2845", "2881", "2882", "2886", "2891"]},
+    "1402": {
+        "name": "紡織纖維 (Textiles)", 
+        "peers": [
+            {"code": "1402", "zh": "遠東新", "en": "FENC"},
+            {"code": "1476", "zh": "儒鴻", "en": "Eclat"},
+            {"code": "1477", "zh": "聚陽", "en": "Makalot"},
+            {"code": "1440", "zh": "南紡", "en": "Tainan Spinning"},
+            {"code": "1444", "zh": "力麗", "en": "Lealea"}
+        ]
+    },
+    "1102": {
+        "name": "水泥工業 (Cement)", 
+        "peers": [
+            {"code": "1102", "zh": "亞泥", "en": "ACC"},
+            {"code": "1101", "zh": "台泥", "en": "TCC"},
+            {"code": "1103", "zh": "嘉泥", "en": "CHC"},
+            {"code": "1108", "zh": "幸福", "en": "Hsing Ta"},
+            {"code": "1109", "zh": "信大", "en": "Hsin Ta"}
+        ]
+    },
+    "4904": {
+        "name": "通信網路 (Telecommunications)", 
+        "peers": [
+            {"code": "4904", "zh": "遠傳", "en": "FET"},
+            {"code": "2412", "zh": "中華電", "en": "CHT"},
+            {"code": "3045", "zh": "台灣大", "en": "TWM"}
+        ]
+    }
+}
+
+# === 三歲小孩商業模式辭典 ===
+ELI3_MODELS = {
+    "1402": "👶 **賣什麼**：我們做衣服的布料，還有裝飲料的寶特瓶唷！<br>💰 **怎麼賺錢**：把石油變成神奇的塑膠粒，再把它們變成好穿的衣服賣給 Nike 這種大公司！<br>⚙️ **商業模式**：從最原始的原料到最後的衣服，全部自己做（垂直整合）。靠著技術厲害、成本便宜，賺取中間的差價。",
+    "1102": "👶 **賣什麼**：蓋房子、造橋鋪路用的灰灰粉末，叫做「水泥」！<br>💰 **怎麼賺錢**：把山上的石頭挖下來，放進超熱的大爐子裡烤，變成水泥後賣給蓋房子的工人。<br>⚙️ **商業模式**：水泥很重，運費很貴，所以我們在很多地方都蓋了工廠，誰離我們近就賣給誰，靠控制煤炭成本和投資其他公司來賺錢。",
+    "4904": "👶 **賣什麼**：賣讓你的手機可以上網看影片、打電話的「隱形電波」！<br>💰 **怎麼賺錢**：每個月收爸爸媽媽的電話費和網路費。<br>⚙️ **商業模式**：花很多錢蓋高高的基地台（這叫資本資出），然後像收過路費一樣，每個月向大家收月租費，這就是超穩定的現金流！"
 }
 
 @st.cache_data(ttl=86400)
-def fetch_peers_data(peer_codes):
-    """抓取同業基礎估值指標"""
-    results = []
-    for p in peer_codes:
-        try:
-            tk = yf.Ticker(f"{p}.TW")
-            info = tk.info
-            results.append({
-                "Code": p,
-                "Name": tk.info.get('shortName', p),
-                "EPS (TTM)": info.get('trailingEps', 0),
-                "毛利率 (%)": info.get('grossMargins', 0) * 100 if info.get('grossMargins') else 0,
-                "淨利率 (%)": info.get('profitMargins', 0) * 100 if info.get('profitMargins') else 0,
-                "ROE (%)": info.get('returnOnEquity', 0) * 100 if info.get('returnOnEquity') else 0
-            })
-        except: continue
-    return pd.DataFrame(results)
+def fetch_peer_history_for_baseline(peers):
+    """抓取同業近半年歷史價格，用於計算基準相對強度"""
+    hist_dict = {}
+    for p in peers:
+        df = fetch_twse_history_proxy(p['code'])
+        if df:
+            temp_df = pd.DataFrame(df)[['date', 'close']]
+            temp_df.rename(columns={'close': f"{p['zh']}_{p['code']}"}, inplace=True)
+            hist_dict[p['code']] = temp_df
+    
+    if not hist_dict: return pd.DataFrame()
+    
+    # 合併所有 DataFrame
+    main_df = list(hist_dict.values())[0]
+    for code, df in list(hist_dict.items())[1:]:
+        main_df = pd.merge(main_df, df, on='date', how='inner')
+    return main_df
 
-# === 繪圖模組 (沿用舊版 + 新增) ===
-def plot_daily_k(df):
-    if df.empty: return None
+# === 繪圖模組 ===
+def plot_relative_strength_base100(df, target_col):
+    """繪製以目標股票為 100 基準線的相對強度對比圖"""
     df = df.copy()
     df.set_index(pd.to_datetime(df['date']), inplace=True)
-    df = df.tail(120)
-    fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'], increasing_fillcolor='#ef4444', decreasing_fillcolor='#22c55e', name="日K")])
-    fig.update_layout(title="<b>📊 歷史價格走勢 (近半年)</b>", xaxis_rangeslider_visible=False, height=350, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-    return fig
-
-def plot_intraday_line(df):
-    if df is None or df.empty: return None
-    y_min, y_max = df['Close'].min(), df['Close'].max()
+    df.drop(columns=['date'], inplace=True)
+    
+    # 步驟 1：將所有股票各自對齊第一天的價格，算出成長率
+    normalized_df = df.div(df.iloc[0]) 
+    
+    # 步驟 2：將目標股票的成長率設為分母，算出相對於目標的強弱 (Base 100)
+    relative_df = (normalized_df.div(normalized_df[target_col], axis=0)) * 100
+    
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', line=dict(color='#0f172a', width=2.5), fill='tozeroy', fillcolor='rgba(15, 23, 42, 0.05)'))
-    fig.update_layout(title="<b>⚡ 當日分時動態</b>", height=350, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified")
-    return fig
-
-def plot_peer_comparison_chart(df_peers):
-    if df_peers.empty: return None
-    fig = px.bar(df_peers, x='Code', y=['毛利率 (%)', '淨利率 (%)'], barmode='group', title="<b>🛡️ 產業獲利能力對標 (Margins Comparison)</b>", color_discrete_sequence=['#3b82f6', '#10b981'])
-    fig.update_layout(height=350, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+    # 畫基準線 (目標股票永遠是一條 100 的平線)
+    fig.add_trace(go.Scatter(x=relative_df.index, y=relative_df[target_col], mode='lines', name=f"基準: {target_col.split('_')[0]} (100)", line=dict(color='#0f172a', width=4)))
+    
+    # 畫同業比較線
+    colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+    color_idx = 0
+    for col in relative_df.columns:
+        if col != target_col:
+            fig.add_trace(go.Scatter(x=relative_df.index, y=relative_df[col], mode='lines', name=col.split('_')[0], line=dict(width=2, color=colors[color_idx % len(colors)])))
+            color_idx += 1
+            
+    fig.update_layout(
+        title="<b>🛡️ 戰略雷達：產業相對強弱對比 (Target = 100)</b>", 
+        yaxis_title="相對基準表現",
+        height=400, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified"
+    )
     return fig
 
 # === 主控台區塊 ===
 market_categories = {
-    "🏢 遠東集團核心事業體": {"🇹🇼 1402 遠東新": "1402", "🇹🇼 1102 亞泥": "1102", "🇹🇼 2606 裕民": "2606", "🇹🇼 1460 宏遠": "1460", "🇹🇼 2903 遠百": "2903", "🇹🇼 4904 遠傳": "4904", "🇹🇼 1710 東聯": "1710", "🇹🇼 2845 遠東銀": "2845"},
-    "📈 總體經濟與大盤": {"🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 SOX (費半)": "^SOX", "⚠️ VIX": "^VIX", "🏦 U.S. 10Y": "^TNX", "💵 美元指數": "DX-Y.NYB"}
+    "🏢 遠東集團核心事業體": {"🇹🇼 1402 遠東新": "1402", "🇹🇼 1102 亞泥": "1102", "🇹🇼 2606 裕民": "2606", "🇹🇼 4904 遠傳": "4904"}
 }
 
 with st.sidebar:
@@ -214,138 +264,84 @@ with st.sidebar:
     options_dict = market_categories[selected_category]
     option = st.radio("監控標的", list(options_dict.keys()))
     code = options_dict[option]
-    
-    is_tw_stock = code.isdigit()
-    is_index = not is_tw_stock
-
-    if st.button("🔄 刷新全部數據"):
-        st.cache_data.clear()
-        st.rerun()
 
 # === 基礎報價獲取 ===
-current_price, change, pct = 0, 0, 0
+current_price, prev_close = 0, 0
 real_data = {'open': '-', 'high': '-', 'low': '-', 'volume': '-'}
 
-if is_tw_stock:
-    try:
-        real = twstock.realtime.get(code)
-        if real['success']:
-            info = real['realtime']
-            current_price = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else float(info['open'])
-            prev_close = float(real['info']['y'])
-            change, pct = current_price - prev_close, ((current_price - prev_close)/prev_close)*100
-            real_data.update({'open': info.get('open'), 'high': info.get('high'), 'low': info.get('low'), 'volume': info.get('accumulate_trade_volume')})
-    except: pass
-else:
-    try:
-        tk = yf.Ticker(code)
-        fi = tk.fast_info
-        current_price, prev_close = fi.last_price, fi.previous_close
-        change, pct = current_price - prev_close, ((current_price - prev_close)/prev_close)*100
-        real_data.update({'open': fi.open, 'high': fi.day_high, 'low': fi.day_low, 'volume': f"{int(fi.last_volume):,}"})
-    except: pass
+try:
+    real = twstock.realtime.get(code)
+    if real['success']:
+        info = real['realtime']
+        current_price = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else float(info['open'])
+        prev_close = float(real['info']['y'])
+        real_data.update({'open': info.get('open'), 'high': info.get('high'), 'low': info.get('low'), 'volume': info.get('accumulate_trade_volume')})
+except: pass
+
+change = current_price - prev_close
+pct = ((current_price - prev_close)/prev_close)*100 if prev_close else 0
 
 # === 畫面呈現：Top Cards ===
 bg_color, font_color, border_color = "#f8fafc", "#dc2626" if change >= 0 else "#16a34a", "#fca5a5" if change >= 0 else "#86efac"
-currency = "NT$" if is_tw_stock else ("" if is_index else "$")
 
 st.markdown(f"""
 <div style="background-color: {bg_color}; padding: 25px; border-radius: 8px; margin-bottom: 25px; border-left: 6px solid {border_color};">
     <h2 style="margin:0; color:#475569; font-size: 1.1rem;">{option}</h2>
     <div style="display: flex; align-items: baseline; gap: 15px; margin-top: 8px;">
-        <span style="font-size: 3.2rem; font-weight: 700; color: #0f172a;">{currency} {current_price:,.2f}</span>
+        <span style="font-size: 3.2rem; font-weight: 700; color: #0f172a;">NT$ {current_price:,.2f}</span>
         <span style="font-size: 1.5rem; font-weight: 600; color: {font_color};">{change:+.2f} ({pct:+.2f}%)</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("開盤價", real_data['open'])
-c2.metric("最高價", real_data['high'])
-c3.metric("最低價", real_data['low'])
-c4.metric("成交量", real_data['volume'])
-
+# ==========================================
+# === 📈 企業基本面與產業戰略解析 ===
+# ==========================================
 st.divider()
+st.markdown("### 📈 企業基本面與產業戰略解析")
 
-# === 畫面呈現：K線圖 ===
-col1, col2 = st.columns(2)
-with col1:
-    df_intra = get_intraday_chart_data(code, not is_tw_stock)
-    if df_intra is not None: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
-with col2:
-    hist_data = fetch_twse_history_proxy(code) if is_tw_stock else yf.Ticker(code).history(period="6mo").reset_index()
-    if is_tw_stock and hist_data:
-        st.plotly_chart(plot_daily_k(pd.DataFrame(hist_data)), use_container_width=True)
+# 三歲小孩商業模式
+if code in ELI3_MODELS:
+    st.markdown(f'<div class="eli3-box"><b>🧸 3歲小孩也懂的商業模式：</b><br>{ELI3_MODELS[code]}</div>', unsafe_allow_html=True)
 
-# ==========================================
-# === 新增功能：基本面與產業對標分析 ===
-# ==========================================
-if is_tw_stock:
-    st.markdown("### 📈 企業基本面與產業戰略解析")
+tab1, tab2 = st.tabs(["📊 營收與獲利 (Yahoo TW 同步)", "⚔️ 產業相對強弱 (Base 100)"])
+
+with tab1:
+    st.markdown("**來自 Yahoo Finance TW 的即時抓取資料：**")
     
-    # 獲取財報資料
-    fin_data = fetch_fundamental_data(code, is_tw_stock)
-    info = fin_data['info'] if fin_data else {}
+    # 呼叫爬蟲
+    scraped_data = scrape_yahoo_tw_financials(code)
     
-    tab1, tab2 = st.tabs(["📊 財務體質檢視 (Financials)", "⚔️ 產業同行對標 (Peers Comparison)"])
-    
-    with tab1:
-        st.markdown("**時間維度選擇 (Timeframe Filter):**")
-        time_mode = st.radio("檢視區間", ["年度 (Annual)", "單季 (Quarterly)", "累計 (TTM/YTD)", "單月 (Monthly)"], horizontal=True, label_visibility="collapsed")
-        
-        # 實作財務數據提取邏輯
-        try:
-            if "年度" in time_mode and fin_data['annual_inc'] is not None:
-                latest_inc = fin_data['annual_inc'].iloc[:, 0] # 最新一年
-                latest_cf = fin_data['annual_cf'].iloc[:, 0] if not fin_data['annual_cf'].empty else None
-                period_label = latest_inc.name.strftime('%Y') + " 財報"
-            else:
-                # 預設抓取 Quarterly / TTM 
-                latest_inc = fin_data['quarterly_inc'].iloc[:, 0]
-                latest_cf = fin_data['quarterly_cf'].iloc[:, 0] if not fin_data['quarterly_cf'].empty else None
-                period_label = latest_inc.name.strftime('%Y-Q%m') + " 季報"
-                
-            rev = latest_inc.get("Total Revenue", 0)
-            gp = latest_inc.get("Gross Profit", 0)
-            op_exp = latest_inc.get("Operating Expense", 0)
-            net_inc = latest_inc.get("Net Income", 0)
-            cfo = latest_cf.get("Operating Cash Flow", 0) if latest_cf is not None else 0
-            
-            # 若選單月，提示需串接 MOPS
-            if "單月" in time_mode or "累計" in time_mode:
-                st.warning("⚠️ 系統提示：台股單月營收/累計營收需串接「公開資訊觀測站(MOPS)」API。以下顯示由 Yahoo 預估之近四季(TTM)動態指標作為決策參考。")
-                rev = info.get('totalRevenue', rev)
-                gp = info.get('grossProfits', gp)
-                net_inc = info.get('netIncomeToCommon', net_inc)
-                cfo = info.get('operatingCashflow', cfo)
-                period_label = "TTM (近十二個月)"
-        except:
-            rev, gp, op_exp, net_inc, cfo = 0, 0, 0, 0, 0
-            period_label = "數據讀取中"
-
-        # 格式化單位 (億)
-        def fmt_b(val): return f"NT$ {val/100000000:,.1f} 億" if val and pd.notna(val) else "N/A"
-        
-        st.markdown(f"#### 📅 數據基準：{period_label}")
-        f1, f2, f3 = st.columns(3)
-        with f1:
-            st.markdown(f'<div class="fin-card"><h4>每股盈餘 (EPS)</h4><h2>{info.get("trailingEps", "N/A")}</h2></div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="fin-card" style="margin-top:10px;"><h4>營業費用 (Op. Expenses)</h4><h2>{fmt_b(op_exp)}</h2></div>', unsafe_allow_html=True)
-        with f2:
-            st.markdown(f'<div class="fin-card"><h4>營業收入 (Revenue)</h4><h2>{fmt_b(rev)}</h2></div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="fin-card" style="margin-top:10px;"><h4>營業現金流 (Op. Cash Flow)</h4><h2>{fmt_b(cfo)}</h2></div>', unsafe_allow_html=True)
-        with f3:
-            st.markdown(f'<div class="fin-card"><h4>毛利 (Gross Profit)</h4><h2>{fmt_b(gp)}</h2></div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="fin-card" style="margin-top:10px;"><h4>淨利 (Net Income)</h4><h2>{fmt_b(net_inc)}</h2></div>', unsafe_allow_html=True)
-
-    with tab2:
-        if code in INDUSTRY_PEERS:
-            peer_info = INDUSTRY_PEERS[code]
-            st.markdown(f"**目標賽道：{peer_info['name']} (對標前五大龍頭)**")
-            
-            df_peers = fetch_peers_data(peer_info['peers'])
-            if not df_peers.empty:
-                st.dataframe(df_peers.style.format({"EPS (TTM)": "{:.2f}", "毛利率 (%)": "{:.1f}%", "淨利率 (%)": "{:.1f}%", "ROE (%)": "{:.1f}%"}), use_container_width=True)
-                st.plotly_chart(plot_peer_comparison_chart(df_peers), use_container_width=True)
+    col_rev, col_eps = st.columns(2)
+    with col_rev:
+        st.markdown("#### 📅 單月營收追蹤")
+        if scraped_data["revenue"]:
+            st.dataframe(pd.DataFrame(scraped_data["revenue"]), use_container_width=True, hide_index=True)
         else:
-            st.info("該標的目前未配置同業對標追蹤清單。")
+            st.warning("目前無法解析該檔股票之 Yahoo TW 營收表格，請檢查網路狀態或確認頁面結構未變動。")
+            
+    with col_eps:
+        st.markdown("#### 💰 單季 EPS (每股盈餘)")
+        if scraped_data["eps"]:
+            st.dataframe(pd.DataFrame(scraped_data["eps"]), use_container_width=True, hide_index=True)
+        else:
+            st.warning("目前無法解析該檔股票之 Yahoo TW EPS 表格。")
+
+with tab2:
+    if code in INDUSTRY_PEERS:
+        peer_info = INDUSTRY_PEERS[code]
+        st.markdown(f"**目標賽道：{peer_info['name']}**")
+        
+        # 顯示雙語對標清單
+        peer_list_display = " | ".join([f"{p['zh']} ({p['en']})" for p in peer_info['peers']])
+        st.caption(f"觀測名單：{peer_list_display}")
+        
+        # 抓取歷史資料並繪製基準 100 圖表
+        target_col_name = next((f"{p['zh']}_{p['code']}" for p in peer_info['peers'] if p['code'] == code), None)
+        df_peers_hist = fetch_peer_history_for_baseline(peer_info['peers'])
+        
+        if not df_peers_hist.empty and target_col_name:
+            st.plotly_chart(plot_relative_strength_base100(df_peers_hist, target_col_name), use_container_width=True)
+            st.info(f"💡 **判讀邏輯**：此圖表將 **{option.split(' ')[-1]}** 的歷史走勢強制拉直為 100。如果對手的線條向上突破 100，代表該期間對手的漲幅跑贏了我們；如果線條低於 100，代表我們的護城河發揮效用，績效擊敗了同行！")
+    else:
+        st.info("該標的目前未配置同業對標追蹤清單。")
