@@ -1,4 +1,5 @@
 import streamlit as st
+import twstock
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -20,9 +21,54 @@ st.set_page_config(page_title="FENC Audit Department | Executive Dashboard", lay
 tw_tz = pytz.timezone('Asia/Taipei') 
 
 # ==========================================
-# === 1. 核心方法宣告 (解決 NameError 關鍵) ===
+# === 1. 登入介面與防護機制定義 ===
 # ==========================================
-# 所有獲取資料的 Function 必須在主程式執行前宣告完畢
+def check_password():
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+    if st.session_state["password_correct"]:
+        return True
+
+    st.markdown("""
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;800&family=Noto+Sans+TC:wght@500;700;900&display=swap');
+        [data-testid="stSidebar"], header, [data-testid="collapsedControl"] {display: none !important;}
+        .stApp { background-color: #F8FAFC !important; font-family: 'Poppins', 'Noto Sans TC', sans-serif !important; }
+        .hero-title-solid { font-size: 65px; font-weight: 800; color: #0F172A; line-height: 1.1; margin-bottom: 0; letter-spacing: -1.5px; }
+        .hero-title-outline { font-size: 50px; font-weight: 900; color: transparent; -webkit-text-stroke: 1.5px #0F172A; line-height: 1.2; margin-top: 5px; margin-bottom: 40px; }
+        .label-dashboard { background-color: #2563EB; color: #ffffff; padding: 12px 28px; border-radius: 6px; font-weight: 600; font-size: 14px; display: inline-block; letter-spacing: 1px;}
+        [data-testid="column"]:nth-of-type(3) { background: #ffffff; border-radius: 16px; padding: 40px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); margin-top: 20px; border: 1px solid #E2E8F0;}
+        div[data-baseweb="input"] > div { border: 1px solid #CBD5E1 !important; background-color: #F8FAFC !important; border-radius: 8px !important; height: 50px !important; }
+        button[kind="primary"] { background-color: #0F172A !important; color: white !important; border-radius: 8px !important; height: 50px !important; font-weight: 600 !important; font-size: 16px !important;}
+    </style>
+    """, unsafe_allow_html=True)
+
+    col_left, spacer, col_right = st.columns([1.2, 0.2, 0.8])
+    with col_left:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown('<div class="hero-title-solid">Audit Department</div>', unsafe_allow_html=True)
+        st.markdown('<div class="hero-title-outline">Far Eastern Group</div>', unsafe_allow_html=True)
+        st.markdown('<div class="label-dashboard">AI Executive Intelligence</div>', unsafe_allow_html=True)
+    with col_right:
+        st.markdown('<div style="font-size: 26px; color: #0F172A; font-weight: 800; margin-bottom: 5px;">聯合稽核總部</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size: 15px; font-weight: 600; color: #64748B; margin-bottom: 30px;">Strategic Command Login</div>', unsafe_allow_html=True)
+        st.text_input("Customer ID", value="fenc07822", label_visibility="collapsed", key="acc_id")
+        pwd = st.text_input("Passcode", type="password", label_visibility="collapsed", key="pwd")
+        if st.button("Secure Login ──", type="primary", use_container_width=True):
+            if pwd == "AUDIT@01":
+                st.session_state["password_correct"] = True
+                st.rerun()
+            elif pwd != "":
+                st.error("Invalid credentials")
+    return False
+
+# 執行阻擋機制 (未登入則停止執行後續程式)
+if not check_password(): 
+    st.stop()
+
+# ==========================================
+# === 2. 核心資料探勘與演算法引擎宣告 ===
+# ==========================================
 
 @st.cache_data(ttl=3600) 
 def fetch_twse_history_proxy(stock_code):
@@ -64,7 +110,7 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
 
 @st.cache_data(ttl=86400)
 def get_real_financials_api(stock_code):
-    """100% 依賴 yfinance 官方 JSON API 獲取真實季報，杜絕網頁爬蟲亂碼"""
+    """100% 依賴 yfinance 官方 JSON API 獲取真實季報，杜絕網頁爬蟲亂碼與假資料"""
     try:
         tk = yf.Ticker(f"{stock_code}.TW" if stock_code.isdigit() else stock_code)
         inc = tk.quarterly_income_stmt
@@ -77,10 +123,8 @@ def get_real_financials_api(stock_code):
         
         results = []
         for idx, row in inc.iterrows():
-            # 精準格式化商務日期 (如 2024-Q3)，徹底消滅 %q 亂碼
             q_date = f"{idx.year}-Q{(idx.month-1)//3 + 1}"
             
-            # 使用官方 API 科目 (100% 結構化數據)
             rev = row.get('Total Revenue', pd.NA)
             gp = row.get('Gross Profit', pd.NA)
             net = row.get('Net Income', pd.NA)
@@ -112,7 +156,6 @@ def get_real_financials_api(stock_code):
             
         df = pd.DataFrame(results).head(8)
         
-        # YTD 累計計算 (絕對正確：按年份歸零)
         ytd_df = df.copy().iloc[::-1].reset_index(drop=True)
         ytd_df['年份'] = ytd_df['季度'].str[:4]
         ytd_df['累計營收 (億)'] = ytd_df.groupby('年份')['單季營收 (億)'].cumsum()
@@ -120,7 +163,7 @@ def get_real_financials_api(stock_code):
         ytd_df = ytd_df.iloc[::-1].drop(columns=['年份']).reset_index(drop=True)
         
         return df, ytd_df
-    except Exception as e:
+    except:
         return pd.DataFrame(), pd.DataFrame()
 
 def generate_audit_action_plan(df):
@@ -239,10 +282,8 @@ def plot_intraday_line(df):
     return fig
 
 # ==========================================
-# === 2. 登入介面與 UI 初始化 ===
+# === 3. 主頁 UI 樣式宣告與戰情室本體 ===
 # ==========================================
-if not check_password(): st.stop()
-
 st.markdown("""
     <style>
         html, body, [class*="css"]  { font-family: 'Microsoft JhengHei', 'Segoe UI', sans-serif !important; }
@@ -263,9 +304,6 @@ st.markdown("""
 
 st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
 
-# ==========================================
-# === 3. 左側選單設定 ===
-# ==========================================
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
         "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC", 
@@ -288,12 +326,11 @@ with st.sidebar:
     is_tw_stock = code.isdigit()
 
 # ==========================================
-# === 4. 股價與技術線圖區塊 ===
+# === 4. 上半部：即時報價與技術線圖區塊 ===
 # ==========================================
 real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
 
 if is_tw_stock:
-    import twstock # Ensure imported here if needed
     try:
         real = twstock.realtime.get(code)
         if real['success']:
@@ -401,15 +438,16 @@ if is_tw_stock:
         with c_chart1:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             plot_df = df_quarterly.iloc[::-1].dropna(subset=['單季營收 (億)'])
-            fig1 = make_subplots(specs=[[{"secondary_y": True}]])
-            fig1.add_trace(go.Bar(x=plot_df['季度'], y=plot_df['單季營收 (億)'], name="營收 (億)", marker_color='#E2E8F0'), secondary_y=False)
-            fig1.add_trace(go.Scatter(x=plot_df['季度'], y=plot_df['毛利率 (%)'], name="毛利率 %", mode='lines+markers', line=dict(color='#0F172A', width=3, shape='spline')), secondary_y=True)
-            fig1.add_trace(go.Scatter(x=plot_df['季度'], y=plot_df['淨利率 (%)'], name="淨利率 %", mode='lines+markers', line=dict(color='#2563EB', width=3, shape='spline')), secondary_y=True)
-            
-            fig1.update_layout(title="<b>📊 營收規模與真實獲利趨勢 (Auto-Scaled)</b>", height=420, margin=dict(l=0, r=0, t=40, b=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-            fig1.update_yaxes(title_text="金額 (億台幣)", secondary_y=False, showgrid=False)
-            fig1.update_yaxes(title_text="百分比 (%)", secondary_y=True, showgrid=True, gridcolor='#F8FAFC', autorange=True) 
-            st.plotly_chart(fig1, use_container_width=True)
+            if not plot_df.empty:
+                fig1 = make_subplots(specs=[[{"secondary_y": True}]])
+                fig1.add_trace(go.Bar(x=plot_df['季度'], y=plot_df['單季營收 (億)'], name="營收 (億)", marker_color='#E2E8F0'), secondary_y=False)
+                fig1.add_trace(go.Scatter(x=plot_df['季度'], y=plot_df['毛利率 (%)'], name="毛利率 %", mode='lines+markers', line=dict(color='#0F172A', width=3, shape='spline')), secondary_y=True)
+                fig1.add_trace(go.Scatter(x=plot_df['季度'], y=plot_df['淨利率 (%)'], name="淨利率 %", mode='lines+markers', line=dict(color='#2563EB', width=3, shape='spline')), secondary_y=True)
+                
+                fig1.update_layout(title="<b>📊 營收規模與真實獲利趨勢 (Auto-Scaled)</b>", height=420, margin=dict(l=0, r=0, t=40, b=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                fig1.update_yaxes(title_text="金額 (億台幣)", secondary_y=False, showgrid=False)
+                fig1.update_yaxes(title_text="百分比 (%)", secondary_y=True, showgrid=True, gridcolor='#F8FAFC', autorange=True) 
+                st.plotly_chart(fig1, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
         with c_chart2:
@@ -494,7 +532,7 @@ if is_tw_stock:
                 format_ytd = {'累計營收 (億)': '{:,.1f}', '累計淨利 (億)': '{:,.1f}'}
                 st.dataframe(df_ytd[ytd_cols].style.format(format_ytd, na_rep="N/A"), use_container_width=True, height=320)
     else:
-        st.warning("⚠️ 無法從公開資料庫獲取該公司的完整季度財報。這通常是因為該台股企業尚未在國際 API 中更新最新資產負債表。")
+        st.warning("⚠️ 無法從公開資料庫獲取該公司的完整季度財報。這通常是因為該台股企業尚未在國際 API 中更新最新季報。")
 
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
 st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：TWSE, Yahoo Finance API (Zero Fake Data Engine)</div>', unsafe_allow_html=True)
