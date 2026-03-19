@@ -31,7 +31,7 @@ def check_password():
 
     st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;800&family=Noto+Sans+TC:wght@500;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
         [data-testid="stSidebar"], header, [data-testid="collapsedControl"] {display: none !important;}
         .stApp { background-color: #F0F8FF !important; font-family: 'Poppins', 'Noto Sans TC', sans-serif !important; }
         .hero-title-solid { font-size: 70px; font-weight: 800; color: #1A1A20; line-height: 1.1; margin-bottom: 0; letter-spacing: -2px; }
@@ -69,12 +69,16 @@ if not check_password(): st.stop()
 # ==========================================
 st.markdown("""
     <style>
-        html, body, [class*="css"]  { font-family: 'Microsoft JhengHei', 'Segoe UI', sans-serif !important; }
+        html, body, [class*="css"]  { font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif !important; }
         .main-title { font-size: 2.2rem; font-weight: 700; color: #1e293b; text-align: center; margin: 1rem 0; letter-spacing: 1px;}
         .sub-title { font-size: 1rem; color: #64748b; text-align: center; margin-bottom: 2rem; }
         .ai-score-box { background: linear-gradient(135deg, #1e293b, #0f172a); color: white; padding: 20px; border-radius: 12px; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.15);}
         .fraud-box-safe { background: #ffffff; border-left: 5px solid #22c55e; padding: 15px; border-radius: 8px; margin-top:15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);}
         .fraud-box-warn { background: #ffffff; border-left: 5px solid #ef4444; padding: 15px; border-radius: 8px; margin-top:15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);}
+        
+        /* 隱藏預設的ul縮排，為極簡排版準備 */
+        .minimal-list { padding-left: 1.2rem; margin-top: 0.5rem; margin-bottom: 0;}
+        .minimal-list li { margin-bottom: 0.5rem; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -234,78 +238,78 @@ MACRO_IMPACT = {
     },
     "🇺🇸 S&P 500": {
         "exp": "涵蓋美國500家頂尖大型企業，為衡量美國總體經濟與企業獲利能力之基準指標。",
-        "up": "釋放全球景氣擴張訊號，遠東新、宏遠等外銷供應鏈(如Nike、Lululemon等終端品牌)拉貨動能將顯著回溫。",
-        "down": "預告全球終端消費需求萎縮，集團的紡織與化學外銷板塊將面臨客戶砍單、甚至面臨痛苦的庫存去化壓力。"
+        "up": "釋放全球景氣擴張訊號；遠東新、宏遠等外銷供應鏈(如Nike等終端品牌)拉貨動能將顯著回溫。",
+        "down": "預告全球終端消費需求萎縮；集團的紡織與化學外銷板塊將面臨客戶砍單、甚至痛苦的庫存去化壓力。"
     },
     "🇺🇸 Dow Jones": {
-        "exp": "由30家美國知名藍籌股組成，側重傳統工業、金融與消費板塊，反映大型跨國企業之營運週期變化。",
-        "up": "代表傳統產業與實體經濟穩健，帶動全球基礎原物料需求，有利於亞泥等建材與基礎設施板塊的報價與出貨。",
-        "down": "全球工業與消費動能熄火，集團B2B事業群(如東聯、宏遠)之產品報價與整體毛利將面臨嚴峻考驗。"
+        "exp": "由30家美國知名藍籌股組成，側重傳統工業、金融與消費板塊，反映大型跨國企業營運週期。",
+        "up": "代表傳統產業與實體經濟穩健；帶動全球基礎原物料需求，有利於亞泥等建材與基礎設施板塊的出貨。",
+        "down": "全球工業與消費動能熄火；集團B2B事業群(如東聯、宏遠)之產品報價與整體毛利將面臨嚴峻考驗。"
     },
     "🇺🇸 Nasdaq": {
         "exp": "以美國科技與創新企業為主體，為全球科技創新動能與成長型資產之定價風向球。",
-        "up": "科技業資本支出擴大，有利於遠傳在5G、AI、雲端等新經濟企業客戶(B2B)專案的營收加速成長。",
-        "down": "科技巨頭大幅縮減資本支出，遠傳的新經濟業務成長動能可能放緩，且影響整體通訊供應鏈的投資意願。"
+        "up": "科技業資本支出擴大；有利於遠傳在5G、AI、雲端等新經濟企業客戶(B2B)專案的營收加速成長。",
+        "down": "科技巨頭大幅縮減資本支出；遠傳的新經濟業務成長動能可能放緩，並影響通訊供應鏈的投資意願。"
     },
     "🇺🇸 SOX (費半)": {
         "exp": "主要以半導體產業為主，是全球半導體週期的重要觀察指標，高度連動台灣科技業出口。",
-        "up": "台灣科技業外溢效應發酵，帶動國內薪資與高階消費力，遠百精品專櫃與遠傳高資費客戶群將直接受益。",
-        "down": "半導體庫存風暴將引發無薪假或裁員隱憂，直接削弱國內整體內需零售動能，衝擊遠百與遠東銀的消金業務。"
+        "up": "台灣科技業外溢效應發酵；帶動國內薪資與高階消費力，遠百精品專櫃與遠傳高資費客戶群將直接受益。",
+        "down": "半導體庫存風暴將引發無薪假或裁員隱憂；直接削弱國內內需零售動能，衝擊遠百與遠東銀的消金業務。"
     },
     "⚠️ VIX 恐慌指數": {
         "exp": "衡量標普500指數未來30天之隱含波動率，反映市場風險情緒與避險需求。",
-        "up": "全球資金恐慌性撤出風險資產，遠東銀面臨放款違約風險上升，且集團轉投資部位將提列龐大未實現損失。",
-        "down": "資本市場情緒穩定，市場流動性充裕，極度有利於集團各項籌資活動、公司債發行與轉投資事業的估值擴張。"
+        "up": "全球資金恐慌性撤出風險資產；遠東銀面臨放款違約風險上升；集團轉投資部位將提列龐大未實現損失。",
+        "down": "資本市場情緒穩定，流動性充裕；極度有利於集團各項籌資活動、公司債發行與轉投資事業的估值擴張。"
     },
     "🏦 U.S. 10Y Treasury": {
         "exp": "美國十年期公債殖利率，為全球資本市場無風險利率與企業資金成本之定價錨點。",
-        "up": "全球資金成本大幅墊高，遠東集團屬於重資本支出型企業(電信、水泥、石化)，高昂利息費用將顯著侵蝕淨利。",
-        "down": "融資成本大幅降低，有利於遠東新與遠傳等長期基礎建設之資本支出計畫，並創造極佳的債務重組窗口。"
+        "up": "全球資金成本大幅墊高；遠東集團屬於重資本支出型企業，高昂利息費用將顯著侵蝕淨利。",
+        "down": "融資成本大幅降低；有利於遠東新與遠傳等長期基礎建設之資本支出計畫，並創造極佳的債務重組窗口。"
     },
     "🥇 黃金": {
         "exp": "具備抗通膨與地緣政治避險屬性之實體資產。在實質利率下降或危機時為重要價值儲存工具。",
-        "up": "若因極端通膨上漲，集團各實體事業將面臨營運成本失控；若因戰亂避險上漲，則代表總體海外貿易環境極端惡化。",
-        "down": "象徵惡性通膨受控與地緣政治風險降溫，集團全球供應鏈的營運成本與運費可望回歸正常軌道。"
+        "up": "若因極端通膨上漲，集團各實業將面臨營運成本失控；若因戰亂上漲，則代表總體海外貿易環境極端惡化。",
+        "down": "象徵惡性通膨受控與地緣政治風險降溫；集團全球供應鏈的營運成本與運費可望回歸正常軌道。"
     },
     "🛢️ WTI 原油": {
         "exp": "西德州中級原油，為北美能源市場定價基準，高度反映美國本土工業製造動能與通膨數據。",
-        "up": "東聯(EG)、遠東新(PTA)等石化上游原料成本急升，短期若無法順利轉嫁給下游客戶，將嚴重壓縮集團整體毛利率。",
-        "down": "上游進料成本減輕，化纖板塊短期毛利率有機會獲得喘息與擴張空間，且有助於降低物流車隊與生產線能源開銷。"
+        "up": "東聯、遠東新等石化上游原料成本急升；短期若無法順利轉嫁給下游客戶，將嚴重壓縮集團整體毛利率。",
+        "down": "上游進料成本減輕；化纖板塊短期毛利率有機會獲得喘息與擴張空間；有助於降低物流與生產線能源開銷。"
     },
     "🛢️ 布蘭特原油 (Brent)": {
-        "exp": "全球原油貿易主要定價基準，相較於WTI，其對國際地緣政治衝突與海上供應鏈風險更為敏感。",
-        "up": "全球海運與製造業能源成本大增，裕民航運之燃料成本上升；若油價高漲導致全球消費緊縮，將反噬集團終端銷售。",
-        "down": "降低全球實體貿易摩擦成本，極度有利於集團產品出口競爭力，以及裕民散裝船隊之營運彈性與獲利空間。"
+        "exp": "全球原油貿易主要定價基準，對國際地緣政治衝突與海上供應鏈風險更為敏感。",
+        "up": "全球海運與製造業能源成本大增；裕民航運之燃料成本上升；若導致全球消費緊縮，將反噬集團終端銷售。",
+        "down": "降低全球實體貿易摩擦成本；極度有利於集團產品出口競爭力，以及裕民散裝船隊之營運彈性與獲利空間。"
     },
     "🔥 天然氣 (Natural Gas)": {
         "exp": "受極端氣候變化、工業取暖需求及跨國管線地緣政治影響甚鉅之高波動能源商品。",
-        "up": "全球發電與工業運轉成本大增，間接推升集團(尤其高耗能的亞泥、遠東新廠區)的龐大電力與製造費用負擔。",
-        "down": "工業用電與製造成本壓力大幅緩解，有利於直接提升全集團之實質營業利潤率與現金流健康度。"
+        "up": "全球發電與工業運轉成本大增；間接推升集團(尤其高耗能的亞泥、遠東新廠區)的龐大電力與製造費用負擔。",
+        "down": "工業用電與製造成本壓力大幅緩解；有利於直接提升全集團之實質營業利潤率與現金流健康度。"
     },
     "💾 記憶體產業 (美光)": {
-        "exp": "美光(Micron)為全球記憶體指標，因其為半導體底層零組件，其報價可精準反映電子終端需求之榮枯。",
-        "up": "電子業景氣全面復甦，帶動台灣整體出口與就業動能，遠東銀企金放款與遠百消費將同步受惠於強勁的經濟基本面。",
-        "down": "電子終端需求急凍，台灣整體經濟面臨逆風，遠東集團身為內需與外銷的巨頭，難以在覆巢之下獨善其身。"
+        "exp": "美光為全球記憶體指標，因其為半導體底層零組件，報價可精準反映電子終端需求之榮枯。",
+        "up": "電子業景氣全面復甦；帶動台灣整體出口與就業動能，遠東銀放款與遠百消費將同步受惠於強勁基本面。",
+        "down": "電子終端需求急凍；台灣整體經濟面臨逆風，遠東集團身為內需與外銷的巨頭，難以在覆巢之下獨善其身。"
     },
     "🚢 航運運價指標 (BDRY)": {
-        "exp": "散裝航運ETF，反映鐵礦砂、煤炭與穀物等原物料之全球海運報價，為實體經濟擴張之先行指標。",
-        "up": "全球原物料需求強勁，實體經濟擴張，裕民航運之船舶日租金與獲利將出現爆發性成長。",
-        "down": "實體經濟對原物料需求急凍，全球海上貿易停滯，裕民航運營收將面臨大幅衰退之風險。"
+        "exp": "散裝航運ETF，反映鐵礦砂、煤炭等原物料之全球海運報價，為實體經濟擴張之先行指標。",
+        "up": "全球原物料需求強勁，實體經濟擴張；裕民航運之船舶日租金與獲利將出現爆發性成長。",
+        "down": "實體經濟對原物料需求急凍；全球海上貿易停滯，裕民航運營收將面臨大幅衰退之風險。"
     },
     "₿ 比特幣": {
-        "exp": "去中心化之數位資產，具高度投機性，常作為全球市場過剩流動性與法幣替代需求之觀測指標。",
-        "up": "市場風險偏好極度樂觀，資金氾濫，有利於遠東銀之財富管理手續費收入與投資市場整體熱度。",
-        "down": "市場流動性緊縮預警，需嚴格防範投機資金鏈斷裂的風險蔓延至實體經濟與傳統金融體系。"
+        "exp": "去中心化數位資產，具高度投機性，常作為全球市場過剩流動性與法幣替代需求之觀測指標。",
+        "up": "市場風險偏好極度樂觀，資金氾濫；有利於遠東銀之財富管理手續費收入與投資市場整體熱度。",
+        "down": "市場流動性緊縮預警；需嚴格防範投機資金鏈斷裂的風險蔓延至實體經濟與傳統金融體系。"
     },
     "💵 美元指數": {
-        "exp": "衡量美元兌一籃子主要貨幣之相對強弱。強勢美元通常導致新興市場資金外流及大宗商品價格承壓。",
-        "up": "新興市場貨幣貶值，集團進口原料(煤炭、原油衍生品)採購成本將飆升，且遠東銀需防範新興市場債務違約風險。",
-        "down": "強勢亞幣環境下，降低集團龐大的進口原物料採購壓力，但可能同時削弱遠東新等出口部門的國際報價競爭力。"
+        "exp": "衡量美元兌一籃子主要貨幣之相對強弱。強勢美元通常導致新興市場資金外流及原物料承壓。",
+        "up": "新興市場貨幣貶值；集團進口原料採購成本將飆升；遠東銀需防範新興市場債務違約風險。",
+        "down": "強勢亞幣環境下，降低集團進口原物料採購壓力；但可能削弱遠東新等出口部門的國際報價競爭力。"
     },
     "💱 美元兌台幣": {
         "exp": "反映外資進出台灣資本市場之資金水位變化。匯率波動直接衝擊企業的匯兌損益與進出口競爭力。",
-        "up": "(台幣貶值) 外銷導向之化纖與紡織事業(遠東新、宏遠)可認列豐厚匯兌收益，但亞泥的煤炭進口成本將顯著加重。",
-        "down": "(台幣升值) 有利於降低集團美元計價債務之利息負擔與海外原料採購成本，但不利出口毛利與海外資產換算價值。"
+        "up": "台幣貶值；外銷導向之化纖與紡織事業可認列豐厚匯兌收益；但亞泥的煤炭進口成本將顯著加重。",
+        "down": "台幣升值；有利於降低集團美元債務之利息負擔與海外原料採購成本；但不利出口毛利與海外資產換算價值。"
     }
 }
 
@@ -455,47 +459,55 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 🚀 插入全新設計的 AI 戰略連動解析區塊 (總經板塊專屬)
+# 🚀 插入文青極簡設計的 AI 戰略連動解析區塊
 if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
     impact_data = MACRO_IMPACT[option]
+    
+    # 透過 Python 動態將分號 (；) 拆解成乾淨的條列式 HTML
+    up_bullets = "".join([f"<li>{item.strip()}</li>" for item in impact_data['up'].split('；')])
+    down_bullets = "".join([f"<li>{item.strip()}</li>" for item in impact_data['down'].split('；')])
+    
     st.markdown(f"""
-    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.04); margin-bottom: 25px;">
+    <div style="background-color: #ffffff; padding: 35px; border-radius: 8px; border: 1px solid #f0f0f0; margin-bottom: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.02);">
         
-        <div style="display: flex; align-items: center; margin-bottom: 24px; border-bottom: 2px solid #f1f5f9; padding-bottom: 16px;">
-            <div style="background: #1e293b; color: #ffffff; padding: 6px 14px; border-radius: 6px; font-weight: 800; font-size: 14px; margin-right: 12px; letter-spacing: 1px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">AI 戰略洞察</div>
-            <div style="font-size: 19px; font-weight: 800; color: #0f172a; letter-spacing: 0.5px;">{option} 連動解析</div>
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px;">
+            <div style="font-size: 20px; font-weight: 700; color: #2c3e50; letter-spacing: 1px;">
+                {option} ｜ 戰略連動解析
+            </div>
+            <div style="font-size: 12px; font-weight: 600; color: #7f8c8d; border: 1px solid #e0e0e0; padding: 4px 12px; border-radius: 20px; letter-spacing: 1.5px; text-transform: uppercase;">
+                AI 戰略洞察
+            </div>
         </div>
         
-        <div style="background: linear-gradient(145deg, #f8fafc, #f1f5f9); border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px 24px; margin-bottom: 24px; position: relative; overflow: hidden;">
-            <div style="position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: #64748b;"></div>
-            <div style="font-size: 13px; color: #64748b; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px; display: flex; align-items: center;">
-                <span style="margin-right: 8px; font-size: 16px;">🎯</span> 核心戰略定義
+        <hr style="border: 0; border-top: 1px solid #f5f5f5; margin-bottom: 30px;">
+        
+        <div style="margin-bottom: 35px;">
+            <div style="font-size: 13px; font-weight: 700; color: #95a5a6; letter-spacing: 2px; margin-bottom: 12px;">
+                ▎ 核心戰略定義
             </div>
-            <div style="font-size: 15.5px; color: #334155; line-height: 1.7; font-weight: 600;">
+            <div style="font-size: 15.5px; color: #34495e; line-height: 1.8; padding-left: 18px; border-left: 2px solid #bdc3c7; font-weight: 400;">
                 {impact_data['exp']}
             </div>
         </div>
         
-        <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+        <div style="display: flex; gap: 40px; flex-wrap: wrap;">
             
-            <div style="flex: 1; min-width: 300px; background: #ffffff; border: 1px solid #fca5a5; border-radius: 10px; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.05); overflow: hidden;">
-                <div style="background: #fef2f2; padding: 14px 20px; border-bottom: 1px solid #fee2e2; display: flex; align-items: center;">
-                    <div style="background: #ef4444; color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: 900; font-size: 16px; margin-right: 12px; box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);">↑</div>
-                    <div style="color: #b91c1c; font-weight: 800; font-size: 16px; letter-spacing: 0.5px;">向上突破對集團之衝擊</div>
+            <div style="flex: 1; min-width: 280px;">
+                <div style="font-size: 14.5px; font-weight: 700; color: #c0392b; letter-spacing: 1px; margin-bottom: 14px;">
+                    🔺 向上突破對集團之衝擊
                 </div>
-                <div style="padding: 20px; font-size: 15px; color: #334155; line-height: 1.7; font-weight: 600;">
-                    {impact_data['up']}
-                </div>
+                <ul class="minimal-list" style="color: #444444; font-size: 15px; line-height: 1.8; font-weight: 400;">
+                    {up_bullets}
+                </ul>
             </div>
             
-            <div style="flex: 1; min-width: 300px; background: #ffffff; border: 1px solid #86efac; border-radius: 10px; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.05); overflow: hidden;">
-                <div style="background: #f0fdf4; padding: 14px 20px; border-bottom: 1px solid #dcfce7; display: flex; align-items: center;">
-                    <div style="background: #22c55e; color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: 900; font-size: 16px; margin-right: 12px; box-shadow: 0 2px 6px rgba(34, 197, 94, 0.3);">↓</div>
-                    <div style="color: #15803d; font-weight: 800; font-size: 16px; letter-spacing: 0.5px;">向下跌破對集團之影響</div>
+            <div style="flex: 1; min-width: 280px;">
+                <div style="font-size: 14.5px; font-weight: 700; color: #27ae60; letter-spacing: 1px; margin-bottom: 14px;">
+                    🔻 向下跌破對集團之影響
                 </div>
-                <div style="padding: 20px; font-size: 15px; color: #334155; line-height: 1.7; font-weight: 600;">
-                    {impact_data['down']}
-                </div>
+                <ul class="minimal-list" style="color: #444444; font-size: 15px; line-height: 1.8; font-weight: 400;">
+                    {down_bullets}
+                </ul>
             </div>
             
         </div>
