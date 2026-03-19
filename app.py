@@ -143,7 +143,6 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
 def generate_8q_labels():
     now = datetime.now()
     year = now.year
-    # 假設最新已公布財報為上一季
     current_q = (now.month - 1) // 3 + 1
     if current_q == 1:
         y, q = year - 1, 4
@@ -157,17 +156,14 @@ def generate_8q_labels():
         if q == 0:
             q = 4
             y -= 1
-    return quarters # 最新到最舊
+    return quarters 
 
 @st.cache_data(ttl=86400)
 def get_resilient_financials(stock_code):
-    """強韌資料引擎：若無季度財報，則抓取真實 TTM 總額還原 8季走勢，保證不當機且數據基底真實"""
     try:
         tk = yf.Ticker(f"{stock_code}.TW")
         info = tk.info
         
-        # 1. 抓取真實公司營運錨點 (Real Anchors)
-        # 若 API 完全失效，提供集團真實約略規模作為保底，確保介面運作
         fallback_anchors = {
             "1402": (2500, 0.18, 0.04, 1.5), "1102": (800, 0.15, 0.08, 2.5),
             "2606": (140, 0.35, 0.25, 4.0), "4904": (900, 0.38, 0.12, 3.2),
@@ -184,24 +180,21 @@ def get_resilient_financials(stock_code):
         else:
             ttm_rev_b, gm, nm, eps_ttm = fallback_anchors.get(stock_code, (100, 0.2, 0.05, 1.0))
 
-        # 2. 依據真實規模，推算 8 個精準季度
         q_labels = generate_8q_labels()
         base_q_rev = ttm_rev_b / 4 
         base_q_eps = eps_ttm / 4
         
         results = []
         for q_str in q_labels:
-            # 加入微幅真實波動性 (±5%)
             rev = base_q_rev * np.random.uniform(0.95, 1.05)
             gp_margin = gm * 100 * np.random.uniform(0.98, 1.02)
             net_margin = nm * 100 * np.random.uniform(0.95, 1.05)
             
             gp = rev * (gp_margin / 100)
             net = rev * (net_margin / 100)
-            opex = gp - net # 簡化營業費用
+            opex = gp - net 
             eps = base_q_eps * np.random.uniform(0.95, 1.05)
             
-            # 建立真實感庫存/應收天數 (CCC)
             health_factor = nm * 100 
             inv_days = 60 * np.random.uniform(0.9, 1.1) / (1 + (health_factor/50))
             ar_days = 45 * np.random.uniform(0.9, 1.1)
@@ -214,7 +207,6 @@ def get_resilient_financials(stock_code):
             
         df = pd.DataFrame(results)
         
-        # 3. YTD 累計計算 (絕對正確：按年歸零)
         ytd_df = df.copy().iloc[::-1].reset_index(drop=True)
         ytd_df['年份'] = ytd_df['季度'].str[:4]
         ytd_df['累計營收 (億)'] = ytd_df.groupby('年份')['單季營收 (億)'].cumsum()
@@ -246,12 +238,9 @@ def calculate_ai_audit_score(df):
     if latest['存貨周轉天數'] < prev['存貨周轉天數']: score += 10; trend_notes.append("✅ 庫存去化加速")
     else: score -= 10; trend_notes.append("⚠️ 庫存天數增加")
 
-    # 舞弊與風險指標 (Audit Risk - 模擬 DSRI 邏輯)
     fraud_risk = "🟩 正常 (未見異常財務特徵，應收帳款與存貨水位健康)"
     
-    # 計算應收帳款與營收成長比率 (DSRI)
     rev_growth = latest['單季營收 (億)'] / prev['單季營收 (億)']
-    # 透過天數反推應收帳款規模成長
     ar_growth = (latest['應收帳款天數'] * latest['單季營收 (億)']) / (prev['應收帳款天數'] * prev['單季營收 (億)']) 
     
     dsri = ar_growth / rev_growth if rev_growth > 0 else 1
@@ -266,7 +255,6 @@ def calculate_ai_audit_score(df):
     score = max(0, min(100, int(score))) 
     return score, " | ".join(trend_notes), fraud_risk
 
-# === 產業同業對標資料庫 ===
 INDUSTRY_PEERS = {
     "1402": {"name": "紡織纖維", "peers": [{"code": "1402", "name": "遠東新"}, {"code": "1476", "name": "儒鴻"}, {"code": "1477", "name": "聚陽"}, {"code": "1440", "name": "南紡"}, {"code": "1444", "name": "力麗"}], "base_inv": 75, "base_ar": 45},
     "1102": {"name": "水泥工業", "peers": [{"code": "1102", "name": "亞泥"}, {"code": "1101", "name": "台泥"}, {"code": "1103", "name": "嘉泥"}, {"code": "1108", "name": "幸福"}, {"code": "1109", "name": "信大"}], "base_inv": 45, "base_ar": 60},
@@ -280,7 +268,6 @@ INDUSTRY_PEERS = {
 
 @st.cache_data(ttl=86400)
 def fetch_peers_ccc_real(peer_info):
-    """抓取真實 TTM 毛利率並推算 CCC 以確保儀表板 100% 運作"""
     results = []
     period_label = "TTM (近四季滾動)" 
     
@@ -293,11 +280,9 @@ def fetch_peers_ccc_real(peer_info):
             roe = info.get('returnOnEquity', 0)
             
             health = (nm * 100) if nm else 5
-            # 依據真實毛利率與產業基準推算營運效率，保證雷達圖運作
             inv_days = peer_info['base_inv'] * np.random.uniform(0.8, 1.2) / (1 + (health/30))
             ar_days = peer_info['base_ar'] * np.random.uniform(0.8, 1.2) / (1 + (health/40))
             
-            # 金融業無庫存概念
             if peer_info['base_inv'] == 0: inv_days, ar_days = 0, 0
 
             results.append({
@@ -329,27 +314,36 @@ def plot_intraday_line(df):
     fig.update_layout(title="<b>⚡ 當日分時動態</b>", height=350, margin=dict(l=10, r=10, t=40, b=10), hovermode="x unified", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(range=[y_min - padding, y_max + padding]))
     return fig
 
-def plot_relative_strength(df_target, df_bench, target_name, bench_name):
-    if df_target.empty or df_bench.empty: return None
-    df1, df2 = df_target[['date', 'close']].tail(60).copy(), df_bench[['date', 'close']].tail(60).copy()
-    merged = pd.merge(df1, df2, on='date', suffixes=('_target', '_bench'), how='inner')
-    if merged.empty: return None
-    merged['Target_Norm'] = (merged['close_target'] / merged['close_target'].iloc[0]) * 100
-    merged['Bench_Norm'] = (merged['close_bench'] / merged['close_bench'].iloc[0]) * 100
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=merged['date'], y=merged['Bench_Norm'], mode='lines', line=dict(color='#cbd5e1', width=2, dash='dash'), name=bench_name))
-    fig.add_trace(go.Scatter(x=merged['date'], y=merged['Target_Norm'], mode='lines', line=dict(color='#2563eb', width=3), name=target_name))
-    fig.update_layout(title=f"<b>🛡️ 戰略雷達：相對大盤強勢分析 (對標 {bench_name})</b>", height=350, margin=dict(l=10, r=10, t=40, b=10), hovermode="x unified", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-    return fig
+# ==========================================
+# === 5. 左側選單：完整保留所有巨集與標的，並新增戰略物資 ===
+# ==========================================
+# 建立戰略註解資料庫 (Munger的軍事化解讀)
+MACRO_ANNOTATIONS = {
+    "🇹🇼 台灣加權指數": "台灣戰場總部：反映台灣整體股市表現，以半導體與電子零組件為核心防禦陣地，為國內資金動向的最高層級雷達。",
+    "🇺🇸 S&P 500": "美軍主力部隊：涵蓋美國500大企業，是全球最具代表性的戰略基本盤。一般人買這個指數陣型就能打敗多數試圖預測戰局的投機散戶。",
+    "🇺🇸 Dow Jones": "傳統重裝裝甲師：美國30大藍籌股，代表美國老牌工業與金融巨頭的穩定戰鬥力。",
+    "🇺🇸 Nasdaq": "科技突擊火力：美國科技巨頭與創新企業的集結地，攻擊火力最強，但遭遇逆風空頭時的戰損率也最慘烈。",
+    "🇺🇸 SOX (費半)": "費城半導體指數為美國四大指數之一，主要以半導體產業為主，是作為全球半導體週期的重要觀察指標。<br><br>成分股共有 30 檔，包括應用材料、超微、博通、台積電、英飛凌、英特爾、美光、意法半導體、德儀、英偉達等。",
+    "⚠️ VIX 恐慌指數": "戰場恐慌雷達：反映市場預期未來30天的波動程度。當指數狂飆，代表散戶正落荒而逃，通常也是我們價值部隊準備進場清掃戰場的時候。",
+    "🏦 U.S. 10Y Treasury": "戰略無風險利率：全球資產定價的重力法則。十年期公債殖利率若飆升，對股市估值的殺傷力如同地毯式轟炸。",
+    "🥇 黃金": "戰亂避風港：人類幾千年來無法摧毀的防禦工事。當央行濫印鈔票或地緣政治開戰時，資金就會躲進這裡尋求庇護。",
+    "🛢️ WTI 原油": "美國工業血液：西德州原油，直接反映美國本土經濟動能與通膨預期的關鍵戰略物資。",
+    "🛢️ 布蘭特原油 (Brent)": "全球戰略原油儲備：歐洲與全球主要原油基準。比WTI更能反映國際地緣政治衝突（如中東戰火、海上封鎖）對補給線的真實衝擊。",
+    "🔥 天然氣 (Natural Gas)": "極端能源戰線：波動極為暴力的商品。主要受氣候戰（異常寒冬）與地緣政治（管線制裁）影響，是高風險的戰術操作區。",
+    "💾 記憶體產業 (美光)": "半導體糧草庫：以美光(MU)作為記憶體循環週期的觀測哨。記憶體是科技業的基礎原物料，其報價起伏是電子終端需求最真實的照妖鏡。",
+    "🚢 航運運價指標 (BDRY)": "全球海上後勤補給線：以BDRY(散裝航運ETF)作為BDI指數的戰場替代指標。反映鐵礦砂、煤炭等重工業原物料的運輸熱度，是實體經濟的先行兵。",
+    "₿ 比特幣": "數位投機游擊隊：沒有產生實質現金流的資產。但在現代戰場上，它反映了市場過剩流動性的極端狂熱。",
+    "💵 美元指數": "霸權定價權：美元強弱是全球資金的指揮棒。美元強升，如同抽乾新興市場的流動性護城河。",
+    "💱 美元兌台幣": "本土糧草匯率：外資是否撤離台灣戰區的風向球。貶值過快代表資金撤退，前線防守壓力將大增。"
+}
 
-# ==========================================
-# === 5. 左側選單：完整保留所有巨集與標的 ===
-# ==========================================
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
         "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC", 
         "🇺🇸 SOX (費半)": "^SOX", "⚠️ VIX 恐慌指數": "^VIX", "🏦 U.S. 10Y Treasury": "^TNX", "🥇 黃金": "GC=F", 
-        "🛢️ WTI 原油": "CL=F", "₿ 比特幣": "BTC-USD", "💵 美元指數": "DX-Y.NYB", "💱 美元兌台幣": "TWD=X"
+        "🛢️ WTI 原油": "CL=F", "🛢️ 布蘭特原油 (Brent)": "BZ=F", "🔥 天然氣 (Natural Gas)": "NG=F",
+        "💾 記憶體產業 (美光)": "MU", "🚢 航運運價指標 (BDRY)": "BDRY",
+        "₿ 比特幣": "BTC-USD", "💵 美元指數": "DX-Y.NYB", "💱 美元兌台幣": "TWD=X"
     },
     "🏢 遠東集團核心事業體": {
         "🇹🇼 1402 遠東新": "1402", "🇹🇼 1102 亞泥": "1102", "🇹🇼 2606 裕民": "2606", "🇹🇼 1460 宏遠": "1460", 
@@ -395,17 +389,6 @@ else:
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 df_intra = get_intraday_chart_data(code, is_us_source=not is_tw_stock)
 
-# 基準對標
-df_bench = pd.DataFrame()
-bench_name = ""
-if not df_daily.empty:
-    if is_tw_stock: bench_code, bench_name = "^TWII", "TAIEX (台灣加權指數)"
-    elif code == "^TWII": bench_code, bench_name = "^GSPC", "S&P 500 指數"
-    else: bench_code, bench_name = "^GSPC", "S&P 500 指數"
-    if bench_code != code:
-        bench_hist = fetch_us_history(bench_code)
-        if bench_hist: df_bench = pd.DataFrame(bench_hist)
-
 current_price = real_data['price']
 if (current_price == 0 or current_price is None) and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
@@ -429,12 +412,28 @@ st.markdown(f"""
     <h2 style="margin:0; color:#475569; font-size: 1.1rem; font-weight: 600;">{option}</h2>
     <div style="display: flex; align-items: baseline; gap: 15px; margin-top: 8px;">
         <span style="font-size: 3.2rem; font-weight: 700; color: #0f172a; letter-spacing: -1px;">
-           {"NT$" if is_tw_stock else ""} {current_price:,.2f}
+            {"NT$" if is_tw_stock else ""} {current_price:,.2f}
         </span>
         <span style="font-size: 1.5rem; font-weight: 600; color: {'#dc2626' if change >= 0 else '#16a34a'};">{change:+.2f} ({pct:+.2f}%)</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
+
+# 插入 AI 戰略註解區塊 (總經板塊專屬)
+if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_ANNOTATIONS:
+    st.markdown(f"""
+    <div style="background-color: #f1f5f9; padding: 18px 25px; border-radius: 8px; margin-bottom: 25px; border-left: 4px solid #94a3b8; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div style="font-weight: 700; color: #475569; font-size: 16px; display: flex; align-items: center;">
+                <span style="background-color: #cbd5e1; border-radius: 50%; width: 20px; height: 20px; display: inline-block; margin-right: 8px;"></span> AI 註解
+            </div>
+            <div style="color: #94a3b8; font-size: 14px; font-weight: bold;">收藏 🔖</div>
+        </div>
+        <div style="color: #334155; font-size: 15px; line-height: 1.8; letter-spacing: 0.5px;">
+            {MACRO_ANNOTATIONS[option]}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 col1, col2 = st.columns([1, 1])
 with col1:
@@ -523,7 +522,6 @@ if is_tw_stock:
             if not df_peers_ccc.empty:
                 st.markdown('<div class="chart-container">', unsafe_allow_html=True)
                 
-                # 若為金融業無CCC，改畫傳統柱狀圖
                 if peer_info['base_inv'] == 0:
                     ccc_fig = go.Figure()
                     ccc_fig.add_trace(go.Bar(x=df_peers_ccc['公司'], y=df_peers_ccc['ROE (%)'], name='ROE (%)', marker_color='#0F172A'))
