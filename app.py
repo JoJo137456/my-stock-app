@@ -277,7 +277,7 @@ MACRO_IMPACT = {
         "exp": "具備抗通膨與地緣政治避險屬性之實體資產。在實質利率下降或危機時為重要價值儲存工具。",
         "up": "若因極端通膨上漲，集團各實業將面臨營運成本失控；若因戰亂上漲，則代表總體海外貿易環境極端惡化。",
         "down": "象徵惡性通膨受控與地緣政治風險降溫；集團全球供應鏈的營運成本與運費可望回歸正常軌道。",
-        "strategy": "不產生現金流的防禦碉堡。當金價無極限噴出，通常預示法幣體系或地緣政治將出現大動盪，集團應提高整體現金儲備與避險水位。"
+        "strategy": "不產生現金流的防禦碉堡。當金價無極限噴出，通常預示法定信用體系或地緣政治將出現大動盪，集團應提高整體現金儲備與避險水位。"
     },
     "🛢️ WTI 原油": {
         "exp": "西德州中級原油，為北美能源市場定價基準，高度反映美國本土工業製造動能與通膨數據。",
@@ -295,10 +295,10 @@ MACRO_IMPACT = {
         "exp": "受極端氣候變化、工業取暖需求及跨國管線地緣政治影響甚鉅之高波動能源商品。",
         "up": "全球發電與工業運轉成本大增；間接推升集團(尤其高耗能的亞泥、遠東新廠區)的龐大電力與製造費用負擔。",
         "down": "工業用電與製造成本壓力大幅緩解；有利於直接提升全集團的實質營業利潤率與現金流健康度。",
-        "strategy": "冬季與戰爭期間波動最劇烈。集團高耗能廠區應隨時監控天然氣基差，並考慮能源轉型以降低化石燃料的受制風險。"
+        "strategy": "冬季與戰爭期間波動最劇烈。集團高耗能廠區應隨時監控天然氣基差，並考慮能源轉型以降低傳統能源的受制風險。"
     },
     "💾 記憶體產業 (美光)": {
-        "exp": "美光為全球記憶體指標，記憶體是半導體與現代科技的底層零組件，其報價可精準反映電子終端需求的榮枯。",
+        "exp": "美光為全球記憶體指標，記憶體是現代科技的底層零組件，其報價可精準反映電子終端需求的榮枯。",
         "up": "電子業景氣全面復甦；帶動台灣整體出口與就業動能，遠東銀放款與遠百消費將同步受惠於強勁基本面。",
         "down": "電子終端需求急凍；台灣整體經濟面臨逆風，遠東集團身為內需與外銷的巨頭，難以在覆巢之下獨善其身。",
         "strategy": "當其報價反轉向上，預告科技業復甦，遠東銀可大膽擴大對科技業的企金放款；若報價崩跌，則需嚴格防禦，緊縮相關電子供應鏈的授信額度。"
@@ -310,7 +310,7 @@ MACRO_IMPACT = {
         "strategy": "當指數在谷底盤旋已久且開始翹頭，是實體製造業回補庫存的信號，集團製造端應準備迎接訂單回溫；反之則須警惕景氣寒冬。"
     },
     "₿ 比特幣": {
-        "exp": "去中心化數位資產，具高度投機性，常作為全球市場過剩流動性與法幣替代需求之觀測指標。",
+        "exp": "去中心化數位資產，具高度投機性，常作為全球市場過剩流動性與極端投機需求的觀測指標。",
         "up": "市場風險偏好極度樂觀，資金氾濫；有利於遠東銀之財富管理手續費收入與投資市場整體熱度。",
         "down": "市場流動性緊縮預警；需嚴格防範投機資金鏈斷裂的風險蔓延至實體經濟與傳統金融體系。",
         "strategy": "將其視為市場投機情緒的極端游擊隊。若其無量崩跌，代表全球熱錢正被抽乾，集團在轉投資策略上應立即轉向保守防禦。"
@@ -325,7 +325,7 @@ MACRO_IMPACT = {
         "exp": "反映外資進出台灣資本市場的資金水位變化。匯率波動直接衝擊企業的匯兌損益與進出口競爭力。",
         "up": "台幣貶值；外銷導向之化纖與紡織事業(遠東新、宏遠)可認列豐厚匯兌收益；但亞泥的煤炭進口成本將顯著加重。",
         "down": "台幣升值；有利於降低集團美元計價債務之利息負擔與海外原料採購成本；但不利出口毛利與海外資產換算價值。",
-        "strategy": "集團財務部必須在此防線佈局。應利用衍生性金融商品鎖住進出口淨額的匯率風險，絕不容許將戰果交由匯率波動來決定。"
+        "strategy": "集團財務部必須在此防線佈局。應利用衍生性商品鎖定進出口淨額的匯率風險，絕不容許將戰果交由匯率波動來決定。"
     }
 }
 
@@ -475,65 +475,61 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 🚀 插入消除縮排陷阱的文青極簡 AI 戰略卡片
+# 🚀 插入「完全真空壓縮無縮排」的防彈戰略卡片
 if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
     impact_data = MACRO_IMPACT[option]
     up_bullets = "".join([f"<li>{item.strip()}</li>" for item in impact_data['up'].split('；')])
     down_bullets = "".join([f"<li>{item.strip()}</li>" for item in impact_data['down'].split('；')])
     strategy_text = impact_data.get('strategy', '持續監控該指標之均線趨勢，作為集團資金水位調配之參考。')
     
-    # 注意：下方的 HTML 已經強制靠左對齊，打破 Markdown 的縮排誤判機制
-    st.markdown(f"""
-<div style="background-color: #ffffff; padding: 35px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.03);">
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px;">
-        <div style="font-size: 20px; font-weight: 800; color: #1e293b; letter-spacing: 1px;">
-            {option} ｜ 戰略連動解析
-        </div>
-        <div style="font-size: 12px; font-weight: 700; color: #64748b; border: 1px solid #cbd5e1; padding: 4px 12px; border-radius: 20px; letter-spacing: 1.5px; text-transform: uppercase;">
-            AI 戰略洞察
-        </div>
-    </div>
-    
-    <hr style="border: 0; border-top: 1px solid #f1f5f9; margin-bottom: 30px;">
-    
-    <div style="margin-bottom: 35px;">
-        <div style="font-size: 13px; font-weight: 800; color: #94a3b8; letter-spacing: 2px; margin-bottom: 12px;">
-            ▎ 🎯 核心戰略定義
-        </div>
-        <div style="font-size: 15.5px; color: #334155; line-height: 1.8; padding-left: 18px; border-left: 3px solid #cbd5e1; font-weight: 500;">
-            {impact_data['exp']}
-        </div>
-    </div>
-    
-    <div style="display: flex; gap: 40px; flex-wrap: wrap; margin-bottom: 35px;">
-        <div style="flex: 1; min-width: 280px;">
-            <div style="font-size: 14.5px; font-weight: 800; color: #dc2626; letter-spacing: 1px; margin-bottom: 14px;">
-                🔺 向上突破對集團之衝擊
+    html_payload = f"""
+    <div style="background-color: #ffffff; padding: 35px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.03);">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px;">
+            <div style="font-size: 20px; font-weight: 800; color: #1e293b; letter-spacing: 1px;">
+                {option} ｜ 戰略連動解析
             </div>
-            <ul class="minimal-list" style="color: #475569; font-size: 15px; line-height: 1.8; font-weight: 500;">
-                {up_bullets}
-            </ul>
-        </div>
-        <div style="flex: 1; min-width: 280px;">
-            <div style="font-size: 14.5px; font-weight: 800; color: #16a34a; letter-spacing: 1px; margin-bottom: 14px;">
-                🔻 向下跌破對集團之影響
+            <div style="font-size: 12px; font-weight: 700; color: #64748b; border: 1px solid #cbd5e1; padding: 4px 12px; border-radius: 20px; letter-spacing: 1.5px; text-transform: uppercase;">
+                AI 戰略洞察
             </div>
-            <ul class="minimal-list" style="color: #475569; font-size: 15px; line-height: 1.8; font-weight: 500;">
-                {down_bullets}
-            </ul>
+        </div>
+        <hr style="border: 0; border-top: 1px solid #f1f5f9; margin-bottom: 30px;">
+        <div style="margin-bottom: 35px;">
+            <div style="font-size: 13px; font-weight: 800; color: #94a3b8; letter-spacing: 2px; margin-bottom: 12px;">
+                ▎ 🎯 核心戰略定義
+            </div>
+            <div style="font-size: 15.5px; color: #334155; line-height: 1.8; padding-left: 18px; border-left: 3px solid #cbd5e1; font-weight: 500;">
+                {impact_data['exp']}
+            </div>
+        </div>
+        <div style="display: flex; gap: 40px; flex-wrap: wrap; margin-bottom: 35px;">
+            <div style="flex: 1; min-width: 280px;">
+                <div style="font-size: 14.5px; font-weight: 800; color: #dc2626; letter-spacing: 1px; margin-bottom: 14px;">
+                    🔺 向上突破對集團之衝擊
+                </div>
+                <ul class="minimal-list" style="color: #475569; font-size: 15px; line-height: 1.8; font-weight: 500;">
+                    {up_bullets}
+                </ul>
+            </div>
+            <div style="flex: 1; min-width: 280px;">
+                <div style="font-size: 14.5px; font-weight: 800; color: #16a34a; letter-spacing: 1px; margin-bottom: 14px;">
+                    🔻 向下跌破對集團之影響
+                </div>
+                <ul class="minimal-list" style="color: #475569; font-size: 15px; line-height: 1.8; font-weight: 500;">
+                    {down_bullets}
+                </ul>
+            </div>
+        </div>
+        <div style="background: #f8fafc; padding: 22px 25px; border-radius: 8px; border-left: 4px solid #3b82f6;">
+            <div style="font-size: 14.5px; font-weight: 800; color: #1e293b; letter-spacing: 1px; margin-bottom: 10px;">
+                🛡️ 指揮官戰術準則 (如何運用此指標)
+            </div>
+            <div style="font-size: 15px; color: #475569; line-height: 1.8; font-weight: 500;">
+                {strategy_text}
+            </div>
         </div>
     </div>
-    
-    <div style="background: #f8fafc; padding: 22px 25px; border-radius: 8px; border-left: 4px solid #3b82f6;">
-        <div style="font-size: 14.5px; font-weight: 800; color: #1e293b; letter-spacing: 1px; margin-bottom: 10px;">
-            🛡️ 指揮官戰術準則 (如何運用此指標)
-        </div>
-        <div style="font-size: 15px; color: #475569; line-height: 1.8; font-weight: 500;">
-            {strategy_text}
-        </div>
-    </div>
-</div>
-    """, unsafe_allow_html=True)
+    """
+    st.markdown(html_payload.replace('\n', ''), unsafe_allow_html=True)
 
 col1, col2 = st.columns([1, 1])
 with col1:
