@@ -544,4 +544,50 @@ if is_tw_stock:
                 y=[latest['單季營收 (億)'], -(latest['單季營收 (億)'] - latest['毛利 (億)']), latest['毛利 (億)'], -(latest['毛利 (億)'] - latest['淨利 (億)']), latest['淨利 (億)']],
                 connector={"line":{"color":"#CBD5E1", "dash": 'dot', "width": 2}}, decreasing={"marker":{"color":"#22c55e"}}, increasing={"marker":{"color":"#ef4444"}}, totals={"marker":{"color":"#1F2937"}}
             ))
-            fig2.update_layout(title=f"<b>💰 獲利結構拆解 (最新季度: {latest['季度']})</b>", height=380, margin=dict(l=0, r=0, t=50, b=0), paper_bgcolor='#ffffff',
+            fig2.update_layout(title=f"<b>💰 獲利結構拆解 (最新季度: {latest['季度']})</b>", height=380, margin=dict(l=0, r=0, t=50, b=0), paper_bgcolor='#ffffff', plot_bgcolor='#ffffff')
+            st.plotly_chart(fig2, use_container_width=True)
+
+        if code in INDUSTRY_PEERS:
+            st.markdown("### ⚔️ 產業營運週期對標矩陣 (Cash Conversion Cycle Matrix)")
+            peer_info = INDUSTRY_PEERS[code]
+            st.caption(f"📍 目標賽道：{peer_info['name']} | 分析指標：存貨周轉 vs 應收帳款天數")
+            df_peers_ccc, period_label = fetch_peers_ccc_real(peer_info)
+            if not df_peers_ccc.empty:
+                if peer_info['base_inv'] == 0:
+                    ccc_fig = go.Figure()
+                    ccc_fig.add_trace(go.Bar(x=df_peers_ccc['公司'], y=df_peers_ccc['ROE (%)'], name='ROE (%)', marker_color='#0F172A'))
+                    ccc_fig.update_layout(title="<b>🏦 金融業獲利指標 (ROE)</b>", height=400, paper_bgcolor='#ffffff', plot_bgcolor='#ffffff')
+                else:
+                    ccc_fig = go.Figure()
+                    ccc_fig.add_trace(go.Scatter(
+                        x=df_peers_ccc['應收帳款天數'], y=df_peers_ccc['存貨周轉天數'],
+                        mode='markers+text', text=df_peers_ccc['公司'].str.split(' ').str[0], textposition="top center",
+                        marker=dict(size=25, color=df_peers_ccc['毛利率 (%)'], colorscale='Viridis', showscale=True, colorbar=dict(title="毛利率%")),
+                        hovertemplate="<b>%{text}</b><br>應收帳款天數: %{x}<br>存貨周轉天數: %{y}<br>毛利率: %{marker.color}%<extra></extra>"
+                    ))
+                    ccc_fig.add_hline(y=df_peers_ccc['存貨周轉天數'].median(), line_dash="dot", line_color="#94A3B8")
+                    ccc_fig.add_vline(x=df_peers_ccc['應收帳款天數'].median(), line_dash="dot", line_color="#94A3B8")
+                    ccc_fig.update_layout(
+                        title=f"<b>🎯 營運效率與變現能力矩陣 (資料基準: {period_label})</b>",
+                        xaxis=dict(title="應收帳款周轉天數 (天) 👉 左方代表收款極快", showgrid=False),
+                        yaxis=dict(title="存貨周轉天數 (天) 👇 下方代表產品熱銷無積壓", showgrid=True, gridcolor='#F1F5F9'),
+                        height=450, margin=dict(l=20, r=20, t=60, b=20), paper_bgcolor='#ffffff', plot_bgcolor='#ffffff',
+                        annotations=[
+                            dict(x=0.05, y=0.05, xref="paper", yref="paper", text="<b>🥇 變現王者</b><br>貨賣得快/錢收得快", showarrow=False, font=dict(color="#10B981")),
+                            dict(x=0.95, y=0.95, xref="paper", yref="paper", text="<b>⚠️ 資金卡死區</b><br>庫存高/被客戶欠款", showarrow=False, font=dict(color="#EF4444"))
+                        ]
+                    )
+                st.plotly_chart(ccc_fig, use_container_width=True)
+
+        st.markdown("### 📑 核心財務數據矩陣 (2024Q1~2025Q4)")
+        tab1, tab2 = st.tabs(["📊 單季表現 (Quarterly)", "📈 累計表現 (Year-To-Date)"])
+        format_dict = {'單季營收 (億)': '{:,.1f}', '毛利 (億)': '{:,.1f}', '營業費用 (億)': '{:,.1f}', '淨利 (億)': '{:,.1f}', '毛利率 (%)': '{:.1f}%', '淨利率 (%)': '{:.1f}%', '單季EPS (元)': '{:.2f}', '存貨周轉天數': '{:.1f}', '應收帳款天數': '{:.1f}'}
+        with tab1: st.dataframe(df_quarterly.style.format(format_dict), use_container_width=True, height=320)
+        with tab2:
+            ytd_cols = ['季度', '累計營收 (億)', '累計毛利 (億)', '毛利率 (%)', '累計淨利 (億)', '淨利率 (%)', '累計EPS (元)']
+            format_ytd = {'累計營收 (億)': '{:,.1f}', '累計毛利 (億)': '{:,.1f}', '累計淨利 (億)': '{:,.1f}', '毛利率 (%)': '{:.1f}%', '淨利率 (%)': '{:.1f}%', '累計EPS (元)': '{:.2f}'}
+            st.dataframe(df_ytd[ytd_cols].style.format(format_ytd), use_container_width=True, height=320)
+    else: st.warning("⚠️ 系統連線異常，請重新整理頁面。")
+
+update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
+st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：TWSE, Yahoo Finance (Resilient Engine)</div>', unsafe_allow_html=True)
