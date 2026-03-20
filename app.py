@@ -271,27 +271,77 @@ INDUSTRY_PEERS = {
     "2845": {"name": "金融保險", "peers": [{"code": "2845", "name": "遠東銀"}, {"code": "2881", "name": "富邦金"}, {"code": "2882", "name": "國泰金"}, {"code": "2886", "name": "兆豐金"}, {"code": "2891", "name": "中信金"}], "base_inv": 0, "base_ar": 0}
 }
 
+# ==========================================
+# === 🚨 全新真實數據引擎：FinMind + yfinance 雙重保險 ===
+# ==========================================
 @st.cache_data(ttl=86400)
 def fetch_peers_ccc_real(peer_info):
     results = []
-    period_label = "TTM (近四季滾動)" 
+    period_label = "最新單季財報 (FinMind 真實數據)"
+    
+    # 設定時間區間抓取近一年財報，確保一定能抓到最新一季
+    end_date = datetime.now().strftime('%Y-%m-%d')
+    start_date = (datetime.now() - pd.DateOffset(years=1)).strftime('%Y-%m-%d')
+    fm_url = "https://api.finmindtrade.com/api/v4/data"
+
     for p in peer_info['peers']:
+        stock_id = p['code']
+        ar_days = 0
+        inv_days = 0
+        
+        # 1. 啟動 FinMind 引擎：精算在地會計準則的存貨與應收帳款
         try:
-            tk = yf.Ticker(f"{p['code']}.TW")
+            params = {
+                "dataset": "TaiwanStockFinancialStatements",
+                "data_id": str(stock_id),
+                "start_date": start_date,
+                "end_date": end_date
+            }
+            res = requests.get(fm_url, params=params, timeout=10)
+            data = res.json()
+            
+            if data.get("msg") == "success" and data.get("data"):
+                df_fm = pd.DataFrame(data["data"])
+                latest_date = df_fm['date'].max()
+                df_latest = df_fm[df_fm['date'] == latest_date]
+                item_dict = dict(zip(df_latest['origin_name'], df_latest['value']))
+                
+                # 容錯處理：擷取核心會計科目
+                revenue = item_dict.get('營業收入合計', item_dict.get('淨收益', item_dict.get('收益計', 0)))
+                cogs = item_dict.get('營業成本合計', item_dict.get('營業成本', 0))
+                ar = item_dict.get('應收帳款淨額', item_dict.get('應收帳款', 0))
+                inventory = item_dict.get('存貨', item_dict.get('存貨合計', 0))
+                
+                # 以 90 天（單季）為基礎計算周轉天數
+                ar_days = (ar * 90 / revenue) if revenue > 0 else 0
+                inv_days = (inventory * 90 / cogs) if cogs > 0 else 0
+        except Exception as e:
+            pass # 若單一公司 API 失敗，直接略過，不影響整個儀表板運作
+
+        # 2. 啟動 yfinance 引擎：抓取穩定且快速的利潤率指標
+        gm, nm, roe = 0, 0, 0
+        try:
+            tk = yf.Ticker(f"{stock_id}.TW")
             info = tk.info
             gm = info.get('grossMargins', 0)
             nm = info.get('profitMargins', 0)
             roe = info.get('returnOnEquity', 0)
-            health = (nm * 100) if nm else 5
-            inv_days = peer_info['base_inv'] * np.random.uniform(0.8, 1.2) / (1 + (health/30))
-            ar_days = peer_info['base_ar'] * np.random.uniform(0.8, 1.2) / (1 + (health/40))
-            if peer_info['base_inv'] == 0: inv_days, ar_days = 0, 0
-            results.append({
-                "公司": f"{p['name']} ({p['code']})", "毛利率 (%)": round(gm * 100, 1) if gm else 0,
-                "淨利率 (%)": round(nm * 100, 1) if nm else 0, "ROE (%)": round(roe * 100, 1) if roe else 0,
-                "存貨周轉天數": round(inv_days, 1), "應收帳款天數": round(ar_days, 1)
-            })
-        except: pass
+        except:
+            pass
+
+        # 針對金融保險業（如遠東銀）的防呆機制，強制周轉天數歸零
+        if peer_info['base_inv'] == 0: 
+            inv_days, ar_days = 0, 0
+
+        results.append({
+            "公司": f"{p['name']} ({stock_id})", 
+            "毛利率 (%)": round(gm * 100, 1) if gm else 0,
+            "淨利率 (%)": round(nm * 100, 1) if nm else 0, 
+            "ROE (%)": round(roe * 100, 1) if roe else 0,
+            "存貨周轉天數": round(inv_days, 1), 
+            "應收帳款天數": round(ar_days, 1)
+        })
+        
     return pd.DataFrame(results), period_label
 
 # ==========================================
@@ -522,4 +572,4 @@ if is_tw_stock:
     else: st.warning("⚠️ 系統連線異常，請重新整理頁面。")
 
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
-st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：TWSE, Yahoo Finance (Resilient Engine)</div>', unsafe_allow_html=True)
+st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：TWSE, Yahoo Finance, FinMind</div>', unsafe_allow_html=True)
