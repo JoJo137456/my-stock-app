@@ -79,6 +79,18 @@ st.markdown("""
         /* 極簡條列式排版準備 */
         .minimal-list { padding-left: 1.2rem; margin-top: 0.5rem; margin-bottom: 0;}
         .minimal-list li { margin-bottom: 0.6rem; }
+
+        /* 放大側邊欄文字字體 */
+        [data-testid="stSidebar"] .stRadio label p, 
+        [data-testid="stSidebar"] .stSelectbox label p {
+            font-size: 1.15rem !important; 
+            font-weight: 600 !important;
+            color: #1e293b !important;
+        }
+        [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label div p {
+            font-size: 1.25rem !important;
+            padding: 4px 0px;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -242,11 +254,10 @@ MACRO_IMPACT = {
     "🛢️ WTI 原油": "西德州中級原油（WTI）為北美能源市場之定價基準。其價格波動受美國頁岩油產能、商業原油庫存及總體工業需求影響，為觀測美國本土實體製造動能與通膨預期之關鍵商品。",
     "🛢️ 布蘭特原油 (Brent)": "布蘭特原油為全球海運貿易之主要原油定價基準，反映 OPEC+ 產能供給與新興市場工業需求之平衡狀態。對地緣政治衝突極度敏感，為評估全球實體經濟摩擦成本與通膨傳導之核心變數。",
     "🔥 天然氣 (Natural Gas)": "價格波動高度受氣候變遷（冷暖冬預期）、工業發電需求及跨國管線儲量影響。為重工業製造與民生發電之關鍵投入成本，對高耗能產業之營業利潤率具顯著敏感度。",
-    "💾 記憶體產業 (美光)": "美光（Micron）為全球記憶體晶片製造巨頭。記憶體作為電子產品之標準化底層元件，其合約與現貨報價週期精準反映全球消費性電子終端需求之庫存去化與回補節奏。",
     "🚢 航運運價指標 (BDRY)": "BDRY 為追蹤波羅的海乾散貨指數（BDI）相關運費期貨之 ETF。BDI 指數反映鐵礦砂、煤炭及穀物等原物料之全球海運需求，為評估實體經濟原物料需求與初級工業擴張之領先指標。",
     "₿ 比特幣": "基於區塊鏈技術之去中心化數位資產。具備高度波動與風險溢價特性，其價格走勢常與全球過剩流動性、實質利率變化及特定機構法人之資產配置需求高度相關。",
-    "💵 美元指數": "美元指數（DXY）衡量美元相對六種主要國際貨幣（歐元、日圓、英鎊等）之加權幾何平均價值。強勢美元通常導致新興市場資金外流，並對以美元計價之全球大宗商品價格產生壓抑效果。",
-    "💱 美元兌台幣": "反映美元與新台幣之雙邊匯率。受台灣經常帳餘額、外資進出台股之資本帳流動及美台利差影響。直接決定台灣出口導向企業之報價競爭力與匯兌損益認列。"
+    "💵 美元指數": "美元指數（DXY）衡量美元相對六種主要國際貨幣（歐元、日圓、英鎊等）之加權幾何平均價值。強勢美元通常導致新興市場資金外流，並對以美元計價之全球大宗商品價格產生壓抑效果。<br><br><b>【指標註解】</b>：美元指數上漲代表美元強勢（非美貨幣相對弱勢）；就台灣整體而言，強勢美元使台幣相對貶值，雖有利於出口報價競爭力及外銷企業毛利，但會增加原物料進口成本與輸入性通膨壓力。",
+    "💱 美元兌台幣": "反映美元與新台幣之雙邊匯率。受台灣經常帳餘額、外資進出台股之資本帳流動及美台利差影響。直接決定台灣出口導向企業之報價競爭力與匯兌損益認列。<br><br><b>【指標註解】</b>：數值上漲代表美元升值、台幣貶值；對台灣經濟而言，台幣貶值有利於外銷產業擴張出口毛利（如電子零組件、化纖紡織），但不利於內需進口產業及美元計價負債較高之企業。"
 }
 
 INDUSTRY_PEERS = {
@@ -321,14 +332,13 @@ market_categories = {
         "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC", 
         "🇺🇸 SOX (費半)": "^SOX", "⚠️ VIX 恐慌指數": "^VIX", "🏦 U.S. 10Y Treasury": "^TNX", "🥇 黃金": "GC=F", 
         "🛢️ WTI 原油": "CL=F", "🛢️ 布蘭特原油 (Brent)": "BZ=F", "🔥 天然氣 (Natural Gas)": "NG=F",
-        "💾 記憶體產業 (美光)": "MU", "🚢 航運運價指標 (BDRY)": "BDRY",
-        "₿ 比特幣": "BTC-USD", "💵 美元指數": "DX-Y.NYB", "💱 美元兌台幣": "TWD=X"
+        "🚢 航運運價指標 (BDRY)": "BDRY", "₿ 比特幣": "BTC-USD", "💵 美元指數": "DX-Y.NYB", "💱 美元兌台幣": "TWD=X"
     },
     "🏢 遠東集團核心事業體": {
-        "🇹🇼 1402 遠東新": "1402", "🇹🇼 1102 亞泥": "1102", "🇹🇼 2606 裕民": "2606", "🇹🇼 1460 宏遠": "1460", 
-        "🇹🇼 2903 遠百": "2903", "🇹🇼 4904 遠傳": "4904", "🇹🇼 1710 東聯": "1710", "🇹🇼 2845 遠東銀": "2845"
+        "👕 1402 遠東新": "1402", "🏗️ 1102 亞泥": "1102", "🚢 2606 裕民": "2606", "🧵 1460 宏遠": "1460", 
+        "🛍️ 2903 遠百": "2903", "📱 4904 遠傳": "4904", "🧪 1710 東聯": "1710", "🏦 2845 遠東銀": "2845"
     },
-    "👕 國際品牌終端 (紡織板塊對標)": {"🇺🇸 Nike": "NKE", "🇺🇸 Under Armour": "UAA", "🇺🇸 Lululemon": "LULU"},
+    "👟 國際品牌終端 (紡織板塊對標)": {"🇺🇸 Nike": "NKE", "🇺🇸 Under Armour": "UAA", "🇺🇸 Lululemon": "LULU"},
     "🥤 國際品牌終端 (化纖板塊對標)": {"🇺🇸 Coca-Cola": "KO", "🇺🇸 PepsiCo": "PEP"}
 }
 
@@ -385,7 +395,7 @@ pct = (change / prev_close) * 100 if prev_close != 0 else 0
 
 st.markdown(f"""
 <div style="background-color: #ffffff; padding: 25px; border-radius: 8px; margin-bottom: 25px; border-left: 6px solid {'#ef4444' if change >= 0 else '#22c55e'}; box-shadow: 0 2px 5px rgba(0,0,0,0.03);">
-    <h2 style="margin:0; color:#475569; font-size: 1.1rem; font-weight: 800;">{option}</h2>
+    <h2 style="margin:0; color:#475569; font-size: 1.25rem; font-weight: 800;">{option}</h2>
     <div style="display: flex; align-items: baseline; gap: 15px; margin-top: 8px;">
         <span style="font-size: 3.2rem; font-weight: 800; color: #0f172a; letter-spacing: -1px;">
             {"NT$" if is_tw_stock else ""} {current_price:,.2f}
@@ -484,18 +494,21 @@ if is_tw_stock:
                         marker=dict(size=25, color=df_peers_ccc['毛利率 (%)'], colorscale='Viridis', showscale=True, colorbar=dict(title="毛利率%")),
                         hovertemplate="<b>%{text}</b><br>應收帳款天數: %{x}<br>存貨周轉天數: %{y}<br>毛利率: %{marker.color}%<extra></extra>"
                     ))
-                    ccc_fig.add_hline(y=df_peers_ccc['存貨周轉天數'].median(), line_dash="dot", line_color="#94A3B8")
-                    ccc_fig.add_vline(x=df_peers_ccc['應收帳款天數'].median(), line_dash="dot", line_color="#94A3B8")
+                    
+                    # 使用 autorange="reversed" 翻轉 X、Y 軸，讓數值最小（變現最快）出現在右上角
                     ccc_fig.update_layout(
                         title=f"<b>🎯 營運效率與變現能力矩陣 (資料基準: {period_label})</b>",
-                        xaxis=dict(title="應收帳款周轉天數 (天) 👉 左方代表收款極快", showgrid=False),
-                        yaxis=dict(title="存貨周轉天數 (天) 👇 下方代表產品熱銷無積壓", showgrid=True, gridcolor='#F1F5F9'),
+                        xaxis=dict(autorange="reversed", title="應收帳款周轉天數 (天) 👉 右方代表收款極快", showgrid=False),
+                        yaxis=dict(autorange="reversed", title="存貨周轉天數 (天) 👆 上方代表產品熱銷無積壓", showgrid=True, gridcolor='#F1F5F9'),
                         height=450, margin=dict(l=20, r=20, t=60, b=20), paper_bgcolor='#ffffff', plot_bgcolor='#ffffff',
                         annotations=[
-                            dict(x=0.05, y=0.05, xref="paper", yref="paper", text="<b>🥇 變現王者</b><br>貨賣得快/錢收得快", showarrow=False, font=dict(color="#10B981")),
-                            dict(x=0.95, y=0.95, xref="paper", yref="paper", text="<b>⚠️ 資金卡死區</b><br>庫存高/被客戶欠款", showarrow=False, font=dict(color="#EF4444"))
+                            dict(x=0.95, y=0.95, xref="paper", yref="paper", text="<b>🥇 變現王者</b><br>貨賣得快/錢收得快", showarrow=False, font=dict(color="#10B981")),
+                            dict(x=0.05, y=0.05, xref="paper", yref="paper", text="<b>⚠️ 資金卡死區</b><br>庫存高/被客戶欠款", showarrow=False, font=dict(color="#EF4444"))
                         ]
                     )
+                    ccc_fig.add_hline(y=df_peers_ccc['存貨周轉天數'].median(), line_dash="dot", line_color="#94A3B8")
+                    ccc_fig.add_vline(x=df_peers_ccc['應收帳款天數'].median(), line_dash="dot", line_color="#94A3B8")
+                    
                 st.plotly_chart(ccc_fig, use_container_width=True)
 
         st.markdown("### 📑 核心財務數據矩陣 (2024Q1~2025Q4)")
