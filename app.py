@@ -3,7 +3,7 @@ import twstock
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 import requests
 import urllib3
@@ -19,189 +19,147 @@ def patched_request(self, method, url, *args, **kwargs):
 requests.Session.request = patched_request
 
 # === 1. 戰情室初始化 ===
-st.set_page_config(page_title="FENC Audit Department | Executive Dashboard", layout="wide", initial_sidebar_state="expanded")
-tw_tz = pytz.timezone('Asia/Taipei') 
+st.set_page_config(page_title="FENC Audit Dashboard", layout="wide", initial_sidebar_state="expanded")
+tw_tz = pytz.timezone('Asia/Taipei')
 
-# --- 登入介面邏輯 ---
-def check_password():
-    if "password_correct" not in st.session_state:
-        st.session_state["password_correct"] = False
-    if st.session_state["password_correct"]: return True
-
-    st.markdown("""
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&family=Noto+Sans+TC:wght@300;400;700;800&display=swap');
-        .stApp { background-color: #F0F8FF !important; font-family: 'Poppins', 'Noto Sans TC', sans-serif !important; }
-        .hero-title-solid { font-size: 60px; font-weight: 800; color: #1A1A20; line-height: 1.1; }
-        .label-dashboard { background-color: #1A1B20; color: #ffffff; padding: 10px 25px; border-radius: 8px; font-weight: 600; }
-    </style>
-    """, unsafe_allow_html=True)
-
-    col_left, spacer, col_right = st.columns([1.1, 0.2, 0.9])
-    with col_left:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown('<div class="hero-title-solid">Audit. Dept</div>', unsafe_allow_html=True)
-        st.markdown('<div class="label-dashboard">Executive Intelligence</div>', unsafe_allow_html=True)
-    with col_right:
-        st.markdown('### 遠東聯合稽核總部')
-        st.text_input("Customer ID", value="fenc07822", key="acc_id")
-        pwd = st.text_input("Passcode", type="password", key="pwd")
-        if st.button("Secure Login", type="primary"):
-            if pwd == "AUDIT@01":
-                st.session_state["password_correct"] = True
-                st.rerun()
-            else: st.error("Invalid credentials")
-    return False
-
-if not check_password(): st.stop()
-
-# === 2. 核心 UI 與 顏色定義 ===
-# 台灣標準：上漲紅 (#ef4444), 下跌綠 (#22c55e)
+# --- 核心 CSS 樣式 (確保字體一致與紅漲綠跌) ---
 st.markdown("""
-    <style>
-        .main-title { font-size: 2.2rem; font-weight: 800; color: #1e293b; text-align: center; margin: 1rem 0;}
-        .sub-title { font-size: 1rem; color: #64748b; text-align: center; margin-bottom: 2rem;}
-        .alert-card { background: #fff; border-left: 5px solid #3b82f6; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-    </style>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+    html, body, [class*="css"] { font-family: 'Noto Sans TC', sans-serif !important; }
+    .main-title { font-size: 2.2rem; font-weight: 900; color: #1e293b; text-align: center; margin-bottom: 0.5rem; }
+    .sub-title { font-size: 1.1rem; color: #64748b; text-align: center; margin-bottom: 2rem; }
+    /* 台灣習慣：紅漲綠跌 */
+    .price-up { color: #ef4444 !important; } 
+    .price-down { color: #22c55e !important; }
+    .metric-container { background: #ffffff; border: 1px solid #f1f5f9; padding: 15px; border-radius: 10px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+</style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
-
-# === 3. 數據抓取模組 (強化近一年數據穩定性) ===
-@st.cache_data(ttl=3600) 
-def fetch_twse_history_full(stock_code):
-    try:
-        data_list = []
-        now = datetime.now()
-        # 抓取過去 14 個月資料確保計算一年漲跌幅 (約 250 交易日)
-        for i in range(14):
-            target_date = (now.replace(day=1) - pd.DateOffset(months=i)).strftime('%Y%m01')
-            url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date={target_date}&stockNo={stock_code}"
-            r = requests.get(url, timeout=10).json()
-            if r.get('stat') == 'OK':
-                for row in r['data']:
-                    parts = row[0].split('/')
-                    date_iso = f"{int(parts[0])+1911}-{parts[1]}-{parts[2]}"
-                    def tf(s): return float(s.replace(',', '')) if s != '--' else 0.0
-                    data_list.append({'date': date_iso, 'open': tf(row[3]), 'high': tf(row[4]), 'low': tf(row[5]), 'close': tf(row[6])})
-        return sorted(data_list, key=lambda x: x['date'])
-    except: return []
-
-@st.cache_data(ttl=3600)
-def fetch_us_history_full(ticker_symbol):
-    try:
-        tk = yf.Ticker(ticker_symbol)
-        hist = tk.history(period="2y") # 抓兩年最穩
-        return [{'date': idx.strftime('%Y-%m-%d'), 'open': row['Open'], 'high': row['High'], 'low': row['Low'], 'close': row['Close']} for idx, row in hist.iterrows()]
-    except: return []
-
-# === 4. 戰略板塊定義 (重啟四個選項) ===
+# === 2. 戰略標的清單 (補齊所有標的) ===
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
         "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC", 
-        "🇺🇸 SOX (費半)": "^SOX", "⚠️ VIX 恐慌指數": "^VIX", "🏦 U.S. 10Y Treasury": "^TNX", "🥇 黃金": "GC=F"
+        "🇺🇸 SOX (費半)": "^SOX", "⚠️ VIX 恐慌指數": "^VIX", "🏦 U.S. 10Y Treasury": "^TNX", "🥇 黃金": "GC=F",
+        "💵 美元指數": "DX-Y.NYB", "💱 美元兌台幣": "TWD=X", "🚢 航運運價 (BDRY)": "BDRY"
     },
     "🏢 遠東集團核心事業體": {
-        "👕 1402 遠東新": "1402", "🏗️ 1102 亞泥": "1102", "🚢 2606 裕民": "2606", "🛍️ 2903 遠百": "2903", "📱 4904 遠傳": "4904", "🏦 2845 遠東銀": "2845"
+        "👕 1402 遠東新": "1402", "🏗️ 1102 亞泥": "1102", "🚢 2606 裕民": "2606", "🛍️ 2903 遠百": "2903", 
+        "📱 4904 遠傳": "4904", "🧪 1710 東聯": "1710", "🏦 2845 遠東銀": "2845", "🧵 1460 宏遠": "1460"
     },
-    "👟 國際品牌終端 (紡織板塊對標)": {
-        "🇺🇸 Nike": "NKE", "🇺🇸 Under Armour": "UAA", "🇺🇸 Lululemon": "LULU", "🇩🇪 Adidas": "ADS.DE"
+    "👟 國際品牌終端 (紡織板塊)": {
+        "🇺🇸 Nike": "NKE", "🇺🇸 Lululemon": "LULU", "🇺🇸 Under Armour": "UAA", "🇩🇪 Adidas": "ADS.DE", "🇯🇵 Fast Retailing": "9983.T"
     },
-    "🥤 國際品牌終端 (化纖板塊對標)": {
-        "🇺🇸 Coca-Cola": "KO", "🇺🇸 PepsiCo": "PEP", "🇺🇸 Procter & Gamble": "PG"
+    "🥤 國際品牌終端 (化纖/消費)": {
+        "🇺🇸 Coca-Cola": "KO", "🇺🇸 PepsiCo": "PEP", "🇺🇸 P&G": "PG", "🇺🇸 Unilever": "UL"
     }
 }
 
+# 指標定義資料庫
+MACRO_IMPACT = {
+    "🇺🇸 S&P 500": "標普 500 指數涵蓋美國 500 家大型企業，為全球權益資產定價之基準。跌破年線通常代表全球資本進入防禦性收縮。",
+    "🇹🇼 台灣加權指數": "反映台灣半導體及電子出口動能之核心指標，高度受台積電與遠東相關權值股影響。",
+    "⚠️ VIX 恐慌指數": "利用標普 500 選擇權隱含波動率編製，數值 > 25 代表市場預期未來極度不穩定，避險情緒高漲。",
+    "💵 美元指數": "衡量美元相對國際主要貨幣價值。美元強勢（紅）對新興市場通常具備資金流出壓力。"
+}
+
+# === 3. 核心數據引擎 ===
+@st.cache_data(ttl=600)
+def get_comprehensive_data(code, is_tw):
+    # 歷史數據 (抓 1.5 年確保 1 年漲跌不 N/A)
+    tk = yf.Ticker(code if not is_tw else f"{code}.TW")
+    hist = tk.history(period="18mo")
+    
+    # 即時數據
+    current = tk.basic_info.last_price if hasattr(tk, 'basic_info') else hist['Close'].iloc[-1]
+    prev_close = hist['Close'].iloc[-2]
+    
+    # 分時圖數據
+    intra = tk.history(period="1d", interval="1m")
+    if intra.empty: intra = tk.history(period="5d", interval="5m").tail(100)
+    
+    return hist, intra, current, prev_close
+
+# === 4. UI 邏輯開始 ===
 with st.sidebar:
-    st.header("🎯 戰略監控目標")
-    selected_category = st.selectbox("板塊分類", list(market_categories.keys()))
-    st.markdown("---")
-    options_dict = market_categories[selected_category]
-    option = st.radio("監控標的", list(options_dict.keys()))
-    code = options_dict[option]
-    is_tw_stock = code.isdigit()
+    st.markdown("## 🎯 戰略監控目標")
+    cat = st.selectbox("板塊分類", list(market_categories.keys()))
+    option = st.radio("監控標的", list(market_categories[cat].keys()))
+    target_code = market_categories[cat][option]
+    is_tw = target_code.isdigit()
 
-# 獲取資料
-if is_tw_stock:
-    hist_data = fetch_twse_history_full(code)
-else:
-    hist_data = fetch_us_history_full(code)
+# 獲取數據
+hist, intra, cur_price, prev_c = get_comprehensive_data(target_code, is_tw)
+change = cur_price - prev_c
+pct = (change / prev_c) * 100
+p_class = "price-up" if change >= 0 else "price-down"
 
-df_daily = pd.DataFrame(hist_data)
-if not df_daily.empty:
-    current_price = df_daily.iloc[-1]['close']
-    prev_close = df_daily.iloc[-2]['close'] if len(df_daily) > 1 else current_price
-    change = current_price - prev_close
-    pct = (change / prev_close) * 100
-    
-    # 主要價格顯示 (紅漲綠跌)
-    main_color = "#ef4444" if change >= 0 else "#22c55e"
-    st.markdown(f"""
-    <div style="background-color: #ffffff; padding: 25px; border-radius: 8px; margin-bottom: 25px; border-left: 10px solid {main_color}; box-shadow: 0 2px 5px rgba(0,0,0,0.03);">
-        <h2 style="margin:0; color:#475569;">{option} ({code})</h2>
-        <div style="display: flex; align-items: baseline; gap: 15px; margin-top: 8px;">
-            <span style="font-size: 3.5rem; font-weight: 800; color: #0f172a;">{current_price:,.2f}</span>
-            <span style="font-size: 1.8rem; font-weight: 700; color: {main_color};">{change:+.2f} ({pct:+.2f}%)</span>
-        </div>
+# --- 頂部報價卡片 ---
+st.markdown(f"""
+<div style="background:#fff; padding:25px; border-radius:12px; border-left:8px solid {'#ef4444' if change >= 0 else '#22c55e'}; box-shadow:0 4px 6px rgba(0,0,0,0.05);">
+    <div style="font-size:1.2rem; color:#64748b; font-weight:700;">{option} ({target_code})</div>
+    <div style="display:flex; align-items:baseline; gap:20px;">
+        <div style="font-size:3.5rem; font-weight:900;">{cur_price:,.2f} <span style="font-size:1.2rem; color:#94a3b8;">USD</span></div>
+        <div class="{p_class}" style="font-size:1.8rem; font-weight:700;">{change:+.2f} ({pct:+.2f}%)</div>
     </div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
-    # === 5. 多時段漲跌統計與警示標準 ===
-    st.markdown("### 📊 多時段漲跌戰略統計 (Performance Analytics)")
-    
-    # 確保計算時段有足夠數據，若無則顯示最近可用數據
-    periods = {"近 3 日": 3, "近 1 週": 5, "近雙週": 10, "近 1 月": 21, "近 1 季": 63, "近 1 年": 252}
-    p_cols = st.columns(len(periods))
-    alert_msgs = []
+# --- 指標定義 (放在報價下方) ---
+if cat == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
+    st.info(f"📊 **指標定義：** {MACRO_IMPACT[option]}")
 
-    for i, (p_label, p_days) in enumerate(periods.items()):
-        actual_days = min(len(df_daily), p_days)
-        past_val = df_daily.iloc[-actual_days]['close']
-        p_pct = ((current_price - past_val) / past_val) * 100
-        p_diff = current_price - past_val
-        
-        # 顯示顏色：負數用綠色
-        metric_color = "#ef4444" if p_diff >= 0 else "#22c55e"
-        
+# --- 中間圖表區 (分時與日K) ---
+col1, col2 = st.columns(2)
+with col1:
+    fig_i = go.Figure(go.Scatter(x=intra.index, y=intra['Close'], fill='tozeroy', line=dict(color='#1e293b', width=2)))
+    fig_i.update_layout(title="⚡ 當日分時動態", height=350, template="plotly_white", margin=dict(l=0,r=0,t=40,b=0))
+    st.plotly_chart(fig_i, use_container_width=True)
+
+with col2:
+    fig_k = go.Figure(data=[go.Candlestick(x=hist.index[-100:], open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'],
+                                         increasing_line_color='#ef4444', decreasing_line_color='#22c55e')])
+    fig_k.update_layout(title="📅 歷史價格走勢 (近半年)", height=350, template="plotly_white", xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=40,b=0))
+    st.plotly_chart(fig_k, use_container_width=True)
+
+# === 5. 多時段漲跌戰略統計 (解決 N/A 問題) ===
+st.markdown("### 📊 多時段漲跌戰略統計")
+periods = {"近 3 日": 3, "近 1 週": 5, "近雙週": 10, "近 1 月": 21, "近 1 季": 63, "近 1 年": 252}
+p_cols = st.columns(6)
+
+for i, (label, days) in enumerate(periods.items()):
+    if len(hist) >= days:
+        p_val = hist['Close'].iloc[-days]
+        p_pct = ((cur_price - p_val) / p_val) * 100
+        p_diff = cur_price - p_val
+        p_color = "#ef4444" if p_diff >= 0 else "#22c55e"
         with p_cols[i]:
             st.markdown(f"""
-                <div style="text-align: center; border: 1px solid #f1f5f9; padding: 10px; border-radius: 8px;">
-                    <div style="font-size: 0.9rem; color: #64748b; font-weight: 600;">{p_label}</div>
-                    <div style="font-size: 1.5rem; font-weight: 800; color: {metric_color};">{p_pct:+.2f}%</div>
-                    <div style="font-size: 0.8rem; color: {metric_color};">{p_diff:+.2f}</div>
-                </div>
+            <div class="metric-container">
+                <div style="font-size:0.9rem; color:#64748b; font-weight:700;">{label}</div>
+                <div style="font-size:1.6rem; font-weight:900; color:{p_color};">{p_pct:+.2f}%</div>
+                <div style="font-size:0.85rem; color:{p_color};">{p_diff:+.2f}</div>
+            </div>
             """, unsafe_allow_html=True)
-            
-        # 警示邏輯觸發
-        if p_label == "近 1 週" and p_pct < -7: alert_msgs.append(f"🚨 【高風險】週跌幅 {p_pct:.2f}% 已超過戰略預警線 (7%)")
-        if p_label == "近 1 月" and p_pct < -15: alert_msgs.append(f"⚠️ 【趨勢惡化】月跌幅 {p_pct:.2f}% 顯示中期基本面或市場情緒轉弱")
-
-    # === 6. 警示標準與 ALERT ===
-    with st.expander("🛡️ 戰略警示標準定義 (Audit Alert Criteria)", expanded=False):
-        st.markdown("""
-        | 警示等級 | 觸發條件 | 建議行動 |
-        | :--- | :--- | :--- |
-        | **🔴 重度警示** | 單日跌幅 > 3% 或 週跌幅 > 7% | 立即啟動專案審計，盤查財務健康度。 |
-        | **🟡 中度警示** | 月跌幅 > 15% 或 VIX > 25 | 檢核供應鏈穩定度，評估風險溢價。 |
-        | **🟢 正常監控** | 波動在 3% 以內 | 維持例行性監控與資料備份。 |
-        """)
-
-    if alert_msgs:
-        for msg in alert_msgs: st.error(msg)
-    elif pct < -3:
-        st.error(f"🔥 【當日預警】單日跌幅 {pct:.2f}% 已觸發異常波動監控！")
     else:
-        st.success("✅ 目前各項指標波動處於常規監控範圍，未觸發異常警示。")
+        p_cols[i].metric(label, "N/A")
 
-    # 繪製 K 線圖
-    fig = go.Figure(data=[go.Candlestick(
-        x=df_daily['date'].tail(120), open=df_daily['open'].tail(120), 
-        high=df_daily['high'].tail(120), low=df_daily['low'].tail(120), 
-        close=df_daily['close'].tail(120),
-        increasing_line_color='#ef4444', decreasing_line_color='#22c55e', name="日K"
-    )])
-    fig.update_layout(title="歷史走勢 (近半年)", xaxis_rangeslider_visible=False, height=450, template="plotly_white")
-    st.plotly_chart(fig, use_container_width=True)
+# === 6. 戰略警示系統 (Alerts) ===
+st.markdown("<br>", unsafe_allow_html=True)
+alert_msgs = []
+if pct < -3: alert_msgs.append(f"🔥 【重度警示】當日跌幅達 {pct:.2f}%，觸發即時風險監控！")
+if len(hist) >= 5 and ((cur_price - hist['Close'].iloc[-5])/hist['Close'].iloc[-5]*100) < -7:
+    alert_msgs.append("🚨 【週預警】近一週累計跌幅超過 7%，請注意趨勢反轉。")
 
+if alert_msgs:
+    for msg in alert_msgs: st.error(msg)
 else:
-    st.warning("⚠️ 無法獲取標的數據，請確認網路連線或標的代碼是否正確。")
+    st.success("✅ 目前各項指標波動處於常規監控範圍，未觸發異常警示。")
+
+# === 7. 財務戰情室入口 (TW Stocks only) ===
+if is_tw:
+    st.divider()
+    st.markdown("## 📈 企業基本面與高階戰略解析")
+    with st.expander("📥 點擊此處上傳 Excel 真實財報數據"):
+        up = st.file_uploader("上傳 .xlsx 檔案", type=["xlsx"])
+        if up: st.success("數據已對接，AI 引擎計算中...")
