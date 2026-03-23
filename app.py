@@ -240,24 +240,24 @@ def calculate_ai_audit_score(df):
     return score, " | ".join(trend_notes), fraud_risk
 
 # ==========================================
-# === 4. 深度戰略連動註解庫 (純量化定義) ===
+# === 4. 深度戰略連動註解庫 (全新白話文改版) ===
 # ==========================================
 MACRO_IMPACT = {
-    "🇹🇼 台灣加權指數": "由台灣證券交易所編製，採發行量加權股價指數設計（市值加權），基期為 1966 年。成分股涵蓋所有掛牌上市普通股。該指數高度反映台灣半導體及電子零組件產業景氣，為評估台灣總體宏觀經濟與資本市場動能之核心領先指標。",
-    "🇺🇸 S&P 500": "標普 500 指數由標準普爾公司編製，追蹤美國 500 家大型上市企業之流通市值加權指數。涵蓋美國股市總市值約 80%，具備高度行業分散性，為衡量美國實體經濟擴張與企業獲利循環之基準指標。",
-    "🇺🇸 Dow Jones": "道瓊工業平均指數由 30 家具代表性的大型藍籌股組成，採價格加權計算。成分股側重傳統工業、金融與消費板塊，反映美國大型跨國企業之營運週期與傳統經濟基本面表現。",
-    "🇺🇸 Nasdaq": "納斯達克綜合指數涵蓋所有於那斯達克交易所掛牌之企業，採市值加權計算。其成分股高度集中於資訊科技、通訊服務與生技醫療產業，為全球科技創新資本支出與成長型資產估值之關鍵風向球。",
-    "🇺🇸 SOX (費半)": "費城半導體指數涵蓋 30 家參與半導體設計、製造、設備與銷售之美國掛牌企業。為全球半導體庫存週期、資本支出計畫及電子終端需求之最核心領先指標。",
-    "⚠️ VIX 恐慌指數": "芝加哥選擇權交易所波動率指數（VIX）利用 S&P 500 選擇權之隱含波動率編製而成，反映市場對未來 30 天之預期波動程度。數值攀升通常伴隨風險資產之拋售，為衡量全球資本市場流動性與避險情緒之量化指標。",
-    "🏦 U.S. 10Y Treasury": "美國十年期公債殖利率，反映長期通膨預期與聯準會貨幣政策路徑。作為全球資本市場定價之無風險利率基準，其攀升將直接提高企業資金成本，對長期資本支出及成長型資產估值產生折現壓力。",
-    "🥇 黃金": "全球流通之實體貴金屬資產，具備零息資產屬性。其定價主要受實質利率（名目利率減去通膨預期）、美元強弱及地緣政治風險溢價驅動，為衡量法定貨幣信用與市場避險需求之指標。",
-    "🛢️ WTI 原油": "西德州中級原油（WTI）為北美能源市場之定價基準。其價格波動受美國頁岩油產能、商業原油庫存及總體工業需求影響，為觀測美國本土實體製造動能與通膨預期之關鍵商品。",
-    "🛢️ 布蘭特原油 (Brent)": "布蘭特原油為全球海運貿易之主要原油定價基準，反映 OPEC+ 產能供給與新興市場工業需求之平衡狀態。對地緣政治衝突極度敏感，為評估全球實體經濟摩擦成本與通膨傳導之核心變數。",
-    "🔥 天然氣 (Natural Gas)": "價格波動高度受氣候變遷（冷暖冬預期）、工業發電需求及跨國管線儲量影響。為重工業製造與民生發電之關鍵投入成本，對高耗能產業之營業利潤率具顯著敏感度。",
-    "🚢 航運運價指標 (BDRY)": "BDRY 為追蹤波羅的海乾散貨指數（BDI）相關運費期貨之 ETF。BDI 指數反映鐵礦砂、煤炭及穀物等原物料之全球海運需求，為評估實體經濟原物料需求與初級工業擴張之領先指標。",
-    "₿ 比特幣": "基於區塊鏈技術之去中心化數位資產。具備高度波動與風險溢價特性，其價格走勢常與全球過剩流動性、實質利率變化及特定機構法人之資產配置需求高度相關。",
-    "💵 美元指數": "美元指數（DXY）衡量美元相對六種主要國際貨幣（歐元、日圓、英鎊等）之加權幾何平均價值。強勢美元通常導致新興市場資金外流，並對以美元計價之全球大宗商品價格產生壓抑效果。<br><br><b>【指標註解】</b>：美元指數上漲代表美元強勢（非美貨幣相對弱勢）；就台灣整體而言，強勢美元使台幣相對貶值，雖有利於出口報價競爭力及外銷企業毛利，但會增加原物料進口成本與輸入性通膨壓力。",
-    "💱 美元兌台幣": "反映美元與新台幣之雙邊匯率。受台灣經常帳餘額、外資進出台股之資本帳流動及美台利差影響。直接決定台灣出口導向企業之報價競爭力與匯兌損益認列。<br><br><b>【指標註解】</b>：數值上漲代表美元升值、台幣貶值；對台灣經濟而言，台幣貶值有利於外銷產業擴張出口毛利（如電子零組件、化纖紡織），但不利於內需進口產業及美元計價負債較高之企業。"
+    "🇹🇼 台灣加權指數": "反映台灣整體經濟與半導體景氣的終極溫度計。主要跟著台積電等科技大廠連動，是判斷外資熱錢流向與國內資本市場活力的第一手指標。",
+    "🇺🇸 S&P 500": "美國最強 500 家企業的集合體，代表美國實體經濟的真實全貌。涵蓋各行各業，是全球長線資金配置與衡量美股多空趨勢的絕對標準。",
+    "🇺🇸 Dow Jones": "涵蓋 30 家歷史悠久的美國傳統藍籌巨頭（如工業、金融）。幫助我們觀察美國傳統經濟底盤是否穩固，對老牌企業賺錢能力極度敏感。",
+    "🇺🇸 Nasdaq": "全球科技創新的最強風向球，聚集微軟、蘋果等科技巨獸。直接反映市場對未來 AI、軟硬體等高科技資本支出的成長預期。",
+    "🇺🇸 SOX (費半)": "全球半導體產業鏈的命脈指數。從晶片設計到設備製造全包，是預判電子業庫存循環與終端消費力道的最精準領先指標。",
+    "⚠️ VIX 恐慌指數": "衡量華爾街投資人「害怕程度」的警報器。當指數狂飆，代表大家預期未來會有大震盪，通常伴隨股市暴跌，是絕佳的避險觀測站。",
+    "🏦 U.S. 10Y Treasury": "全球資金定價的「無風險基準之王」。殖利率飆高會吸走股市熱錢、增加企業借錢成本，是壓抑科技股估值與評估通膨預期的核心關鍵。",
+    "🥇 黃金": "亂世中的資金避風港，沒有利息但能保本。當通膨失控或爆發戰爭危機時，金價就會飆升，反映出市場對各國發行紙鈔的不信任。",
+    "🛢️ WTI 原油": "驅動實體工業與交通運輸的黑色血液。油價上漲會推升全球製造業成本，引發萬物齊漲，是觀察美國本土工業熱度與通膨的關鍵商品。",
+    "🛢️ 布蘭特原油 (Brent)": "全球國際海運貿易的基準油價。對中東戰爭、OPEC+ 減產等地緣政治極度敏感，直接牽動歐洲與亞洲的能源成本。",
+    "🔥 天然氣 (Natural Gas)": "重工業運轉與冬天取暖的命脈。價格受極端氣候與地緣政治影響劇烈，暴漲時會嚴重吃掉高耗能產業（如石化、水泥）的毛利。",
+    "🚢 航運運價指標 (BDRY)": "全球原物料（鐵礦砂、煤炭）海上運輸的熱度表。運價走高代表全球蓋房子、造橋鋪路的基礎建設需求強勁，是實體經濟擴張的超前指標。",
+    "₿ 比特幣": "數位時代的高風險電子黃金。價格極度波動，高度連動全球過剩熱錢的流向，是觀察市場極端投機情緒的最前線。",
+    "💵 美元指數": "美元對決全球主要貨幣的戰力表。強勢美元會讓熱錢撤出台灣等新興市場，雖然有利出口業報價，但會加重進口原物料的成本負擔。",
+    "💱 美元兌台幣": "決定台灣出口企業獲利生死線的雙邊匯率。台幣貶值能讓電子代工與紡織業賺取匯兌收益，但會讓進口物價變貴。"
 }
 
 INDUSTRY_PEERS = {
@@ -272,14 +272,13 @@ INDUSTRY_PEERS = {
 }
 
 # ==========================================
-# === 🚨 全新真實數據引擎：FinMind + yfinance 雙重保險 ===
+# === 🚨 FinMind + yfinance 雙重保險 ===
 # ==========================================
 @st.cache_data(ttl=86400)
 def fetch_peers_ccc_real(peer_info):
     results = []
     period_label = "最新單季財報 (FinMind 真實數據)"
     
-    # 設定時間區間抓取近一年財報，確保一定能抓到最新一季
     end_date = datetime.now().strftime('%Y-%m-%d')
     start_date = (datetime.now() - pd.DateOffset(years=1)).strftime('%Y-%m-%d')
     fm_url = "https://api.finmindtrade.com/api/v4/data"
@@ -289,7 +288,6 @@ def fetch_peers_ccc_real(peer_info):
         ar_days = 0
         inv_days = 0
         
-        # 1. 啟動 FinMind 引擎：精算在地會計準則的存貨與應收帳款
         try:
             params = {
                 "dataset": "TaiwanStockFinancialStatements",
@@ -306,19 +304,16 @@ def fetch_peers_ccc_real(peer_info):
                 df_latest = df_fm[df_fm['date'] == latest_date]
                 item_dict = dict(zip(df_latest['origin_name'], df_latest['value']))
                 
-                # 容錯處理：擷取核心會計科目
                 revenue = item_dict.get('營業收入合計', item_dict.get('淨收益', item_dict.get('收益計', 0)))
                 cogs = item_dict.get('營業成本合計', item_dict.get('營業成本', 0))
                 ar = item_dict.get('應收帳款淨額', item_dict.get('應收帳款', 0))
                 inventory = item_dict.get('存貨', item_dict.get('存貨合計', 0))
                 
-                # 以 90 天（單季）為基礎計算周轉天數
                 ar_days = (ar * 90 / revenue) if revenue > 0 else 0
                 inv_days = (inventory * 90 / cogs) if cogs > 0 else 0
         except Exception as e:
-            pass # 若單一公司 API 失敗，直接略過，不影響整個儀表板運作
+            pass
 
-        # 2. 啟動 yfinance 引擎：抓取穩定且快速的利潤率指標
         gm, nm, roe = 0, 0, 0
         try:
             tk = yf.Ticker(f"{stock_id}.TW")
@@ -329,7 +324,6 @@ def fetch_peers_ccc_real(peer_info):
         except:
             pass
 
-        # 針對金融保險業（如遠東銀）的防呆機制，強制周轉天數歸零
         if peer_info['base_inv'] == 0: 
             inv_days, ar_days = 0, 0
 
@@ -455,33 +449,26 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 🚀 插入防彈級定義卡片（移除主觀判斷與口語）
-if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
-    exp_text = MACRO_IMPACT[option]
-    
-    html_payload = f"""
-    <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.03);">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
-            <div style="font-size: 18px; font-weight: 800; color: #1e293b; letter-spacing: 1px;">
-                📊 宏觀指標定義與量化意涵
-            </div>
-            <div style="font-size: 12px; font-weight: 700; color: #64748b; border: 1px solid #cbd5e1; padding: 4px 12px; border-radius: 20px; letter-spacing: 1px; text-transform: uppercase;">
-                Macroeconomic Definition
-            </div>
-        </div>
-        <hr style="border: 0; border-top: 1px solid #f1f5f9; margin-bottom: 25px;">
-        <div style="font-size: 15.5px; color: #334155; line-height: 1.8; padding-left: 18px; border-left: 3px solid #3b82f6; font-weight: 500; text-align: justify;">
-            {exp_text}
-        </div>
-    </div>
-    """
-    st.markdown(html_payload.replace('\n', ''), unsafe_allow_html=True)
-
+# 顯示圖表
 col1, col2 = st.columns([1, 1])
 with col1:
     if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
 with col2:
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
+
+# 🚀 【移動到此處】將指標介紹放在股票/指數圖表的下方
+if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
+    exp_text = MACRO_IMPACT[option]
+    
+    html_payload = f"""
+    <div style="background-color: #ffffff; padding: 20px 25px; border-radius: 8px; border-left: 5px solid #3b82f6; margin-top: 10px; margin-bottom: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+        <div style="font-size: 16px; color: #1e293b; line-height: 1.8; font-weight: 500; text-align: justify;">
+            💡 <b>指標戰略意義：</b> {exp_text}
+        </div>
+    </div>
+    """
+    st.markdown(html_payload.replace('\n', ''), unsafe_allow_html=True)
+
 
 # ==========================================
 # === 7. 下半部：高階經理人專屬財務戰情室 ===
@@ -545,7 +532,6 @@ if is_tw_stock:
                         hovertemplate="<b>%{text}</b><br>應收帳款天數: %{x}<br>存貨周轉天數: %{y}<br>毛利率: %{marker.color}%<extra></extra>"
                     ))
                     
-                    # 使用 autorange="reversed" 翻轉 X、Y 軸，讓數值最小（變現最快）出現在右上角
                     ccc_fig.update_layout(
                         title=f"<b>🎯 營運效率與變現能力矩陣 (資料基準: {period_label})</b>",
                         xaxis=dict(autorange="reversed", title="應收帳款周轉天數 (天) 👉 右方代表收款極快", showgrid=False),
