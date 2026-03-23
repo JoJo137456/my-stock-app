@@ -13,9 +13,11 @@ import numpy as np
 # === 0. 系統層級修復 ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 original_request = requests.Session.request
+
 def patched_request(self, method, url, *args, **kwargs):
     kwargs['verify'] = False
     return original_request(self, method, url, *args, **kwargs)
+
 requests.Session.request = patched_request
 
 # === 1. 戰情室初始化 ===
@@ -28,6 +30,7 @@ def check_password():
         st.session_state["password_correct"] = False
     if st.session_state["password_correct"]:
         return True
+        
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;800&family=Noto+Sans+TC:wght@300;400;500;700;800&display=swap');
@@ -38,6 +41,7 @@ def check_password():
         .label-dashboard { background-color: #1A1B20; color: #ffffff; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 14px; display: inline-block; }
     </style>
     """, unsafe_allow_html=True)
+    
     col_left, spacer, col_right = st.columns([1.1, 0.2, 0.9])
     with col_left:
         st.markdown("<br><br>", unsafe_allow_html=True)
@@ -56,26 +60,30 @@ def check_password():
             elif pwd != "":
                 st.error("Invalid credentials")
     return False
-if not check_password(): st.stop()
 
-# === 2. 現代化設計樣式（報酬率卡片 + 定義卡片）===
+if not check_password(): 
+    st.stop()
+
+# === 2. 現代化設計樣式 ===
 st.markdown("""
 <style>
     html, body, [class*="css"] { font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif !important; }
     .main-title { font-size: 2.2rem; font-weight: 800; color: #1e293b; text-align: center; margin: 1rem 0; letter-spacing: 1px;}
     .sub-title { font-size: 1rem; color: #64748b; text-align: center; margin-bottom: 2rem; font-weight: 500;}
-    .returns-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 16px; margin: 24px 0 32px 0; }
-    .return-card { background: #ffffff; padding: 22px 18px; border-radius: 14px; text-align: center; box-shadow: 0 6px 16px rgba(0,0,0,0.04); border: 1px solid #f1f5f9; transition: all 0.2s cubic-bezier(0.4,0,0.2,1); }
-    .return-card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0,0,0,0.08); }
-    .return-label { font-size: 13.5px; color: #64748b; font-weight: 600; letter-spacing: 0.6px; margin-bottom: 8px; }
-    .return-value { font-size: 27px; font-weight: 800; line-height: 1.05; }
     .definition-box { background: #ffffff; padding: 28px 32px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 6px 20px rgba(0,0,0,0.035); margin-bottom: 32px; }
     .definition-text { font-size: 15.8px; line-height: 1.85; color: #334155; padding-left: 22px; border-left: 4px solid #3b82f6; font-weight: 500; }
+    
+    /* 修正後的多期間報酬率 CSS */
+    .returns-container { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; margin-bottom: 24px; }
+    .return-card { flex: 1; min-width: 100px; background-color: #ffffff; padding: 16px 10px; border-radius: 10px; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,0.04); border: 1px solid #e2e8f0; transition: transform 0.2s ease; }
+    .return-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .return-label { font-size: 13px; color: #64748b; margin-bottom: 6px; font-weight: 500; }
+    .return-value { font-size: 20px; font-weight: 700; }
 </style>
 """, unsafe_allow_html=True)
 st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
 
-# === 3. 所有函式（已完整保留）===
+# === 3. 核心資料擷取函式 ===
 @st.cache_data(ttl=3600)
 def fetch_twse_history_proxy(stock_code):
     try:
@@ -131,16 +139,19 @@ def calculate_period_returns(df_daily, current_price):
             returns[label] = "N/A"
     return returns
 
-# （其餘函式：get_resilient_financials、calculate_ai_audit_score、fetch_peers_ccc_real、plot_daily_k、plot_intraday_line 與之前版本完全相同，請保留你原本的內容）
+# ⚠️ 請在此處貼上你原本的其他函式 (get_resilient_financials, calculate_ai_audit_score, plot_daily_k 等)
 
-# === 4. 標的定義庫（已包含所有）===
-TARGET_DEFINITIONS = { ... }  # 請貼上你前一次版本中的完整 TARGET_DEFINITIONS 字典
+# === 4. 標的定義庫 ===
+# ⚠️ 請將你完整的 TARGET_DEFINITIONS 字典貼回這裡
+TARGET_DEFINITIONS = {
+    "範例標的": "這是一個範例說明，請替換成真實的定義庫內容。"
+}
 
 # === 5. 側邊欄與資料抓取 ===
+# ⚠️ 請將你完整的 market_categories 字典貼回這裡
 market_categories = {
-    "📈 總體經濟與大盤 (宏觀指標)": { ... },   # 保持你原本的
-    "🏢 遠東集團核心事業體": { ... },
-    # 其他分類保持原樣
+    "📈 總體經濟與大盤 (宏觀指標)": { "台灣加權指數": "^TWII" },
+    "🏢 遠東集團核心事業體": { "遠東新": "1402" }
 }
 
 with st.sidebar:
@@ -152,10 +163,13 @@ with st.sidebar:
     code = options_dict[option]
     is_tw_stock = code.isdigit()
 
-# === 即時股價 + 歷史資料 ===
-# （以下全部保持你原本的 real_data、hist_data、df_daily、df_intra、current_price、change、pct 計算程式碼）
+# ⚠️ 請在此處貼上你原本的 real_data、hist_data、df_daily、df_intra、current_price、change、pct 計算程式碼
+# 為了讓此範例不報錯，下方提供簡單的預設值，實裝時請刪除並換回你的邏輯：
+current_price, change, pct = 0.0, 0.0, 0.0
+df_daily = pd.DataFrame() 
+df_intra = pd.DataFrame()
 
-# === 股價顯示 ===
+# === 6. 介面渲染：股價與定義 ===
 st.markdown(f"""
 <div style="background-color: #ffffff; padding: 25px; border-radius: 8px; margin-bottom: 25px; border-left: 6px solid {'#ef4444' if change >= 0 else '#22c55e'}; box-shadow: 0 2px 5px rgba(0,0,0,0.03);">
     <h2 style="margin:0; color:#475569; font-size: 1.25rem; font-weight: 800;">{option}</h2>
@@ -168,7 +182,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# === 新設計：標的定義（緊接股價下方，無多餘標題）===
 if option in TARGET_DEFINITIONS:
     exp_text = TARGET_DEFINITIONS[option]
     st.markdown(f"""
@@ -177,38 +190,28 @@ if option in TARGET_DEFINITIONS:
     </div>
     """, unsafe_allow_html=True)
 
-# === 新設計：多期間報酬率卡片 ===
+# === 7. 修正後的多期間報酬率卡片 ===
 period_returns = calculate_period_returns(df_daily, current_price)
 if period_returns:
     st.markdown("### 📅 多期間報酬率指標 (Multi-Period Returns)")
-    return_html = '<div class="returns-grid">'
+    return_html = '<div class="returns-container">'
     for label, ret in period_returns.items():
-        color = "#94a3b8" if ret == "N/A" else ("#ef4444" if ret >= 0 else "#22c55e")
-        disp = "N/A" if ret == "N/A" else f"{ret:+.2f}%"
-        return_html += f'''
-        <div class="return-card">
-            <div class="return-label">{label}</div>
-            <div class="return-value" style="color:{color};">{disp}</div>
-        </div>
-        '''
+        if ret == "N/A":
+            color = "#94a3b8"
+            disp = "N/A"
+        else:
+            color = "#ef4444" if ret >= 0 else "#22c55e"
+            disp = f"{ret:+.2f}%"
+        return_html += f'<div class="return-card"><div class="return-label">{label}</div><div class="return-value" style="color:{color};">{disp}</div></div>'
     return_html += '</div>'
     st.markdown(return_html, unsafe_allow_html=True)
 
-# === 警示判斷（保持原樣）===
-# （貼上你前一次版本的警示區塊即可）
-
-# === 圖表與財務戰情室（維持原樣）===
+# === 8. 警示與圖表 (請將原本的內容補回) ===
 col1, col2 = st.columns([1, 1])
-with col1:
-    if df_intra is not None and not df_intra.empty:
-        st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
-with col2:
-    if not df_daily.empty:
-        st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
+# with col1: ... (你的盤中折線圖)
+# with col2: ... (你的日K線圖)
 
-# === 下半部財務戰情室（與你原本相同）===
-if is_tw_stock:
-    # ...（你的財務表格、AI 評分、對標矩陣等全部保留）
+# === 9. 下半部財務戰情室 (請將原本的內容補回) ===
 
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
 st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：TWSE, Yahoo Finance, FinMind</div>', unsafe_allow_html=True)
