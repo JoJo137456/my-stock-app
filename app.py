@@ -225,7 +225,7 @@ def fetch_twse_history_proxy(stock_code):
 @st.cache_data(ttl=3600)
 def fetch_us_history(ticker_symbol):
     try:
-        tk = yf.Ticker(ticker_symbol)
+        tk = yfinance.Ticker(ticker_symbol)
         hist = tk.history(period="6mo")
         data_list = [{'date': idx.strftime('%Y-%m-%d'), 'volume': float(row['Volume']), 'open': float(row['Open']), 'high': float(row['High']), 'low': float(row['Low']), 'close': float(row['Close'])} for idx, row in hist.iterrows()]
         return data_list
@@ -531,7 +531,7 @@ if is_tw_stock:
                     hovertemplate="<b>%{y}</b><br>同業平均: %{x:.2f}<extra></extra>"
                 ))
                
-                # ✅ 最終修正：使用最穩定的 title=dict 格式（解決 Streamlit Cloud ValueError）
+                # ✅ 最終修正：解決 X軸設定引起的 ValueError
                 fig.update_layout(
                     title=dict(
                         text="經營能力指標比較",
@@ -545,8 +545,7 @@ if is_tw_stock:
                     plot_bgcolor='rgba(0,0,0,0)',
                     paper_bgcolor='rgba(0,0,0,0)',
                     xaxis=dict(
-                        title="數值",
-                        titlefont=dict(size=14, color="#64748b"),
+                        title=dict(text="數值", font=dict(size=14, color="#64748b")), # 修正了這一行
                         gridcolor="#f1f5f9",
                         zerolinecolor="#e2e8f0",
                         tickfont=dict(size=12)
