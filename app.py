@@ -395,11 +395,9 @@ if is_tw_stock:
     fin_df = st.session_state.get('fin_data', None)
   
     if fin_df is not None and not fin_df.empty:
-        # 定義觀察名單與名稱
         peer_dict = {'1402': '遠東新', '1409': '新纖', '1464': '得力', '1303': '南亞', '1718': '中纖'}
         all_ids = list(peer_dict.keys())
         
-        # 抓取所有公司的最新一筆財報數據
         latest_data = {}
         data_date_str = "最新期數"
         for pid in all_ids:
@@ -407,7 +405,6 @@ if is_tw_stock:
             if not c_df.empty:
                 latest_data[pid] = c_df.iloc[0]
                 
-        # 取得最新財報的時間點作為標註
         if str(code) in latest_data:
             latest_date_val = latest_data[str(code)].get('date')
             if pd.notna(latest_date_val):
@@ -419,7 +416,6 @@ if is_tw_stock:
             current_company_name = peer_dict.get(str(code), f"公司 {code}")
             st.markdown(f"### 🔍 目前分析主體：**{current_company_name} ({code})**")
 
-            # 定義 10 項指標
             indicators_dict = {
                 'inv_ar_to_equity': {'name': '存貨及應收帳款/淨值', 'better': 'lower'},
                 'ar_turnover_times': {'name': '應收帳款週轉次數', 'better': 'higher'},
@@ -433,13 +429,11 @@ if is_tw_stock:
                 'net_operating_cycle': {'name': '淨營業週期', 'better': 'lower'}
             }
 
-            # 計算業界平均
             industry_avg = {}
             for key in indicators_dict.keys():
                 vals = [latest_data[pid].get(key) for pid in latest_data if pd.notna(latest_data[pid].get(key))]
                 industry_avg[key] = np.mean(vals) if vals else np.nan
 
-            # 計算 100 分制
             scores = {}
             for pid, data in latest_data.items():
                 score = 0
@@ -453,7 +447,7 @@ if is_tw_stock:
                             score += 10
                 scores[pid] = score
 
-            # --- 區塊 1：五家公司綜合評分看板 ---
+            # --- 區塊 1：綜合評分看板 ---
             st.markdown("#### 🏆 經營能力綜合評分比較 (滿分 100 分)")
             cols = st.columns(len(latest_data))
             for i, (pid, score) in enumerate(scores.items()):
@@ -471,7 +465,7 @@ if is_tw_stock:
                     """, unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # --- 區塊 2：最新關鍵指標數據表 ---
+            # --- 區塊 2：數據表 ---
             st.markdown("#### 📝 最新關鍵指標明細 (原始數據)")
             table_data = {"指標": [info['name'] for info in indicators_dict.values()]}
             
@@ -489,9 +483,8 @@ if is_tw_stock:
 
             # --- 區塊 3：X-Y 軸財經科技感散佈圖 ---
             st.markdown("#### 🎯 營運雙核心矩陣 (存貨週轉率 vs 應收帳款週轉次數)")
-            
-            x_metric = 'inv_turnover_times' # 存貨週轉率
-            y_metric = 'ar_turnover_times'  # 應收帳款週轉次數
+            x_metric = 'inv_turnover_times'
+            y_metric = 'ar_turnover_times'
             
             fig_xy = go.Figure()
             
@@ -513,7 +506,7 @@ if is_tw_stock:
                             textfont=dict(size=14, color="#1e293b" if not is_target else "#ef4444", weight="bold" if is_target else "normal"),
                             marker=dict(
                                 size=24 if is_target else 18,
-                                color='#ef4444' if is_target else '#3b82f6',
+                                color='#ef4444' if is_target else '#94a3b8',
                                 line=dict(width=2, color='white'),
                                 opacity=0.9
                             ),
@@ -552,50 +545,73 @@ if is_tw_stock:
             st.plotly_chart(fig_xy, use_container_width=True)
             st.caption("右上角象限代表「存貨去化快」且「帳款回收快」，為最佳營運狀態。")
 
-            # --- 區塊 4：新增期間變化趨勢圖 (歷年營運效率) ---
-            st.markdown("#### 📈 歷年營運效率趨勢 (存貨週轉率歷史軌跡)")
-            fig_trend = go.Figure()
-            colors = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6']
+            # --- 區塊 4：新增期間變化趨勢圖 (動態指標選擇 + 降噪視覺設計) ---
+            st.markdown("#### 📈 歷年營運趨勢軌跡 (時間序列分析)")
             
-            for idx, pid in enumerate(all_ids):
-                # 抓取該公司的歷史資料並按時間正序排列
+            # 動態指標選擇，預設為存貨週轉率
+            trend_metric_options = list(indicators_dict.keys())
+            trend_metric = st.selectbox(
+                "請選擇要觀察的趨勢指標", 
+                options=trend_metric_options, 
+                format_func=lambda x: indicators_dict[x]['name'],
+                index=4 
+            )
+            
+            fig_trend = go.Figure()
+            
+            for pid in all_ids:
                 history_df = fin_df[fin_df['stock_id'] == pid].sort_values('date', ascending=True)
                 if not history_df.empty:
-                    # 排除日期為空值的資料
-                    history_df = history_df.dropna(subset=['date', 'inv_turnover_times'])
+                    history_df = history_df.dropna(subset=['date', trend_metric])
                     if not history_df.empty:
                         is_target = (pid == str(code))
+                        
+                        # 視覺降噪：主體用紅色粗線，同業用淺灰色細線
+                        line_color = '#ef4444' if is_target else '#cbd5e1'
                         line_width = 4 if is_target else 2
                         opacity = 1.0 if is_target else 0.6
                         
                         fig_trend.add_trace(go.Scatter(
                             x=history_df['date'],
-                            y=history_df['inv_turnover_times'],
+                            y=history_df[trend_metric],
                             mode='lines+markers',
                             name=peer_dict[pid],
-                            line=dict(width=line_width, color=colors[idx % len(colors)]),
+                            line=dict(width=line_width, color=line_color),
                             opacity=opacity,
-                            hovertemplate="<b>" + peer_dict[pid] + "</b><br>期間: %{x|%Y-%m}<br>存貨週轉率: %{y:.2f}次<extra></extra>"
+                            marker=dict(size=6 if is_target else 4),
+                            hovertemplate=f"<b>{peer_dict[pid]}</b><br>期間: %{{x|%Y-%m}}<br>數值: %{{y:.2f}}<extra></extra>"
                         ))
+                        
+                        # 直接標記 (Direct Labeling)：在線條最後方直接標註公司名稱
+                        last_row = history_df.iloc[-1]
+                        fig_trend.add_annotation(
+                            x=last_row['date'],
+                            y=last_row[trend_metric],
+                            text=f"{peer_dict[pid]}",
+                            font=dict(color='#0f172a' if is_target else '#64748b', size=13, weight="bold" if is_target else "normal"),
+                            xanchor="left",
+                            xshift=10,
+                            showarrow=False
+                        )
 
             fig_trend.update_layout(
                 height=450,
                 plot_bgcolor='#ffffff',
                 paper_bgcolor='#ffffff',
-                margin=dict(l=40, r=40, t=40, b=40),
+                margin=dict(l=40, r=80, t=40, b=40), # 右側留白給標籤
+                hovermode="x unified",
                 xaxis=dict(
                     title=dict(text="時間期數", font=dict(size=14, color="#475569")),
                     gridcolor="#f1f5f9",
-                    tickformat="%Y-%m"
+                    tickformat="%Y-%m",
+                    showline=True, linewidth=1, linecolor='#cbd5e1'
                 ),
                 yaxis=dict(
-                    title=dict(text="存貨週轉率 (次)", font=dict(size=14, color="#475569")),
+                    title=dict(text=indicators_dict[trend_metric]['name'], font=dict(size=14, color="#475569")),
                     gridcolor="#f1f5f9",
+                    zeroline=False
                 ),
-                legend=dict(
-                    orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5,
-                    font=dict(size=13, color="#1e293b")
-                ),
+                showlegend=False, # 隱藏圖例，依賴直接標記
                 font=dict(family="Noto Sans TC")
             )
             
