@@ -51,7 +51,7 @@ def clear_saved_tej_data():
         return True
     return False
 
-# ====================== TEJ 解析（已針對你的最新 Excel 完整對應） ======================
+# ====================== TEJ 解析 ======================
 @st.cache_data
 def parse_tej_excel_files(uploaded_files):
     if not uploaded_files:
@@ -63,7 +63,7 @@ def parse_tej_excel_files(uploaded_files):
             for sheet_name, df in dfs.items():
                 df = df.copy()
                 df.columns = [str(col).strip().replace('\n', '').replace('\r', '').replace(' ', '') for col in df.columns]
-                
+               
                 col_mapping = {
                     '代號': 'stock_id',
                     '名稱': 'company_name',
@@ -81,29 +81,29 @@ def parse_tej_excel_files(uploaded_files):
                     '淨營業週期（日）': 'net_operating_cycle',
                 }
                 df = df.rename(columns={k: v for k, v in col_mapping.items() if k in df.columns})
-                
+               
                 if 'stock_id' not in df.columns and 'company_name' in df.columns:
                     df['stock_id'] = df['company_name'].str.extract(r'(\d{4})')
                 if 'stock_id' in df.columns:
                     df['stock_id'] = df['stock_id'].astype(str).str.zfill(4)
-                
+               
                 if 'date' in df.columns:
                     df['date'] = pd.to_datetime(df['date'], errors='coerce')
-                
+               
                 numeric_cols = ['inv_ar_to_equity', 'ar_turnover_times', 'total_assets_turnover', 'ar_days',
                                 'inv_turnover_times', 'inv_days', 'fixed_assets_turnover', 'equity_turnover',
                                 'ap_days', 'net_operating_cycle']
                 for col in numeric_cols:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors='coerce')
-                
+               
                 if 'inv_turnover_times' in df.columns:
                     df['inv_days'] = (365 / df['inv_turnover_times']).round(1)
-                
+               
                 all_dfs.append(df)
         except Exception as e:
             st.warning(f"檔案「{uploaded_file.name}」解析失敗：{str(e)}")
-   
+  
     if all_dfs:
         combined = pd.concat(all_dfs, ignore_index=True)
         sort_cols = [col for col in ['stock_id', 'date'] if col in combined.columns]
@@ -153,7 +153,7 @@ def check_password():
                 st.error("Invalid credentials")
     return False
 
-if not check_password(): 
+if not check_password():
     st.stop()
 
 # === 2. 核心 UI 樣式 ===
@@ -240,7 +240,7 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
         df = ticker.history(period="1d", interval="1m")
         if df.empty:
             df = ticker.history(period="5d", interval="5m")
-            if not df.empty: df = df[df.index.date == df.index[-1].date()]
+            if not df.empty: df = df[df.index.date] == df.index[-1].date()]
         return df if not df.empty else None
     except: return None
 
@@ -275,10 +275,10 @@ def plot_intraday_line(df):
 with st.sidebar:
     st.header("🎯 戰略監控目標")
     st.subheader("📤 TEJ 資料庫匯入")
-    st.markdown("**請上傳 TEJ 報表**  \n— 上傳一次後永久保存（支援多檔 XLSX / XLS）")
-   
+    st.markdown("**請上傳 TEJ 報表** \n— 上傳一次後永久保存（支援多檔 XLSX / XLS）")
+  
     uploaded_files = st.file_uploader("TEJ 財報檔案", type=["xlsx", "xls"], accept_multiple_files=True, label_visibility="collapsed")
-   
+  
     if uploaded_files:
         with st.spinner("🔄 正在解析並永久保存 TEJ 資料..."):
             tej_df = parse_tej_excel_files(uploaded_files)
@@ -292,13 +292,13 @@ with st.sidebar:
             if saved is not None:
                 st.session_state['tej_data'] = saved
                 st.success("✅ 已自動載入**永久保存**的 TEJ 資料")
-   
+  
     if st.button("🗑️ 清除永久保存的 TEJ 資料"):
         if clear_saved_tej_data():
             st.session_state.pop('tej_data', None)
             st.success("✅ 已清除永久保存資料")
             st.rerun()
-   
+  
     st.markdown("---")
     selected_category = st.selectbox("板塊分類", list(market_categories.keys()))
     st.markdown("---")
@@ -328,7 +328,6 @@ else:
 
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 df_intra = get_intraday_chart_data(code, is_us_source=not is_tw_stock)
-
 current_price = real_data['price']
 if (current_price == 0 or current_price is None) and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
@@ -376,27 +375,27 @@ with col1:
 with col2:
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
 
-# === 8. TEJ 財務健檢與同業對標分析（已刪除除錯資訊 + 新增產業評分圖表） ===
+# === 8. TEJ 財務健檢與同業對標分析（已替換為 AI 設計 XY軸圖表） ===
 if is_tw_stock:
     st.divider()
     st.markdown("## 📊 TEJ 財務健檢與同業對標分析")
     tej_df = st.session_state.get('tej_data', None)
-   
+  
     if tej_df is not None and not tej_df.empty:
         company_df = tej_df[tej_df['stock_id'] == str(code)].sort_values('date', ascending=False)
         if not company_df.empty:
             latest = company_df.iloc[0]
             company_name = latest.get('company_name', f'公司 {code}')
-           
+          
             peer_ids = ['1409', '1464', '1303', '1718']
             peers_latest = {}
             for pid in peer_ids:
                 p_df = tej_df[tej_df['stock_id'] == pid].sort_values('date', ascending=False)
                 if not p_df.empty:
                     peers_latest[pid] = p_df.iloc[0]
-            
-            st.markdown(f"### 🔍 目前分析公司：**{company_name} ({code})**")
            
+            st.markdown(f"### 🔍 目前分析公司：**{company_name} ({code})**")
+          
             col_score, col_compare = st.columns([1, 3])
             with col_score:
                 st.markdown(f"""
@@ -409,16 +408,16 @@ if is_tw_stock:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-           
+          
             with col_compare:
                 st.markdown("#### 📈 最新關鍵指標（TEJ 資料）")
-                
+               
                 indicators = [
                     "存貨及應收帳款/淨值", "應收帳款週轉次數", "總資產週轉次數",
                     "平均收帳天數", "存貨週轉率（次）", "平均售貨天數",
                     "固定資產週轉次數", "淨值週轉率（次）", "應付帳款付現天數", "淨營業週期（日）"
                 ]
-                
+               
                 data = {"指標": indicators}
                 data["遠東新 (1402)"] = [
                     round(latest.get('inv_ar_to_equity', np.nan), 2) if pd.notna(latest.get('inv_ar_to_equity')) else "-",
@@ -432,7 +431,7 @@ if is_tw_stock:
                     round(latest.get('ap_days', np.nan), 1) if pd.notna(latest.get('ap_days')) else "-",
                     round(latest.get('net_operating_cycle', np.nan), 1) if pd.notna(latest.get('net_operating_cycle')) else "-"
                 ]
-                
+               
                 peer_names = {"1409": "新纖 (1409)", "1464": "得力 (1464)", "1303": "南亞 (1303)", "1718": "中纖 (1718)"}
                 for pid, name in peer_names.items():
                     p = peers_latest.get(pid)
@@ -451,13 +450,13 @@ if is_tw_stock:
                         ]
                     else:
                         data[name] = ["-"] * 10
-                
+               
                 metrics = pd.DataFrame(data)
                 st.dataframe(metrics, use_container_width=True, hide_index=True)
-            
-            # === 新增：經營能力綜合評分（雷達圖 + 總分 + 優點/缺點）===
+           
+            # ====================== AI 設計 XY軸圖表 ======================
             st.markdown("#### 📊 經營能力綜合評分（快速判斷）")
-            
+           
             # 計算綜合分數（0~100）
             indicators_dict = {
                 'inv_ar_to_equity': {'name': '存貨及應收帳款/淨值', 'better': 'lower'},
@@ -471,19 +470,17 @@ if is_tw_stock:
                 'ap_days': {'name': '應付帳款付現天數', 'better': 'lower'},
                 'net_operating_cycle': {'name': '淨營業週期', 'better': 'lower'}
             }
-            
+           
             company_score = 0
-            peer_avg_score = 0
             total_indicators = len(indicators_dict)
-            
             strengths = []
             weaknesses = []
-            
+           
             for key, info in indicators_dict.items():
                 c_val = latest.get(key)
                 p_vals = [peers_latest[pid].get(key) for pid in peer_ids if pid in peers_latest and pd.notna(peers_latest[pid].get(key))]
                 p_avg = np.mean(p_vals) if p_vals else np.nan
-                
+               
                 if pd.notna(c_val) and pd.notna(p_avg):
                     if info['better'] == 'higher':
                         if c_val > p_avg:
@@ -497,53 +494,132 @@ if is_tw_stock:
                             company_score += 10
                         else:
                             weaknesses.append(f"• {info['name']}高於同業")
-            
+           
             final_score = round((company_score / total_indicators) * 100)
-            
-            col_radar, col_summary = st.columns([2, 1])
-            with col_radar:
-                # 雷達圖（快速視覺化）
+           
+            # ==================== XY軸水平分組長條圖 ====================
+            col_chart, col_summary = st.columns([3, 1])
+           
+            with col_chart:
                 categories = list(indicators_dict.keys())
-                company_vals = [latest.get(k, 0) for k in categories]
-                peer_vals = [np.mean([peers_latest[pid].get(k, 0) for pid in peer_ids if pid in peers_latest]) for k in categories]
-                
-                fig_radar = go.Figure()
-                fig_radar.add_trace(go.Scatterpolar(
-                    r=company_vals, theta=[indicators_dict[k]['name'] for k in categories],
-                    fill='toself', name='遠東新 (1402)', line_color='#ef4444'
+                company_vals = [latest.get(k, 0) if pd.notna(latest.get(k)) else 0 for k in categories]
+                peer_vals = [np.mean([peers_latest[pid].get(k, 0) for pid in peer_ids if pid in peers_latest and pd.notna(peers_latest[pid].get(k))]) 
+                             if any(pd.notna(peers_latest[pid].get(k)) for pid in peer_ids) else 0 
+                             for k in categories]
+                indicator_names = [indicators_dict[k]['name'] for k in categories]
+               
+                fig = go.Figure()
+               
+                # 遠東新（紅色）
+                fig.add_trace(go.Bar(
+                    y=indicator_names,
+                    x=company_vals,
+                    name='遠東新 (1402)',
+                    orientation='h',
+                    marker=dict(color='#ef4444', opacity=0.9),
+                    text=[f"{v:.1f}" if v != 0 else "-" for v in company_vals],
+                    textposition='auto',
+                    textfont=dict(size=13, color='white'),
+                    hovertemplate="<b>%{y}</b><br>遠東新: %{x:.2f}<extra></extra>"
                 ))
-                fig_radar.add_trace(go.Scatterpolar(
-                    r=peer_vals, theta=[indicators_dict[k]['name'] for k in categories],
-                    fill='toself', name='同業平均', line_color='#22c55e'
+               
+                # 同業平均（綠色）
+                fig.add_trace(go.Bar(
+                    y=indicator_names,
+                    x=peer_vals,
+                    name='同業平均',
+                    orientation='h',
+                    marker=dict(color='#22c55e', opacity=0.85),
+                    text=[f"{v:.1f}" if v != 0 else "-" for v in peer_vals],
+                    textposition='auto',
+                    textfont=dict(size=13, color='white'),
+                    hovertemplate="<b>%{y}</b><br>同業平均: %{x:.2f}<extra></extra>"
                 ))
-                fig_radar.update_layout(
-                    polar=dict(radialaxis=dict(visible=True, range=[0, max(max(company_vals), max(peer_vals)) + 10])),
-                    showlegend=True, height=420, title="經營能力雷達圖（紅色=遠東新 / 綠色=同業平均）"
+               
+                fig.update_layout(
+                    title=dict(
+                        text="經營能力指標比較<br><sup>紅色 = 遠東新　｜　綠色 = 同業平均</sup>",
+                        font=dict(size=18, family="Noto Sans TC", color="#1e293b"),
+                        x=0.5,
+                        xanchor="center"
+                    ),
+                    barmode='group',
+                    height=620,
+                    margin=dict(l=20, r=20, t=80, b=20),
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    xaxis=dict(
+                        title="數值",
+                        titlefont=dict(size=14, color="#64748b"),
+                        gridcolor="#f1f5f9",
+                        zerolinecolor="#e2e8f0",
+                        tickfont=dict(size=12)
+                    ),
+                    yaxis=dict(
+                        categoryorder='total ascending',
+                        title=None,
+                        tickfont=dict(size=13, family="Noto Sans TC"),
+                        automargin=True
+                    ),
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="center",
+                        x=0.5,
+                        font=dict(size=13, color="#1e293b")
+                    ),
+                    font=dict(family="Noto Sans TC"),
+                    template="plotly_white"
                 )
-                st.plotly_chart(fig_radar, use_container_width=True)
-            
+               
+                # 自動標註優勢/劣勢
+                for i, (c_val, p_val, name) in enumerate(zip(company_vals, peer_vals, indicator_names)):
+                    key = categories[i]
+                    if (indicators_dict[key]['better'] == 'higher' and c_val > p_val) or \
+                       (indicators_dict[key]['better'] == 'lower' and c_val < p_val):
+                        fig.add_annotation(
+                            x=c_val + (max(company_vals) * 0.03),
+                            y=name,
+                            text="✅ 優勢",
+                            showarrow=False,
+                            font=dict(size=11, color="#22c55e"),
+                            xanchor="left"
+                        )
+                    elif c_val != p_val:
+                        fig.add_annotation(
+                            x=c_val + (max(company_vals) * 0.03),
+                            y=name,
+                            text="⚠️ 待改善",
+                            showarrow=False,
+                            font=dict(size=11, color="#ef4444"),
+                            xanchor="left"
+                        )
+               
+                st.plotly_chart(fig, use_container_width=True)
+           
             with col_summary:
                 st.markdown(f"""
-                <div style="background: linear-gradient(135deg, #1e293b, #0f172a); color: white; padding: 20px; border-radius: 12px; text-align: center;">
-                    <div style="font-size:14px; color:#94a3b8;">經營能力綜合評分</div>
-                    <div style="font-size:52px; font-weight:800; color:#4ade80;">{final_score}</div>
-                    <div style="font-size:14px;">（滿分 100 分）</div>
+                <div style="background: linear-gradient(135deg, #1e293b, #0f172a); color: white; padding: 28px 20px; border-radius: 16px; text-align: center; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);">
+                    <div style="font-size:14px; color:#94a3b8; letter-spacing:0.5px;">經營能力綜合評分</div>
+                    <div style="font-size:56px; font-weight:800; color:#4ade80; margin:8px 0;">{final_score}</div>
+                    <div style="font-size:14px; opacity:0.9;">（滿分 100 分）</div>
                 </div>
                 """, unsafe_allow_html=True)
-                
+               
                 st.markdown("**✅ 優勢**")
-                for s in strengths[:5]:
-                    st.write(s)
+                for s in strengths[:6]:
+                    st.success(s, icon="✅")
                 if not strengths:
-                    st.write("• 目前與同業相當")
-                
+                    st.info("• 目前與同業表現相當")
+               
                 st.markdown("**⚠️ 劣勢 / 風險點**")
-                for w in weaknesses[:5]:
-                    st.write(w)
+                for w in weaknesses[:6]:
+                    st.error(w, icon="⚠️")
                 if not weaknesses:
-                    st.write("• 無明顯劣勢")
-            
-            st.caption(f"資料來源：TEJ 最新財報（{latest.get('date').strftime('%Y-%m') if isinstance(latest.get('date'), pd.Timestamp) else '最新'}）")
+                    st.success("• 無明顯劣勢")
+           
+            st.caption(f"資料來源：TEJ 最新財報（{latest.get('date').strftime('%Y-%m') if isinstance(latest.get('date'), pd.Timestamp) else '最新'}）｜AI 設計 XY軸圖表 v2.0")
         else:
             st.warning("TEJ 資料中尚未找到該公司資訊，請確認上傳檔案是否正確")
     else:
