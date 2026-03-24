@@ -187,18 +187,35 @@ st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div 
 MACRO_IMPACT = {
     "🇹🇼 台灣加權指數": "台灣加權指數為台灣整體經濟及半導體產業景氣的綜合指標。主要與台積電等科技巨頭連動，可作為評估外資資金流向及國內資本市場活力的關鍵參考。",
     "🇺🇸 S&P 500": "S&P 500 指數涵蓋美國前 500 大企業，代表美國實體經濟的全貌。其涵蓋多樣產業，為全球長期資金配置及美股市場多空趨勢判斷的基準指標。",
-    "🇺🇸 SOX (費半)": "費城半導體指數為全球半導體產業鏈的核心指標，涵蓋晶片設計至設備製造等環節，可精準預測電子業庫存循環及終端需求趨勢。"
+    "🇺🇸 Dow Jones": "道瓊工業指數涵蓋 30 家歷史悠久的美國藍籌企業（涵蓋工業、金融等領域）。有助於評估美國傳統經濟基礎的穩健性，並對傳統企業獲利能力高度敏感。",
+    "🇺🇸 Nasdaq": "納斯達克指數為全球科技創新的領先指標，聚集微軟、蘋果等科技巨頭。直接反映市場對 AI、軟硬體等高科技領域資本支出的成長預期。",
+    "🇺🇸 SOX (費半)": "費城半導體指數為全球半導體產業鏈的核心指標，涵蓋晶片設計至設備製造等環節，可精準預測電子業庫存循環及終端需求趨勢。",
+    "⚠️ VIX 恐慌指數": "VIX 恐慌指數用以衡量市場投資人的恐慌程度。當指數大幅上升時，顯示投資人預期未來市場波動加劇，常伴隨股市下跌，為重要的避險指標。",
+    "🏦 U.S. 10Y Treasury": "美國 10 年期公債殖利率為全球資金定價的無風險基準。殖利率上升會吸引資金離開股市並提高企業融資成本，為評估科技股估值及通膨預期的關鍵指標。",
+    "🥇 黃金": "黃金為市場動盪時的資金避險資產。當通膨失控或地緣政治危機發生時，金價通常上漲，反映市場對法定貨幣的不信任。",
+    "🛢️ WTI 原油": "WTI 原油為實體工業與運輸業的關鍵能源指標。油價上漲會提高全球製造業成本並引發通膨壓力，為評估美國工業活動及通膨趨勢的重要參考。",
+    "🛢️ 布蘭特原油 (Brent)": "布蘭特原油為全球國際貿易的基準油價。對中東衝突及 OPEC+ 減產等事件高度敏感，直接影響歐洲與亞洲的能源成本。",
+    "🔥 天然氣 (Natural Gas)": "天然氣為重工業運轉及冬季供暖的核心能源。價格受極端氣候及地緣政治事件影響顯著，上漲時將衝擊高耗能產業（如石化、水泥）的獲利能力。",
+    "🚢 航運運價指標 (BDRY)": "BDRY 航運運價指數反映全球原物料海上運輸需求。運價上漲表示基礎建設需求強勁，為實體經濟擴張的領先指標。",
+    "₿ 比特幣": "比特幣為數位時代的高風險資產。價格波動劇烈，並與全球過剩資金流向高度相關，為市場投機情緒的領先指標。",
+    "💵 美元指數": "美元指數衡量美元相對於全球主要貨幣的強弱。強勢美元會導致熱錢撤出新興市場（如台灣），雖有利出口業，但會增加進口原物料成本。",
+    "💱 美元兌台幣": "美元兌台幣匯率為台灣出口企業獲利的重要因素。台幣貶值可使電子代工及紡織業獲得匯兌收益，但會提高進口物價。"
 }
 
 # === 4. 板塊分類字典 ===
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
-        "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 SOX (費半)": "^SOX"
+        "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC",
+        "🇺🇸 SOX (費半)": "^SOX", "⚠️ VIX 恐慌指數": "^VIX", "🏦 U.S. 10Y Treasury": "^TNX", "🥇 黃金": "GC=F",
+        "🛢️ WTI 原油": "CL=F", "🛢️ 布蘭特原油 (Brent)": "BZ=F", "🔥 天然氣 (Natural Gas)": "NG=F",
+        "🚢 航運運價指標 (BDRY)": "BDRY", "₿ 比特幣": "BTC-USD", "💵 美元指數": "DX-Y.NYB", "💱 美元兌台幣": "TWD=X"
     },
     "🏢 遠東集團核心事業體": {
         "👕 1402 遠東新": "1402", "🏗️ 1102 亞泥": "1102", "🚢 2606 裕民": "2606", "🧵 1460 宏遠": "1460",
         "🛍️ 2903 遠百": "2903", "📱 4904 遠傳": "4904", "🧪 1710 東聯": "1710", "🏦 2845 遠東銀": "2845"
-    }
+    },
+    "👟 國際品牌終端 (紡織板塊對標)": {"🇺🇸 Nike": "NKE", "🇺🇸 Under Armour": "UAA", "🇺🇸 Lululemon": "LULU"},
+    "🥤 國際品牌終端 (化纖板塊對標)": {"🇺🇸 Coca-Cola": "KO", "🇺🇸 PepsiCo": "PEP"}
 }
 
 # === 5. API 與真實資料抓取模組 ===
@@ -354,13 +371,24 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
+    exp_text = MACRO_IMPACT[option]
+    html_payload = f"""
+    <div style="background-color: #ffffff; padding: 20px 25px; border-radius: 8px; border-left: 5px solid #3b82f6; margin-top: 10px; margin-bottom: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+        <div style="font-size: 16px; color: #1e293b; line-height: 1.8; font-weight: 500; text-align: justify;">
+            {exp_text}
+        </div>
+    </div>
+    """
+    st.markdown(html_payload.replace('\n', ''), unsafe_allow_html=True)
+
 col1, col2 = st.columns([1, 1])
 with col1:
     if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
 with col2:
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
 
-# === 8. 財務健檢與同業對標分析（含去識別化、群組柱狀圖重構） ===
+# === 8. 財務健檢與同業對標分析（完整結構版：綜合看板 + 表格 + X-Y 矩陣 + 8季對標） ===
 if is_tw_stock:
     st.divider()
     
@@ -387,6 +415,7 @@ if is_tw_stock:
 
         if str(code) in latest_data:
             current_company_name = peer_dict.get(str(code), f"公司 {code}")
+            st.markdown(f"### 🔍 目前分析主體：**{current_company_name} ({code})**")
             
             indicators_dict = {
                 'inv_ar_to_equity': {'name': '存貨及應收帳款/淨值', 'better': 'lower'},
@@ -453,7 +482,71 @@ if is_tw_stock:
             metrics_df = pd.DataFrame(table_data)
             st.dataframe(metrics_df, use_container_width=True, hide_index=True)
 
-            # === 區塊 3：全新設計 8 季動能群組柱狀圖 (極簡白淨版) ===
+            # --- 區塊 3：X-Y 軸財經科技感散佈圖 (完整保留) ---
+            st.markdown("#### 🎯 營運雙核心矩陣 (存貨週轉率 vs 應收帳款週轉次數)")
+            x_metric = 'inv_turnover_times'
+            y_metric = 'ar_turnover_times'
+            
+            fig_xy = go.Figure()
+            
+            for pid in all_ids:
+                if pid in latest_data:
+                    data = latest_data[pid]
+                    x_val = data.get(x_metric, np.nan)
+                    y_val = data.get(y_metric, np.nan)
+                    
+                    if pd.notna(x_val) and pd.notna(y_val):
+                        is_target = (pid == str(code))
+                        fig_xy.add_trace(go.Scatter(
+                            x=[x_val],
+                            y=[y_val],
+                            mode='markers+text',
+                            name=peer_dict[pid],
+                            text=[peer_dict[pid]],
+                            textposition="top center",
+                            textfont=dict(size=14, color="#1e293b" if not is_target else "#ef4444", weight="bold" if is_target else "normal"),
+                            marker=dict(
+                                size=24 if is_target else 18,
+                                color='#ef4444' if is_target else '#94a3b8',
+                                line=dict(width=2, color='white'),
+                                opacity=0.9
+                            ),
+                            hovertemplate=f"<b>{peer_dict[pid]}</b><br>存貨週轉率: %{{x:.2f}}<br>應收帳款週轉: %{{y:.2f}}<extra></extra>"
+                        ))
+
+            fig_xy.update_layout(
+                height=500,
+                plot_bgcolor='#f8fafc',
+                paper_bgcolor='#ffffff',
+                margin=dict(l=40, r=40, t=40, b=40),
+                xaxis=dict(
+                    title=dict(text="存貨週轉率 (次) ➔ 越高越好", font=dict(size=14, color="#475569")),
+                    gridcolor="white",
+                    zerolinecolor="#cbd5e1",
+                    zerolinewidth=2
+                ),
+                yaxis=dict(
+                    title=dict(text="應收帳款週轉次數 (次) ➔ 越高越好", font=dict(size=14, color="#475569")),
+                    gridcolor="white",
+                    zerolinecolor="#cbd5e1",
+                    zerolinewidth=2
+                ),
+                showlegend=False,
+                font=dict(family="Noto Sans TC")
+            )
+            
+            avg_x = industry_avg.get(x_metric, 0)
+            avg_y = industry_avg.get(y_metric, 0)
+            
+            if pd.notna(avg_x) and pd.notna(avg_y):
+                fig_xy.add_vline(x=avg_x, line_width=1, line_dash="dash", line_color="#94a3b8")
+                fig_xy.add_hline(y=avg_y, line_width=1, line_dash="dash", line_color="#94a3b8")
+                fig_xy.add_annotation(x=avg_x, y=max([latest_data[p].get(y_metric, 0) for p in all_ids if p in latest_data]), text="業界平均", showarrow=False, font=dict(size=11, color="#94a3b8"), xanchor="left")
+            
+            st.plotly_chart(fig_xy, use_container_width=True)
+            st.caption("右上角象限代表「存貨去化快」且「帳款回收快」，為最佳營運狀態。")
+
+            # === 區塊 4：全新設計 8 季動能群組柱狀圖 (極簡白淨版) ===
             st.markdown("#### 📈 歷年營運效率趨勢對標 (近 8 季)")
             st.markdown("<p style='color:#64748b; font-size:14px; margin-top:-10px;'>清晰呈現標的公司與同業平均之差距，並結合逐季成長動能 (QoQ / MoM)</p>", unsafe_allow_html=True)
             
@@ -464,35 +557,34 @@ if is_tw_stock:
                 index=4 
             )
 
-            # 1. 整理目標公司 (遠東新) 近 8 期的歷史資料
+            # 1. 整理目標公司 (遠東新) 歷史資料，並先計算好全部期數的變動率
             fenc_df = fin_df[fin_df['stock_id'] == str(code)].sort_values('date', ascending=True).dropna(subset=['date', trend_metric])
+            fenc_df['pct_change'] = fenc_df[trend_metric].pct_change() * 100
             
             # 2. 整理競爭對手同業平均歷史資料
             peer_df = fin_df[fin_df['stock_id'].isin(peer_ids)].dropna(subset=['date', trend_metric])
             peer_avg_df = peer_df.groupby('date')[trend_metric].mean().reset_index()
             peer_avg_df.rename(columns={trend_metric: 'peer_avg'}, inplace=True)
             
-            # 3. 合併資料並取最近 8 季
-            merged_df = pd.merge(fenc_df[['date', trend_metric]], peer_avg_df, on='date', how='inner')
+            # 3. 合併資料並只取最近 8 季
+            merged_df = pd.merge(fenc_df[['date', trend_metric, 'pct_change']], peer_avg_df, on='date', how='inner')
             merged_df = merged_df.tail(8).reset_index(drop=True)
             
             if not merged_df.empty:
-                # 計算遠東新的百分比變動 (QoQ / MoM)
-                merged_df['pct_change'] = merged_df[trend_metric].pct_change() * 100
-                
-                # 構建帶有 HTML 色彩標籤的標註文字
+                # 構建文字標註 (只在紅色柱子上顯示 QoQ%)
                 text_annotations = []
                 for idx, row in merged_df.iterrows():
                     val = row[trend_metric]
                     pct = row['pct_change']
+                    
                     if pd.isna(pct):
                         text_annotations.append(f"{val:.2f}")
                     elif pct > 0:
-                        text_annotations.append(f"{val:.2f}<br><span style='color:#10b981; font-size:12px;'>▲ +{pct:.1f}%</span>")
+                        text_annotations.append(f"{val:.2f}<br>▲ {pct:.1f}%")
                     elif pct < 0:
-                        text_annotations.append(f"{val:.2f}<br><span style='color:#ef4444; font-size:12px;'>▼ {pct:.1f}%</span>")
+                        text_annotations.append(f"{val:.2f}<br>▼ {abs(pct):.1f}%")
                     else:
-                        text_annotations.append(f"{val:.2f}<br><span style='color:#94a3b8; font-size:12px;'>持平</span>")
+                        text_annotations.append(f"{val:.2f}<br>持平")
                 
                 # 格式化 X 軸日期顯示
                 x_labels = merged_df['date'].dt.strftime('%Y-%m')
@@ -507,7 +599,7 @@ if is_tw_stock:
                     marker_color='#ef4444',
                     text=text_annotations,
                     textposition='outside',
-                    textfont=dict(size=14, color='#0f172a'),
+                    textfont=dict(size=12, color='#0f172a'),
                     hovertemplate="<b>%{x}</b><br>" + current_company_name + ": %{y:.2f}<extra></extra>"
                 ))
                 
@@ -519,7 +611,7 @@ if is_tw_stock:
                     marker_color='#cbd5e1',
                     text=[f"{v:.2f}" for v in merged_df['peer_avg']],
                     textposition='outside',
-                    textfont=dict(size=13, color='#64748b'),
+                    textfont=dict(size=12, color='#64748b'),
                     hovertemplate="<b>%{x}</b><br>同業平均: %{y:.2f}<extra></extra>"
                 ))
                 
