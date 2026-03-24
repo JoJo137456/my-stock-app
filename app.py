@@ -19,41 +19,41 @@ def patched_request(self, method, url, *args, **kwargs):
     return original_request(self, method, url, *args, **kwargs)
 requests.Session.request = patched_request
 
-# ====================== TEJ 永久保存 ======================
+# ====================== 財務資料 永久保存 ======================
 DATA_DIR = "./data"
-TEJ_FILE = os.path.join(DATA_DIR, "tej_data.pkl")
+FIN_FILE = os.path.join(DATA_DIR, "fin_data.pkl")
 
 def ensure_data_dir():
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR)
 
-def load_saved_tej_data():
-    if os.path.exists(TEJ_FILE):
+def load_saved_fin_data():
+    if os.path.exists(FIN_FILE):
         try:
-            with open(TEJ_FILE, "rb") as f:
+            with open(FIN_FILE, "rb") as f:
                 return pickle.load(f)
         except:
             return None
     return None
 
-def save_tej_data(df):
+def save_fin_data(df):
     ensure_data_dir()
     try:
-        with open(TEJ_FILE, "wb") as f:
+        with open(FIN_FILE, "wb") as f:
             pickle.dump(df, f)
         return True
     except:
         return False
 
-def clear_saved_tej_data():
-    if os.path.exists(TEJ_FILE):
-        os.remove(TEJ_FILE)
+def clear_saved_fin_data():
+    if os.path.exists(FIN_FILE):
+        os.remove(FIN_FILE)
         return True
     return False
 
-# ====================== TEJ 解析 ======================
+# ====================== 財務資料 解析 ======================
 @st.cache_data
-def parse_tej_excel_files(uploaded_files):
+def parse_fin_excel_files(uploaded_files):
     if not uploaded_files:
         return None
     all_dfs = []
@@ -156,7 +156,7 @@ def check_password():
 if not check_password():
     st.stop()
 
-# === 2. 核心 UI 樣式 ===
+# === 2. 核心 UI 樣式與 CSS 注入 (隱藏預設文字) ===
 st.markdown("""
     <style>
         html, body, [class*="css"] { font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif !important; }
@@ -166,6 +166,18 @@ st.markdown("""
         .score-card-title { font-size: 14px; color: #64748b; font-weight: 600; margin-bottom: 5px;}
         .score-card-value { font-size: 36px; font-weight: 800; color: #0f172a;}
         .highlight-card { border: 2px solid #3b82f6; background: #f8fafc;}
+        
+        /* 徹底隱藏上傳區塊的預設英文文字，替換為簡潔中文 */
+        [data-testid="stFileUploadDropzone"] > div > span { display: none !important; }
+        [data-testid="stFileUploadDropzone"] > div::after { 
+            content: "📤 點擊或拖曳上傳財報檔案"; 
+            display: block; 
+            font-weight: 600; 
+            color: #475569; 
+            font-size: 15px; 
+            margin-top: 10px; 
+        }
+        [data-testid="stFileUploadDropzone"] small { display: none !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -276,29 +288,28 @@ def plot_intraday_line(df):
 # === 6. 左側選單 ===
 with st.sidebar:
     st.header("🎯 戰略監控目標")
-    st.subheader("📤 TEJ 資料庫匯入")
-    st.markdown("**請上傳 TEJ 報表** \n— 上傳一次後永久保存（支援多檔 XLSX / XLS）")
+    st.subheader("📤 財務數據資料匯入")
   
-    uploaded_files = st.file_uploader("TEJ 財報檔案", type=["xlsx", "xls"], accept_multiple_files=True, label_visibility="collapsed")
+    uploaded_files = st.file_uploader("上傳財報檔案", type=["xlsx", "xls"], accept_multiple_files=True, label_visibility="collapsed")
   
     if uploaded_files:
-        with st.spinner("🔄 正在解析並永久保存 TEJ 資料..."):
-            tej_df = parse_tej_excel_files(uploaded_files)
-            if tej_df is not None and not tej_df.empty:
-                st.session_state['tej_data'] = tej_df
-                if save_tej_data(tej_df):
-                    st.success("✅ TEJ 資料已成功上傳並**永久保存**")
+        with st.spinner("🔄 正在解析並保存資料..."):
+            fin_df = parse_fin_excel_files(uploaded_files)
+            if fin_df is not None and not fin_df.empty:
+                st.session_state['fin_data'] = fin_df
+                if save_fin_data(fin_df):
+                    st.success("✅ 財務資料已成功上傳並保存")
     else:
-        if 'tej_data' not in st.session_state:
-            saved = load_saved_tej_data()
+        if 'fin_data' not in st.session_state:
+            saved = load_saved_fin_data()
             if saved is not None:
-                st.session_state['tej_data'] = saved
-                st.success("✅ 已自動載入**永久保存**的 TEJ 資料")
+                st.session_state['fin_data'] = saved
+                st.success("✅ 已自動載入保存的財務資料")
   
-    if st.button("🗑️ 清除永久保存的 TEJ 資料"):
-        if clear_saved_tej_data():
-            st.session_state.pop('tej_data', None)
-            st.success("✅ 已清除永久保存資料")
+    if st.button("🗑️ 清除保存的財務資料"):
+        if clear_saved_fin_data():
+            st.session_state.pop('fin_data', None)
+            st.success("✅ 已清除保存資料")
             st.rerun()
   
     st.markdown("---")
@@ -377,23 +388,32 @@ with col1:
 with col2:
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
 
-# === 8. TEJ 財務健檢與同業對標分析（同業分數對比與 X-Y 散佈圖） ===
+# === 8. 財務健檢與同業對標分析（去識別化、加上時間點與趨勢圖） ===
 if is_tw_stock:
     st.divider()
-    st.markdown("## 📊 TEJ 財務健檢與同業對標分析")
-    tej_df = st.session_state.get('tej_data', None)
+    
+    fin_df = st.session_state.get('fin_data', None)
   
-    if tej_df is not None and not tej_df.empty:
+    if fin_df is not None and not fin_df.empty:
         # 定義觀察名單與名稱
         peer_dict = {'1402': '遠東新', '1409': '新纖', '1464': '得力', '1303': '南亞', '1718': '中纖'}
         all_ids = list(peer_dict.keys())
         
         # 抓取所有公司的最新一筆財報數據
         latest_data = {}
+        data_date_str = "最新期數"
         for pid in all_ids:
-            c_df = tej_df[tej_df['stock_id'] == pid].sort_values('date', ascending=False)
+            c_df = fin_df[fin_df['stock_id'] == pid].sort_values('date', ascending=False)
             if not c_df.empty:
                 latest_data[pid] = c_df.iloc[0]
+                
+        # 取得最新財報的時間點作為標註
+        if str(code) in latest_data:
+            latest_date_val = latest_data[str(code)].get('date')
+            if pd.notna(latest_date_val):
+                data_date_str = latest_date_val.strftime('%Y-%m')
+
+        st.markdown(f"## 📊 財務健檢與同業對標分析 <span style='font-size: 1rem; color: #64748b; font-weight: 500;'>（資料期數：{data_date_str}）</span>", unsafe_allow_html=True)
 
         if str(code) in latest_data:
             current_company_name = peer_dict.get(str(code), f"公司 {code}")
@@ -413,13 +433,13 @@ if is_tw_stock:
                 'net_operating_cycle': {'name': '淨營業週期', 'better': 'lower'}
             }
 
-            # 計算業界平均（以此作為得分基準）
+            # 計算業界平均
             industry_avg = {}
             for key in indicators_dict.keys():
                 vals = [latest_data[pid].get(key) for pid in latest_data if pd.notna(latest_data[pid].get(key))]
                 industry_avg[key] = np.mean(vals) if vals else np.nan
 
-            # ✅ 修正計分邏輯：精準計算 100 分制
+            # 計算 100 分制
             scores = {}
             for pid, data in latest_data.items():
                 score = 0
@@ -427,7 +447,6 @@ if is_tw_stock:
                     val = data.get(key)
                     avg = industry_avg.get(key)
                     if pd.notna(val) and pd.notna(avg):
-                        # 每個指標勝過平均得 10 分，滿分 10 個指標 = 100 分
                         if info['better'] == 'higher' and val >= avg:
                             score += 10
                         elif info['better'] == 'lower' and val <= avg:
@@ -453,7 +472,7 @@ if is_tw_stock:
             st.markdown("<br>", unsafe_allow_html=True)
 
             # --- 區塊 2：最新關鍵指標數據表 ---
-            st.markdown("#### 📝 最新關鍵指標明細 (TEJ 原始數據)")
+            st.markdown("#### 📝 最新關鍵指標明細 (原始數據)")
             table_data = {"指標": [info['name'] for info in indicators_dict.values()]}
             
             for pid in all_ids:
@@ -468,10 +487,9 @@ if is_tw_stock:
             metrics_df = pd.DataFrame(table_data)
             st.dataframe(metrics_df, use_container_width=True, hide_index=True)
 
-            # --- 區塊 3：全新設計的 X-Y 軸財經科技感散佈圖 ---
+            # --- 區塊 3：X-Y 軸財經科技感散佈圖 ---
             st.markdown("#### 🎯 營運雙核心矩陣 (存貨週轉率 vs 應收帳款週轉次數)")
             
-            # 使用財務最看重的兩個營運指標作為 X 軸與 Y 軸
             x_metric = 'inv_turnover_times' # 存貨週轉率
             y_metric = 'ar_turnover_times'  # 應收帳款週轉次數
             
@@ -523,7 +541,6 @@ if is_tw_stock:
                 font=dict(family="Noto Sans TC")
             )
             
-            # 加上十字基準線 (以產業平均為中心切分象限)
             avg_x = industry_avg.get(x_metric, 0)
             avg_y = industry_avg.get(y_metric, 0)
             
@@ -533,13 +550,61 @@ if is_tw_stock:
                 fig_xy.add_annotation(x=avg_x, y=max([latest_data[p].get(y_metric, 0) for p in all_ids if p in latest_data]), text="業界平均", showarrow=False, font=dict(size=11, color="#94a3b8"), xanchor="left")
             
             st.plotly_chart(fig_xy, use_container_width=True)
-            
             st.caption("右上角象限代表「存貨去化快」且「帳款回收快」，為最佳營運狀態。")
 
+            # --- 區塊 4：新增期間變化趨勢圖 (歷年營運效率) ---
+            st.markdown("#### 📈 歷年營運效率趨勢 (存貨週轉率歷史軌跡)")
+            fig_trend = go.Figure()
+            colors = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6']
+            
+            for idx, pid in enumerate(all_ids):
+                # 抓取該公司的歷史資料並按時間正序排列
+                history_df = fin_df[fin_df['stock_id'] == pid].sort_values('date', ascending=True)
+                if not history_df.empty:
+                    # 排除日期為空值的資料
+                    history_df = history_df.dropna(subset=['date', 'inv_turnover_times'])
+                    if not history_df.empty:
+                        is_target = (pid == str(code))
+                        line_width = 4 if is_target else 2
+                        opacity = 1.0 if is_target else 0.6
+                        
+                        fig_trend.add_trace(go.Scatter(
+                            x=history_df['date'],
+                            y=history_df['inv_turnover_times'],
+                            mode='lines+markers',
+                            name=peer_dict[pid],
+                            line=dict(width=line_width, color=colors[idx % len(colors)]),
+                            opacity=opacity,
+                            hovertemplate="<b>" + peer_dict[pid] + "</b><br>期間: %{x|%Y-%m}<br>存貨週轉率: %{y:.2f}次<extra></extra>"
+                        ))
+
+            fig_trend.update_layout(
+                height=450,
+                plot_bgcolor='#ffffff',
+                paper_bgcolor='#ffffff',
+                margin=dict(l=40, r=40, t=40, b=40),
+                xaxis=dict(
+                    title=dict(text="時間期數", font=dict(size=14, color="#475569")),
+                    gridcolor="#f1f5f9",
+                    tickformat="%Y-%m"
+                ),
+                yaxis=dict(
+                    title=dict(text="存貨週轉率 (次)", font=dict(size=14, color="#475569")),
+                    gridcolor="#f1f5f9",
+                ),
+                legend=dict(
+                    orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5,
+                    font=dict(size=13, color="#1e293b")
+                ),
+                font=dict(family="Noto Sans TC")
+            )
+            
+            st.plotly_chart(fig_trend, use_container_width=True)
+
         else:
-            st.warning("TEJ 資料中尚未找到該公司資訊，請確認上傳檔案是否正確")
+            st.warning("資料中尚未找到該公司資訊，請確認上傳檔案是否正確")
     else:
-        st.info("請先上傳 TEJ 檔案以啟用財務健檢與同業對標分析")
+        st.info("請先上傳財務資料以啟用分析功能")
 
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
-st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：TWSE, Yahoo Finance, TEJ（永久保存）</div>', unsafe_allow_html=True)
+st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：內部財報系統（永久保存）</div>', unsafe_allow_html=True)
