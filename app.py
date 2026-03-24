@@ -52,7 +52,7 @@ def clear_saved_tej_data():
         return True
     return False
 
-# ====================== TEJ 解析（自動判斷三種報表 + 你最新欄位對應） ======================
+# ====================== TEJ 解析（已按照你最新說明全部修正） ======================
 @st.cache_data
 def parse_tej_excel_files(uploaded_files):
     if not uploaded_files:
@@ -63,12 +63,10 @@ def parse_tej_excel_files(uploaded_files):
             dfs = pd.read_excel(uploaded_file, sheet_name=None)
             for sheet_name, df in dfs.items():
                 df = df.copy()
-                
                 col_mapping = {
                     '代號': 'stock_id',
                     '名稱': 'company_name',
                     '年/月': 'date',
-                    # 損益表
                     '營業收入淨額': 'revenue',
                     '營業成本': 'cogs',
                     '營業毛利': 'gross_profit',
@@ -78,11 +76,9 @@ def parse_tej_excel_files(uploaded_files):
                     '淨利': 'net_profit',
                     '每股盈餘(元)': 'eps',
                     'EPS': 'eps',
-                    # 經營能力指標
                     '平均收帳天數': 'ar_days',
                     '平均售貨天數': 'inv_days',
                     '存貨週轉率（次）': 'inv_turnover_times',
-                    # 資產負債表
                     '存貨': 'inventory',
                     '應收帳款及票據': 'ar_notes',
                     '其他應收款': 'ar_other',
@@ -99,22 +95,18 @@ def parse_tej_excel_files(uploaded_files):
                 if 'date' in df.columns:
                     df['date'] = pd.to_datetime(df['date'], errors='coerce')
                 
-                # 單位轉換（千元 → 億元）
                 for col in ['revenue', 'cogs', 'gross_profit', 'pre_tax_profit', 'net_profit', 'inventory', 'ar_notes', 'ar_other', 'total_assets', 'equity']:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors='coerce') / 100000
                 
-                # 應收帳款 = 應收帳款及票據 + 其他應收款
                 if 'ar_notes' in df.columns or 'ar_other' in df.columns:
                     df['ar'] = df.get('ar_notes', 0) + df.get('ar_other', 0)
                 
-                # 毛利率、淨利率
                 if 'revenue' in df.columns and 'gross_profit' in df.columns:
                     df['gross_margin'] = (df['gross_profit'] / df['revenue'] * 100).round(1)
                 if 'revenue' in df.columns and 'net_profit' in df.columns:
                     df['net_margin'] = (df['net_profit'] / df['revenue'] * 100).round(1)
                 
-                # 存貨周轉天數
                 if 'inv_turnover_times' in df.columns:
                     df['inv_days'] = (365 / df['inv_turnover_times']).round(1)
                 
@@ -128,7 +120,6 @@ def parse_tej_excel_files(uploaded_files):
         if sort_cols:
             combined = combined.sort_values(sort_cols, ascending=[True] * len(sort_cols)).reset_index(drop=True)
         
-        # 強制確保所有計算欄位存在
         for col in ['gross_margin', 'net_margin', 'ar', 'inventory']:
             if col not in combined.columns:
                 combined[col] = np.nan
@@ -275,7 +266,7 @@ MACRO_IMPACT = {
     "💱 美元兌台幣": "美元兌台幣匯率為台灣出口企業獲利的重要因素。台幣貶值可使電子代工及紡織業獲得匯兌收益，但會提高進口物價。"
 }
 
-# === 5. 左側選單互動與資料獲取 ===
+# === 5. 左側選單互動與資料獲取（已按照你的要求修改） ===
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
         "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC",
@@ -293,9 +284,9 @@ market_categories = {
 
 with st.sidebar:
     st.header("🎯 戰略監控目標")
-    st.subheader("📤 TEJ 內部資料匯入")
+    st.subheader("📤 數據庫資料匯入")
     st.caption("請上傳三個 TEJ 檔案 — 上傳一次後永久保存")
-    uploaded_files = st.file_uploader("Drag and drop files here", type=["xlsx", "xls"], accept_multiple_files=True, label_visibility="collapsed", help="Limit 200MB per file • XLSX, XLS")
+    uploaded_files = st.file_uploader("檔案上傳路徑", type=["xlsx", "xls"], accept_multiple_files=True, label_visibility="collapsed", help="Limit 200MB per file • XLSX, XLS")
     
     if uploaded_files:
         with st.spinner("🔄 正在解析並永久保存 TEJ 資料..."):
@@ -303,9 +294,7 @@ with st.sidebar:
             if tej_df is not None and not tej_df.empty:
                 st.session_state['tej_data'] = tej_df
                 if save_tej_data(tej_df):
-                    st.success(f"✅ 成功合併 {len(uploaded_files)} 個檔案並永久保存！")
-                companies = ', '.join(tej_df['stock_id'].unique()) if 'stock_id' in tej_df.columns else "已解析"
-                st.caption(f"包含公司：{companies}")
+                    st.success("✅ TEJ 資料已成功上傳並永久保存")
     else:
         if 'tej_data' not in st.session_state:
             saved = load_saved_tej_data()
