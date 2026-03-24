@@ -163,8 +163,6 @@ st.markdown("""
         .main-title { font-size: 2.2rem; font-weight: 800; color: #1e293b; text-align: center; margin: 1rem 0; letter-spacing: 1px;}
         .sub-title { font-size: 1rem; color: #64748b; text-align: center; margin-bottom: 2rem; font-weight: 500;}
         .ai-score-box { background: linear-gradient(135deg, #1e293b, #0f172a); color: white; padding: 20px; border-radius: 12px; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.15);}
-        .strength-box { background: #ffffff; border-left: 5px solid #22c55e; padding: 15px; border-radius: 8px; margin-top:15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);}
-        .weakness-box { background: #ffffff; border-left: 5px solid #ef4444; padding: 15px; border-radius: 8px; margin-top:15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);}
     </style>
 """, unsafe_allow_html=True)
 
@@ -240,7 +238,9 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
         df = ticker.history(period="1d", interval="1m")
         if df.empty:
             df = ticker.history(period="5d", interval="5m")
-            if not df.empty: df = df[df.index.date] == df.index[-1].date()]
+            if not df.empty:
+                # ✅ 已修正：原本缺少 == 導致 unmatched ']'
+                df = df[df.index.date == df.index[-1].date()]
         return df if not df.empty else None
     except: return None
 
@@ -375,7 +375,7 @@ with col1:
 with col2:
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
 
-# === 8. TEJ 財務健檢與同業對標分析（已替換為 AI 設計 XY軸圖表） ===
+# === 8. TEJ 財務健檢與同業對標分析（AI 設計 XY軸圖表） ===
 if is_tw_stock:
     st.divider()
     st.markdown("## 📊 TEJ 財務健檢與同業對標分析")
@@ -457,7 +457,6 @@ if is_tw_stock:
             # ====================== AI 設計 XY軸圖表 ======================
             st.markdown("#### 📊 經營能力綜合評分（快速判斷）")
            
-            # 計算綜合分數（0~100）
             indicators_dict = {
                 'inv_ar_to_equity': {'name': '存貨及應收帳款/淨值', 'better': 'lower'},
                 'ar_turnover_times': {'name': '應收帳款週轉次數', 'better': 'higher'},
@@ -488,7 +487,7 @@ if is_tw_stock:
                             company_score += 10
                         else:
                             weaknesses.append(f"• {info['name']}低於同業")
-                    else:  # lower is better
+                    else:
                         if c_val < p_avg:
                             strengths.append(f"• {info['name']}優於同業")
                             company_score += 10
@@ -497,7 +496,6 @@ if is_tw_stock:
            
             final_score = round((company_score / total_indicators) * 100)
            
-            # ==================== XY軸水平分組長條圖 ====================
             col_chart, col_summary = st.columns([3, 1])
            
             with col_chart:
@@ -510,7 +508,6 @@ if is_tw_stock:
                
                 fig = go.Figure()
                
-                # 遠東新（紅色）
                 fig.add_trace(go.Bar(
                     y=indicator_names,
                     x=company_vals,
@@ -523,7 +520,6 @@ if is_tw_stock:
                     hovertemplate="<b>%{y}</b><br>遠東新: %{x:.2f}<extra></extra>"
                 ))
                
-                # 同業平均（綠色）
                 fig.add_trace(go.Bar(
                     y=indicator_names,
                     x=peer_vals,
@@ -573,7 +569,6 @@ if is_tw_stock:
                     template="plotly_white"
                 )
                
-                # 自動標註優勢/劣勢
                 for i, (c_val, p_val, name) in enumerate(zip(company_vals, peer_vals, indicator_names)):
                     key = categories[i]
                     if (indicators_dict[key]['better'] == 'higher' and c_val > p_val) or \
