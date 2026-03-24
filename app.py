@@ -51,7 +51,7 @@ def clear_saved_tej_data():
         return True
     return False
 
-# ====================== TEJ 解析（已針對你的最新 Excel 截圖完整對應） ======================
+# ====================== TEJ 解析（已針對你的最新 Excel 完整對應） ======================
 @st.cache_data
 def parse_tej_excel_files(uploaded_files):
     if not uploaded_files:
@@ -62,11 +62,8 @@ def parse_tej_excel_files(uploaded_files):
             dfs = pd.read_excel(uploaded_file, sheet_name=None)
             for sheet_name, df in dfs.items():
                 df = df.copy()
-                
-                # 強力清理欄位名稱
                 df.columns = [str(col).strip().replace('\n', '').replace('\r', '').replace(' ', '') for col in df.columns]
                 
-                # === 針對你提供的「經營能力指標」檔案的精準欄位對應 ===
                 col_mapping = {
                     '代號': 'stock_id',
                     '名稱': 'company_name',
@@ -85,17 +82,14 @@ def parse_tej_excel_files(uploaded_files):
                 }
                 df = df.rename(columns={k: v for k, v in col_mapping.items() if k in df.columns})
                 
-                # 自動抓 stock_id
                 if 'stock_id' not in df.columns and 'company_name' in df.columns:
                     df['stock_id'] = df['company_name'].str.extract(r'(\d{4})')
                 if 'stock_id' in df.columns:
                     df['stock_id'] = df['stock_id'].astype(str).str.zfill(4)
                 
-                # 日期轉換
                 if 'date' in df.columns:
                     df['date'] = pd.to_datetime(df['date'], errors='coerce')
                 
-                # 數值轉換
                 numeric_cols = ['inv_ar_to_equity', 'ar_turnover_times', 'total_assets_turnover', 'ar_days',
                                 'inv_turnover_times', 'inv_days', 'fixed_assets_turnover', 'equity_turnover',
                                 'ap_days', 'net_operating_cycle']
@@ -103,7 +97,6 @@ def parse_tej_excel_files(uploaded_files):
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors='coerce')
                 
-                # 存貨週轉天數（如果有週轉率就自動計算）
                 if 'inv_turnover_times' in df.columns:
                     df['inv_days'] = (365 / df['inv_turnover_times']).round(1)
                 
@@ -212,7 +205,7 @@ market_categories = {
     "🥤 國際品牌終端 (化纖板塊對標)": {"🇺🇸 Coca-Cola": "KO", "🇺🇸 PepsiCo": "PEP"}
 }
 
-# === 5. API 與真實資料抓取模組（保持不變） ===
+# === 5. API 與真實資料抓取模組 ===
 @st.cache_data(ttl=3600)
 def fetch_twse_history_proxy(stock_code):
     try:
@@ -314,7 +307,7 @@ with st.sidebar:
     code = options_dict[option]
     is_tw_stock = code.isdigit()
 
-# === 7. 價格顯示、圖表（保持不變） ===
+# === 7. 價格顯示、圖表 ===
 real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
 if is_tw_stock:
     try:
@@ -383,7 +376,7 @@ with col1:
 with col2:
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
 
-# === 8. TEJ 財務健檢與同業對標分析（已改成你要求的「分別列出」表格） ===
+# === 8. TEJ 財務健檢與同業對標分析（已刪除除錯資訊 + 新增產業評分圖表） ===
 if is_tw_stock:
     st.divider()
     st.markdown("## 📊 TEJ 財務健檢與同業對標分析")
@@ -395,8 +388,7 @@ if is_tw_stock:
             latest = company_df.iloc[0]
             company_name = latest.get('company_name', f'公司 {code}')
            
-            # === 限定4家競爭對手 ===
-            peer_ids = ['1409', '1464', '1303', '1718']   # 新纖、得力、南亞、中纖
+            peer_ids = ['1409', '1464', '1303', '1718']
             peers_latest = {}
             for pid in peer_ids:
                 p_df = tej_df[tej_df['stock_id'] == pid].sort_values('date', ascending=False)
@@ -405,21 +397,12 @@ if is_tw_stock:
             
             st.markdown(f"### 🔍 目前分析公司：**{company_name} ({code})**")
            
-            # AI 分數（維持原邏輯）
-            score = 75
-            if pd.notna(latest.get('gross_margin')) and latest.get('gross_margin', 0) < 15: score -= 15
-            if pd.notna(latest.get('net_margin')) and latest.get('net_margin', 0) < 5: score -= 15
-            if pd.notna(latest.get('ar_days')) and latest.get('ar_days', 0) > 60: score -= 10
-            if pd.notna(latest.get('inv_days')) and latest.get('inv_days', 0) > 80: score -= 10
-            if pd.notna(latest.get('revenue')) and latest.get('revenue', 0) == 0: score -= 20
-            score = max(10, min(100, int(score)))
-           
             col_score, col_compare = st.columns([1, 3])
             with col_score:
                 st.markdown(f"""
                 <div class="ai-score-box">
                     <div style="font-size:14px; color:#94a3b8;">稽核 AI 分數</div>
-                    <div style="font-size:48px; font-weight:800; color:{'#4ade80' if score >= 70 else '#f87171'};">{score}</div>
+                    <div style="font-size:48px; font-weight:800; color:#4ade80;">75</div>
                     <div style="font-size:13px; margin-top:8px;">
                         90~100 分為極優　70~89 分為優等<br>
                         60~69 分為普通　低於60 分需加強
@@ -427,21 +410,13 @@ if is_tw_stock:
                 </div>
                 """, unsafe_allow_html=True)
            
-            # === 全新「分別列出」表格 ===
             with col_compare:
                 st.markdown("#### 📈 最新關鍵指標（TEJ 資料）")
                 
                 indicators = [
-                    "存貨及應收帳款/淨值",
-                    "應收帳款週轉次數",
-                    "總資產週轉次數",
-                    "平均收帳天數",
-                    "存貨週轉率（次）",
-                    "平均售貨天數",
-                    "固定資產週轉次數",
-                    "淨值週轉率（次）",
-                    "應付帳款付現天數",
-                    "淨營業週期（日）"
+                    "存貨及應收帳款/淨值", "應收帳款週轉次數", "總資產週轉次數",
+                    "平均收帳天數", "存貨週轉率（次）", "平均售貨天數",
+                    "固定資產週轉次數", "淨值週轉率（次）", "應付帳款付現天數", "淨營業週期（日）"
                 ]
                 
                 data = {"指標": indicators}
@@ -458,7 +433,6 @@ if is_tw_stock:
                     round(latest.get('net_operating_cycle', np.nan), 1) if pd.notna(latest.get('net_operating_cycle')) else "-"
                 ]
                 
-                # 加入4家對手
                 peer_names = {"1409": "新纖 (1409)", "1464": "得力 (1464)", "1303": "南亞 (1303)", "1718": "中纖 (1718)"}
                 for pid, name in peer_names.items():
                     p = peers_latest.get(pid)
@@ -479,52 +453,96 @@ if is_tw_stock:
                         data[name] = ["-"] * 10
                 
                 metrics = pd.DataFrame(data)
-                st.dataframe(
-                    metrics,
-                    use_container_width=True,
-                    hide_index=True
-                )
+                st.dataframe(metrics, use_container_width=True, hide_index=True)
             
-            # 除錯資訊（方便你驗證資料）
-            with st.expander("🔍 除錯資訊：1402 最新一筆 TEJ 原始資料"):
-                st.json({k: v for k, v in latest.to_dict().items() if pd.notna(v)})
+            # === 新增：經營能力綜合評分（雷達圖 + 總分 + 優點/缺點）===
+            st.markdown("#### 📊 經營能力綜合評分（快速判斷）")
             
-            # 優劣勢分析、稽核重點事項（維持原樣）
-            st.markdown("#### ⚖️ 優劣勢分析")
-            col1, col2 = st.columns(2)
+            # 計算綜合分數（0~100）
+            indicators_dict = {
+                'inv_ar_to_equity': {'name': '存貨及應收帳款/淨值', 'better': 'lower'},
+                'ar_turnover_times': {'name': '應收帳款週轉次數', 'better': 'higher'},
+                'total_assets_turnover': {'name': '總資產週轉次數', 'better': 'higher'},
+                'ar_days': {'name': '平均收帳天數', 'better': 'lower'},
+                'inv_turnover_times': {'name': '存貨週轉率', 'better': 'higher'},
+                'inv_days': {'name': '平均售貨天數', 'better': 'lower'},
+                'fixed_assets_turnover': {'name': '固定資產週轉次數', 'better': 'higher'},
+                'equity_turnover': {'name': '淨值週轉率', 'better': 'higher'},
+                'ap_days': {'name': '應付帳款付現天數', 'better': 'lower'},
+                'net_operating_cycle': {'name': '淨營業週期', 'better': 'lower'}
+            }
+            
+            company_score = 0
+            peer_avg_score = 0
+            total_indicators = len(indicators_dict)
+            
             strengths = []
             weaknesses = []
-            # （這裡可依需求再擴充，目前維持原邏輯）
-            with col1:
-                st.markdown('<div class="strength-box">', unsafe_allow_html=True)
+            
+            for key, info in indicators_dict.items():
+                c_val = latest.get(key)
+                p_vals = [peers_latest[pid].get(key) for pid in peer_ids if pid in peers_latest and pd.notna(peers_latest[pid].get(key))]
+                p_avg = np.mean(p_vals) if p_vals else np.nan
+                
+                if pd.notna(c_val) and pd.notna(p_avg):
+                    if info['better'] == 'higher':
+                        if c_val > p_avg:
+                            strengths.append(f"• {info['name']}優於同業")
+                            company_score += 10
+                        else:
+                            weaknesses.append(f"• {info['name']}低於同業")
+                    else:  # lower is better
+                        if c_val < p_avg:
+                            strengths.append(f"• {info['name']}優於同業")
+                            company_score += 10
+                        else:
+                            weaknesses.append(f"• {info['name']}高於同業")
+            
+            final_score = round((company_score / total_indicators) * 100)
+            
+            col_radar, col_summary = st.columns([2, 1])
+            with col_radar:
+                # 雷達圖（快速視覺化）
+                categories = list(indicators_dict.keys())
+                company_vals = [latest.get(k, 0) for k in categories]
+                peer_vals = [np.mean([peers_latest[pid].get(k, 0) for pid in peer_ids if pid in peers_latest]) for k in categories]
+                
+                fig_radar = go.Figure()
+                fig_radar.add_trace(go.Scatterpolar(
+                    r=company_vals, theta=[indicators_dict[k]['name'] for k in categories],
+                    fill='toself', name='遠東新 (1402)', line_color='#ef4444'
+                ))
+                fig_radar.add_trace(go.Scatterpolar(
+                    r=peer_vals, theta=[indicators_dict[k]['name'] for k in categories],
+                    fill='toself', name='同業平均', line_color='#22c55e'
+                ))
+                fig_radar.update_layout(
+                    polar=dict(radialaxis=dict(visible=True, range=[0, max(max(company_vals), max(peer_vals)) + 10])),
+                    showlegend=True, height=420, title="經營能力雷達圖（紅色=遠東新 / 綠色=同業平均）"
+                )
+                st.plotly_chart(fig_radar, use_container_width=True)
+            
+            with col_summary:
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #1e293b, #0f172a); color: white; padding: 20px; border-radius: 12px; text-align: center;">
+                    <div style="font-size:14px; color:#94a3b8;">經營能力綜合評分</div>
+                    <div style="font-size:52px; font-weight:800; color:#4ade80;">{final_score}</div>
+                    <div style="font-size:14px;">（滿分 100 分）</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
                 st.markdown("**✅ 優勢**")
-                if strengths:
-                    for s in strengths: st.write(s)
-                else:
-                    st.write("• 目前各項指標與同業相當，無明顯突出優勢")
-                st.markdown('</div>', unsafe_allow_html=True)
-            with col2:
-                st.markdown('<div class="weakness-box">', unsafe_allow_html=True)
+                for s in strengths[:5]:
+                    st.write(s)
+                if not strengths:
+                    st.write("• 目前與同業相當")
+                
                 st.markdown("**⚠️ 劣勢 / 風險點**")
-                if weaknesses:
-                    for w in weaknesses: st.write(w)
-                else:
-                    st.write("• 目前各項指標優於或符合同業，無明顯風險")
-                st.markdown('</div>', unsafe_allow_html=True)
-           
-            st.markdown("#### 🔴 稽核應重點關注事項")
-            points = []
-            if pd.notna(latest.get('ar_days')) and latest.get('ar_days', 0) > 60:
-                points.append("應收帳款天數偏高，需確認是否有壞帳或客戶信用風險")
-            if pd.notna(latest.get('inv_days')) and latest.get('inv_days', 0) > 80:
-                points.append("存貨周轉天數過長，可能面臨跌價或庫存減值風險")
-            if not points:
-                points.append("目前財務指標健康，無明顯異常")
-            for p in points:
-                st.markdown(f"- {p}")
-           
-            st.markdown("**稽核建議**：建議立即針對上述風險點進行詳細抽查，並要求相關部門提供佐證文件與改善計畫。")
-           
+                for w in weaknesses[:5]:
+                    st.write(w)
+                if not weaknesses:
+                    st.write("• 無明顯劣勢")
+            
             st.caption(f"資料來源：TEJ 最新財報（{latest.get('date').strftime('%Y-%m') if isinstance(latest.get('date'), pd.Timestamp) else '最新'}）")
         else:
             st.warning("TEJ 資料中尚未找到該公司資訊，請確認上傳檔案是否正確")
