@@ -52,7 +52,7 @@ def clear_saved_tej_data():
         return True
     return False
 
-# ====================== TEJ 解析（針對你的三個檔案最佳化） ======================
+# ====================== TEJ 解析（針對你提供的三個檔案完全優化） ======================
 @st.cache_data
 def parse_tej_excel_files(uploaded_files):
     if not uploaded_files:
@@ -73,6 +73,7 @@ def parse_tej_excel_files(uploaded_files):
                     '稅後淨利': 'net_profit',
                     '淨利': 'net_profit',
                     '每股盈餘(元)': 'eps',
+                    'EPS': 'eps',
                     '平均收帳天數': 'ar_days',
                     '平均售貨天數': 'inv_days',
                     '存貨週轉率（次）': 'inv_turnover_times',
@@ -115,7 +116,7 @@ def parse_tej_excel_files(uploaded_files):
 st.set_page_config(page_title="FENC Audit Department | Executive Dashboard", layout="wide", initial_sidebar_state="expanded")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-# === 登入介面 ===
+# === 淺藍系現代化登入介面 ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -160,8 +161,8 @@ st.markdown("""
         .main-title { font-size: 2.2rem; font-weight: 800; color: #1e293b; text-align: center; margin: 1rem 0; letter-spacing: 1px;}
         .sub-title { font-size: 1rem; color: #64748b; text-align: center; margin-bottom: 2rem; font-weight: 500;}
         .ai-score-box { background: linear-gradient(135deg, #1e293b, #0f172a); color: white; padding: 20px; border-radius: 12px; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.15);}
-        .fraud-box-safe { background: #ffffff; border-left: 5px solid #22c55e; padding: 15px; border-radius: 8px; margin-top:15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);}
-        .fraud-box-warn { background: #ffffff; border-left: 5px solid #ef4444; padding: 15px; border-radius: 8px; margin-top:15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);}
+        .strength-box { background: #ffffff; border-left: 5px solid #22c55e; padding: 15px; border-radius: 8px; margin-top:15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);}
+        .weakness-box { background: #ffffff; border-left: 5px solid #ef4444; padding: 15px; border-radius: 8px; margin-top:15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);}
     </style>
 """, unsafe_allow_html=True)
 st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
@@ -205,213 +206,6 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
         return df if not df.empty else None
     except: return None
 
-def generate_8q_labels():
-    now = datetime.now()
-    year = now.year
-    current_q = (now.month - 1) // 3 + 1
-    if current_q == 1:
-        y, q = year - 1, 4
-    else:
-        y, q = year, current_q - 1
-    quarters = []
-    for _ in range(8):
-        quarters.append(f"{y}-Q{q}")
-        q -= 1
-        if q == 0:
-            q = 4
-            y -= 1
-    return quarters
-
-@st.cache_data(ttl=86400)
-def get_resilient_financials(stock_code):
-    try:
-        tk = yf.Ticker(f"{stock_code}.TW")
-        info = tk.info
-        fallback_anchors = {
-            "1402": (2500, 0.18, 0.04, 1.5), "1102": (800, 0.15, 0.08, 2.5),
-            "2606": (140, 0.35, 0.25, 4.0), "4904": (900, 0.38, 0.12, 3.2),
-            "1460": (70, 0.15, 0.02, 0.5), "2903": (300, 0.45, 0.06, 1.2),
-            "1710": (200, 0.10, 0.03, 0.8), "2845": (250, 0.50, 0.15, 1.8)
-        }
-        ttm_rev_raw = info.get('totalRevenue')
-        if ttm_rev_raw and ttm_rev_raw > 0:
-            ttm_rev_b = ttm_rev_raw / 100000000
-            gm = info.get('grossMargins', 0.2)
-            nm = info.get('profitMargins', 0.05)
-            eps_ttm = info.get('trailingEps', 1.0)
-        else:
-            ttm_rev_b, gm, nm, eps_ttm = fallback_anchors.get(stock_code, (100, 0.2, 0.05, 1.0))
-        q_labels = generate_8q_labels()
-        base_q_rev = ttm_rev_b / 4
-        base_q_eps = eps_ttm / 4
-        results = []
-        for q_str in q_labels:
-            rev = base_q_rev * np.random.uniform(0.95, 1.05)
-            gp_margin = gm * 100 * np.random.uniform(0.98, 1.02)
-            net_margin = nm * 100 * np.random.uniform(0.95, 1.05)
-            gp = rev * (gp_margin / 100)
-            net = rev * (net_margin / 100)
-            opex = gp - net
-            eps = base_q_eps * np.random.uniform(0.95, 1.05)
-            health_factor = nm * 100
-            inv_days = 60 * np.random.uniform(0.9, 1.1) / (1 + (health_factor/50))
-            ar_days = 45 * np.random.uniform(0.9, 1.1)
-            results.append({
-                '季度': q_str, '單季營收 (億)': round(rev, 1), '毛利 (億)': round(gp, 1), '毛利率 (%)': round(gp_margin, 1),
-                '營業費用 (億)': round(opex, 1), '淨利 (億)': round(net, 1), '淨利率 (%)': round(net_margin, 1),
-                '單季EPS (元)': round(eps, 2), '存貨周轉天數': round(inv_days, 1), '應收帳款天數': round(ar_days, 1)
-            })
-        df = pd.DataFrame(results)
-        ytd_df = df.copy().iloc[::-1].reset_index(drop=True)
-        ytd_df['年份'] = ytd_df['季度'].str[:4]
-        ytd_df['累計營收 (億)'] = ytd_df.groupby('年份')['單季營收 (億)'].cumsum()
-        ytd_df['累計毛利 (億)'] = ytd_df.groupby('年份')['毛利 (億)'].cumsum()
-        ytd_df['累計淨利 (億)'] = ytd_df.groupby('年份')['淨利 (億)'].cumsum()
-        ytd_df['累計EPS (元)'] = ytd_df.groupby('年份')['單季EPS (元)'].cumsum()
-        ytd_df = ytd_df.iloc[::-1].drop(columns=['年份']).reset_index(drop=True)
-        return df, ytd_df
-    except:
-        return pd.DataFrame(), pd.DataFrame()
-
-# === TEJ 優先財務資料 ===
-@st.cache_data(ttl=3600)
-def get_financials_tej_or_fallback(stock_code, tej_df=None):
-    if tej_df is not None and not tej_df.empty:
-        company_df = tej_df[tej_df['stock_id'] == str(stock_code)]
-        if not company_df.empty:
-            results = []
-            for _, row in company_df.iterrows():
-                rev = float(row.get('revenue', 0))
-                gp = float(row.get('gross_profit', 0))
-                net = float(row.get('net_profit', 0))
-                gm = (gp / rev * 100) if rev > 0 else 20.0
-                nm = (net / rev * 100) if rev > 0 else 8.0
-                results.append({
-                    '季度': row.get('date').strftime('%Y/%m') if isinstance(row.get('date'), pd.Timestamp) else str(row.get('date', 'N/A')),
-                    '單季營收 (億)': round(rev, 1),
-                    '毛利 (億)': round(gp, 1),
-                    '毛利率 (%)': round(gm, 1),
-                    '營業費用 (億)': round(gp - net, 1),
-                    '淨利 (億)': round(net, 1),
-                    '淨利率 (%)': round(nm, 1),
-                    '單季EPS (元)': round(float(row.get('eps', 0.5)), 2),
-                    '存貨周轉天數': round(float(row.get('inv_days', 60)), 1),
-                    '應收帳款天數': round(float(row.get('ar_days', 45)), 1)
-                })
-            df = pd.DataFrame(results)
-            ytd_df = df.copy().iloc[::-1].reset_index(drop=True)
-            ytd_df['年份'] = ytd_df['季度'].str[:4]
-            ytd_df['累計營收 (億)'] = ytd_df.groupby('年份')['單季營收 (億)'].cumsum()
-            ytd_df['累計毛利 (億)'] = ytd_df.groupby('年份')['毛利 (億)'].cumsum()
-            ytd_df['累計淨利 (億)'] = ytd_df.groupby('年份')['淨利 (億)'].cumsum()
-            ytd_df['累計EPS (元)'] = ytd_df.groupby('年份')['單季EPS (元)'].cumsum()
-            ytd_df = ytd_df.iloc[::-1].drop(columns=['年份']).reset_index(drop=True)
-            return df, ytd_df
-    return get_resilient_financials(stock_code)
-
-def calculate_ai_audit_score(df):
-    if len(df) < 2: return 50, "數據不足", "安全"
-    latest = df.iloc[0]
-    prev = df.iloc[1]
-    score = 65
-    trend_notes = []
-    if latest['單季營收 (億)'] > prev['單季營收 (億)']: score += 10; trend_notes.append("✅ 營收動能向上")
-    else: score -= 10; trend_notes.append("⚠️ 營收動能衰退")
-    if latest['毛利率 (%)'] > prev['毛利率 (%)']: score += 15; trend_notes.append("✅ 毛利率擴張")
-    else: score -= 10; trend_notes.append("⚠️ 毛利率壓縮")
-    if latest['存貨周轉天數'] < prev['存貨周轉天數']: score += 10; trend_notes.append("✅ 庫存去化加速")
-    else: score -= 10; trend_notes.append("⚠️ 庫存天數增加")
-    fraud_risk = "🟩 正常 (未見異常財務特徵，應收帳款與存貨水位健康)"
-    rev_growth = latest['單季營收 (億)'] / prev['單季營收 (億)']
-    ar_growth = (latest['應收帳款天數'] * latest['單季營收 (億)']) / (prev['應收帳款天數'] * prev['單季營收 (億)'])
-    dsri = ar_growth / rev_growth if rev_growth > 0 else 1
-    if dsri > 1.2:
-        fraud_risk = f"🟥 高風險警示！應收帳款增速達營收的 {dsri:.1f} 倍，有塞貨或作帳疑慮 (DSRI 異常)。"
-        score -= 20
-    elif (latest['存貨周轉天數'] / prev['存貨周轉天數']) > 1.15:
-        fraud_risk = "🟧 中度警示！存貨周轉天數顯著攀升，資金遭凍結或面臨跌價損失風險。"
-        score -= 10
-    score = max(0, min(100, int(score)))
-    return score, " | ".join(trend_notes), fraud_risk
-
-# === 4. 深度戰略連動註解庫 ===
-MACRO_IMPACT = {
-    "🇹🇼 台灣加權指數": "台灣加權指數為台灣整體經濟及半導體產業景氣的綜合指標。主要與台積電等科技巨頭連動，可作為評估外資資金流向及國內資本市場活力的關鍵參考。",
-    "🇺🇸 S&P 500": "S&P 500 指數涵蓋美國前 500 大企業，代表美國實體經濟的全貌。其涵蓋多樣產業，為全球長期資金配置及美股市場多空趨勢判斷的基準指標。",
-    "🇺🇸 Dow Jones": "道瓊工業指數涵蓋 30 家歷史悠久的美國藍籌企業（涵蓋工業、金融等領域）。有助於評估美國傳統經濟基礎的穩健性，並對傳統企業獲利能力高度敏感。",
-    "🇺🇸 Nasdaq": "納斯達克指數為全球科技創新的領先指標，聚集微軟、蘋果等科技巨頭。直接反映市場對 AI、軟硬體等高科技領域資本支出的成長預期。",
-    "🇺🇸 SOX (費半)": "費城半導體指數為全球半導體產業鏈的核心指標，涵蓋晶片設計至設備製造等環節，可精準預測電子業庫存循環及終端需求趨勢。",
-    "⚠️ VIX 恐慌指數": "VIX 恐慌指數用以衡量市場投資人的恐慌程度。當指數大幅上升時，顯示投資人預期未來市場波動加劇，常伴隨股市下跌，為重要的避險指標。",
-    "🏦 U.S. 10Y Treasury": "美國 10 年期公債殖利率為全球資金定價的無風險基準。殖利率上升會吸引資金離開股市並提高企業融資成本，為評估科技股估值及通膨預期的關鍵指標。",
-    "🥇 黃金": "黃金為市場動盪時的資金避險資產。當通膨失控或地緣政治危機發生時，金價通常上漲，反映市場對法定貨幣的不信任。",
-    "🛢️ WTI 原油": "WTI 原油為實體工業與運輸業的關鍵能源指標。油價上漲會提高全球製造業成本並引發通膨壓力，為評估美國工業活動及通膨趨勢的重要參考。",
-    "🛢️ 布蘭特原油 (Brent)": "布蘭特原油為全球國際貿易的基準油價。對中東衝突及 OPEC+ 減產等事件高度敏感，直接影響歐洲與亞洲的能源成本。",
-    "🔥 天然氣 (Natural Gas)": "天然氣為重工業運轉及冬季供暖的核心能源。價格受極端氣候及地緣政治事件影響顯著，上漲時將衝擊高耗能產業（如石化、水泥）的獲利能力。",
-    "🚢 航運運價指標 (BDRY)": "BDRY 航運運價指數反映全球原物料海上運輸需求。運價上漲表示基礎建設需求強勁，為實體經濟擴張的領先指標。",
-    "₿ 比特幣": "比特幣為數位時代的高風險資產。價格波動劇烈，並與全球過剩資金流向高度相關，為市場投機情緒的領先指標。",
-    "💵 美元指數": "美元指數衡量美元相對於全球主要貨幣的強弱。強勢美元會導致熱錢撤出新興市場（如台灣），雖有利出口業，但會增加進口原物料成本。",
-    "💱 美元兌台幣": "美元兌台幣匯率為台灣出口企業獲利的重要因素。台幣貶值可使電子代工及紡織業獲得匯兌收益，但會提高進口物價。"
-}
-
-INDUSTRY_PEERS = {
-    "1402": {"name": "紡織纖維", "peers": [{"code": "1402", "name": "遠東新"}, {"code": "1476", "name": "儒鴻"}, {"code": "1477", "name": "聚陽"}, {"code": "1440", "name": "南紡"}, {"code": "1444", "name": "力麗"}], "base_inv": 75, "base_ar": 45},
-    "1102": {"name": "水泥工業", "peers": [{"code": "1102", "name": "亞泥"}, {"code": "1101", "name": "台泥"}, {"code": "1103", "name": "嘉泥"}, {"code": "1108", "name": "幸福"}, {"code": "1109", "name": "信大"}], "base_inv": 45, "base_ar": 60},
-    "2606": {"name": "航運業", "peers": [{"code": "2606", "name": "裕民"}, {"code": "2637", "name": "慧洋-KY"}, {"code": "2605", "name": "新興"}, {"code": "2612", "name": "中航"}, {"code": "2617", "name": "台航"}], "base_inv": 15, "base_ar": 30},
-    "4904": {"name": "通信網路", "peers": [{"code": "4904", "name": "遠傳"}, {"code": "2412", "name": "中華電"}, {"code": "3045", "name": "台灣大"}], "base_inv": 20, "base_ar": 35},
-    "2903": {"name": "貿易百貨", "peers": [{"code": "2903", "name": "遠百"}, {"code": "2912", "name": "統一超"}, {"code": "8454", "name": "富邦媒"}, {"code": "5904", "name": "寶雅"}, {"code": "2915", "name": "潤泰全"}], "base_inv": 40, "base_ar": 10},
-    "1460": {"name": "紡織纖維", "peers": [{"code": "1460", "name": "宏遠"}, {"code": "1476", "name": "儒鴻"}, {"code": "1477", "name": "聚陽"}, {"code": "1402", "name": "遠東新"}, {"code": "1444", "name": "力麗"}], "base_inv": 75, "base_ar": 45},
-    "1710": {"name": "化學工業", "peers": [{"code": "1710", "name": "東聯"}, {"code": "1301", "name": "台塑"}, {"code": "1303", "name": "南亞"}, {"code": "1326", "name": "台化"}, {"code": "1722", "name": "台肥"}], "base_inv": 50, "base_ar": 60},
-    "2845": {"name": "金融保險", "peers": [{"code": "2845", "name": "遠東銀"}, {"code": "2881", "name": "富邦金"}, {"code": "2882", "name": "國泰金"}, {"code": "2886", "name": "兆豐金"}, {"code": "2891", "name": "中信金"}], "base_inv": 0, "base_ar": 0}
-}
-
-@st.cache_data(ttl=86400)
-def fetch_peers_ccc_real(peer_info):
-    results = []
-    period_label = "最新單季財報 (FinMind 真實數據)"
-    end_date = datetime.now().strftime('%Y-%m-%d')
-    start_date = (datetime.now() - pd.DateOffset(years=1)).strftime('%Y-%m-%d')
-    fm_url = "https://api.finmindtrade.com/api/v4/data"
-    for p in peer_info['peers']:
-        stock_id = p['code']
-        ar_days = 0
-        inv_days = 0
-        try:
-            params = {"dataset": "TaiwanStockFinancialStatements", "data_id": str(stock_id), "start_date": start_date, "end_date": end_date}
-            res = requests.get(fm_url, params=params, timeout=10)
-            data = res.json()
-            if data.get("msg") == "success" and data.get("data"):
-                df_fm = pd.DataFrame(data["data"])
-                latest_date = df_fm['date'].max()
-                df_latest = df_fm[df_fm['date'] == latest_date]
-                item_dict = dict(zip(df_latest['origin_name'], df_latest['value']))
-                revenue = item_dict.get('營業收入合計', item_dict.get('淨收益', item_dict.get('收益計', 0)))
-                cogs = item_dict.get('營業成本合計', item_dict.get('營業成本', 0))
-                ar = item_dict.get('應收帳款淨額', item_dict.get('應收帳款', 0))
-                inventory = item_dict.get('存貨', item_dict.get('存貨合計', 0))
-                ar_days = (ar * 90 / revenue) if revenue > 0 else 0
-                inv_days = (inventory * 90 / cogs) if cogs > 0 else 0
-        except: pass
-        gm, nm, roe = 0, 0, 0
-        try:
-            tk = yf.Ticker(f"{stock_id}.TW")
-            info = tk.info
-            gm = info.get('grossMargins', 0)
-            nm = info.get('profitMargins', 0)
-            roe = info.get('returnOnEquity', 0)
-        except: pass
-        if peer_info['base_inv'] == 0:
-            inv_days, ar_days = 0, 0
-        results.append({
-            "公司": f"{p['name']} ({stock_id})",
-            "毛利率 (%)": round(gm * 100, 1) if gm else 0,
-            "淨利率 (%)": round(nm * 100, 1) if nm else 0,
-            "ROE (%)": round(roe * 100, 1) if roe else 0,
-            "存貨周轉天數": round(inv_days, 1),
-            "應收帳款天數": round(ar_days, 1)
-        })
-    return pd.DataFrame(results), period_label
-
-# === 5. 繪圖模組 ===
 def plot_daily_k(df):
     if df.empty: return None
     df = df.copy()
@@ -439,7 +233,26 @@ def plot_intraday_line(df):
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     return fig
 
-# === 6. 左側選單互動與資料獲取 ===
+# === 4. 深度戰略連動註解庫 ===
+MACRO_IMPACT = {
+    "🇹🇼 台灣加權指數": "台灣加權指數為台灣整體經濟及半導體產業景氣的綜合指標。主要與台積電等科技巨頭連動，可作為評估外資資金流向及國內資本市場活力的關鍵參考。",
+    "🇺🇸 S&P 500": "S&P 500 指數涵蓋美國前 500 大企業，代表美國實體經濟的全貌。其涵蓋多樣產業，為全球長期資金配置及美股市場多空趨勢判斷的基準指標。",
+    "🇺🇸 Dow Jones": "道瓊工業指數涵蓋 30 家歷史悠久的美國藍籌企業（涵蓋工業、金融等領域）。有助於評估美國傳統經濟基礎的穩健性，並對傳統企業獲利能力高度敏感。",
+    "🇺🇸 Nasdaq": "納斯達克指數為全球科技創新的領先指標，聚集微軟、蘋果等科技巨頭。直接反映市場對 AI、軟硬體等高科技領域資本支出的成長預期。",
+    "🇺🇸 SOX (費半)": "費城半導體指數為全球半導體產業鏈的核心指標，涵蓋晶片設計至設備製造等環節，可精準預測電子業庫存循環及終端需求趨勢。",
+    "⚠️ VIX 恐慌指數": "VIX 恐慌指數用以衡量市場投資人的恐慌程度。當指數大幅上升時，顯示投資人預期未來市場波動加劇，常伴隨股市下跌，為重要的避險指標。",
+    "🏦 U.S. 10Y Treasury": "美國 10 年期公債殖利率為全球資金定價的無風險基準。殖利率上升會吸引資金離開股市並提高企業融資成本，為評估科技股估值及通膨預期的關鍵指標。",
+    "🥇 黃金": "黃金為市場動盪時的資金避險資產。當通膨失控或地緣政治危機發生時，金價通常上漲，反映市場對法定貨幣的不信任。",
+    "🛢️ WTI 原油": "WTI 原油為實體工業與運輸業的關鍵能源指標。油價上漲會提高全球製造業成本並引發通膨壓力，為評估美國工業活動及通膨趨勢的重要參考。",
+    "🛢️ 布蘭特原油 (Brent)": "布蘭特原油為全球國際貿易的基準油價。對中東衝突及 OPEC+ 減產等事件高度敏感，直接影響歐洲與亞洲的能源成本。",
+    "🔥 天然氣 (Natural Gas)": "天然氣為重工業運轉及冬季供暖的核心能源。價格受極端氣候及地緣政治事件影響顯著，上漲時將衝擊高耗能產業（如石化、水泥）的獲利能力。",
+    "🚢 航運運價指標 (BDRY)": "BDRY 航運運價指數反映全球原物料海上運輸需求。運價上漲表示基礎建設需求強勁，為實體經濟擴張的領先指標。",
+    "₿ 比特幣": "比特幣為數位時代的高風險資產。價格波動劇烈，並與全球過剩資金流向高度相關，為市場投機情緒的領先指標。",
+    "💵 美元指數": "美元指數衡量美元相對於全球主要貨幣的強弱。強勢美元會導致熱錢撤出新興市場（如台灣），雖有利出口業，但會增加進口原物料成本。",
+    "💱 美元兌台幣": "美元兌台幣匯率為台灣出口企業獲利的重要因素。台幣貶值可使電子代工及紡織業獲得匯兌收益，但會提高進口物價。"
+}
+
+# === 5. 左側選單互動與資料獲取 ===
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
         "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC",
@@ -491,6 +304,7 @@ with st.sidebar:
     code = options_dict[option]
     is_tw_stock = code.isdigit()
 
+# === 價格顯示、圖表、指標說明 ===
 real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
 if is_tw_stock:
     try:
@@ -558,88 +372,103 @@ with col1:
 with col2:
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
 
-# === 7. 下半部：高階經理人專屬財務戰情室 ===
+# === 全新下半部：TEJ 財務健檢與同業對標分析 ===
 if is_tw_stock:
     st.divider()
-    st.markdown("## 📈 企業基本面與高階戰略解析 (Executive Financials)")
+    st.markdown("## 📊 TEJ 財務健檢與同業對標分析")
     tej_df = st.session_state.get('tej_data', None)
-    df_quarterly, df_ytd = get_financials_tej_or_fallback(code, tej_df)
     
-    if not df_quarterly.empty and len(df_quarterly) >= 2:
-        latest = df_quarterly.iloc[0]
-        st.markdown("### 🤖 稽核 AI 財報健檢與風險偵測 (Audit AI Engine)")
-        ai_score, ai_trend, fraud_risk = calculate_ai_audit_score(df_quarterly)
-        
-        col_ai1, col_ai2 = st.columns([1, 2.5])
-        with col_ai1:
-            st.markdown(f"""<div class="ai-score-box"><div style="font-size:14px; color:#94a3b8;">AI 綜合營運評分</div><div style="font-size:48px; font-weight:800; color:{'#4ade80' if ai_score>=60 else '#f87171'};">{ai_score}</div><div style="font-size:13px;">{ai_trend}</div></div>""", unsafe_allow_html=True)
-        with col_ai2:
-            box_class = "fraud-box-warn" if "警示" in fraud_risk else "fraud-box-safe"
-            st.markdown(f"""<div class="{box_class}"><div style="font-weight:700; margin-bottom:5px; font-size:16px;">⚖️ 財報舞弊與資產品質風險 (Fraud & Asset Quality Risk)</div><div style="font-size:15px;">{fraud_risk}</div><div style="font-size:12px; color:#64748b; margin-top:8px;">*指標說明：嚴格比對應收帳款與存貨周轉效率之異常波動 (參考 Beneish M-Score 模型邏輯)。</div></div>""", unsafe_allow_html=True)
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        c_chart1, c_chart2 = st.columns([1, 1.2])
-        with c_chart1:
-            plot_df = df_quarterly.iloc[::-1]
-            fig1 = make_subplots(specs=[[{"secondary_y": True}]])
-            fig1.add_trace(go.Bar(x=plot_df['季度'], y=plot_df['單季營收 (億)'], name="營收 (億)", marker_color='#CBD5E1'), secondary_y=False)
-            fig1.add_trace(go.Scatter(x=plot_df['季度'], y=plot_df['毛利率 (%)'], name="毛利率 %", mode='lines+markers', line=dict(color='#0F172A', width=3)), secondary_y=True)
-            fig1.add_trace(go.Scatter(x=plot_df['季度'], y=plot_df['淨利率 (%)'], name="淨利率 %", mode='lines+markers', line=dict(color='#3B82F6', width=2)), secondary_y=True)
-            fig1.update_layout(title="<b>📊 營收規模與獲利能力趨勢 (近8季)</b>", height=380, margin=dict(l=0, r=0, t=40, b=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), paper_bgcolor='#ffffff', plot_bgcolor='#ffffff')
-            st.plotly_chart(fig1, use_container_width=True)
-        with c_chart2:
-            fig2 = go.Figure(go.Waterfall(
-                name="20", orientation="v", measure=["relative", "relative", "total", "relative", "total"],
-                x=["營業收入", "營業成本", "毛利", "營業費用/稅等", "本期淨利"], textposition="outside", textfont=dict(size=14),
-                text=[f"{latest['單季營收 (億)']}", f"-{latest['單季營收 (億)'] - latest['毛利 (億)']:.1f}", f"{latest['毛利 (億)']}", f"-{latest['毛利 (億)'] - latest['淨利 (億)']:.1f}", f"{latest['淨利 (億)']}"],
-                y=[latest['單季營收 (億)'], -(latest['單季營收 (億)'] - latest['毛利 (億)']), latest['毛利 (億)'], -(latest['毛利 (億)'] - latest['淨利 (億)']), latest['淨利 (億)']],
-                connector={"line":{"color":"#CBD5E1", "dash": 'dot', "width": 2}}, decreasing={"marker":{"color":"#22c55e"}}, increasing={"marker":{"color":"#ef4444"}}, totals={"marker":{"color":"#1F2937"}}
-            ))
-            fig2.update_layout(title=f"<b>💰 獲利結構拆解 (最新季度: {latest['季度']})</b>", height=380, margin=dict(l=0, r=0, t=50, b=0), paper_bgcolor='#ffffff', plot_bgcolor='#ffffff')
-            st.plotly_chart(fig2, use_container_width=True)
-        
-        if code in INDUSTRY_PEERS:
-            st.markdown("### ⚔️ 產業營運週期對標矩陣 (Cash Conversion Cycle Matrix)")
-            peer_info = INDUSTRY_PEERS[code]
-            st.caption(f"📍 目標賽道：{peer_info['name']} | 分析指標：存貨周轉 vs 應收帳款天數")
-            df_peers_ccc, period_label = fetch_peers_ccc_real(peer_info)
-            if not df_peers_ccc.empty:
-                if peer_info['base_inv'] == 0:
-                    ccc_fig = go.Figure()
-                    ccc_fig.add_trace(go.Bar(x=df_peers_ccc['公司'], y=df_peers_ccc['ROE (%)'], name='ROE (%)', marker_color='#0F172A'))
-                    ccc_fig.update_layout(title="<b>🏦 金融業獲利指標 (ROE)</b>", height=400, paper_bgcolor='#ffffff', plot_bgcolor='#ffffff')
-                else:
-                    ccc_fig = go.Figure()
-                    ccc_fig.add_trace(go.Scatter(
-                        x=df_peers_ccc['應收帳款天數'], y=df_peers_ccc['存貨周轉天數'],
-                        mode='markers+text', text=df_peers_ccc['公司'].str.split(' ').str[0], textposition="top center",
-                        marker=dict(size=25, color=df_peers_ccc['毛利率 (%)'], colorscale='Viridis', showscale=True, colorbar=dict(title="毛利率%")),
-                        hovertemplate="<b>%{text}</b><br>應收帳款天數: %{x}<br>存貨周轉天數: %{y}<br>毛利率: %{marker.color}%<extra></extra>"
-                    ))
-                    ccc_fig.update_layout(
-                        title=f"<b>🎯 營運效率與變現能力矩陣 (資料基準: {period_label})</b>",
-                        xaxis=dict(autorange="reversed", title="應收帳款周轉天數 (天) 👉 右方代表收款極快", showgrid=False),
-                        yaxis=dict(autorange="reversed", title="存貨周轉天數 (天) 👆 上方代表產品熱銷無積壓", showgrid=True, gridcolor='#F1F5F9'),
-                        height=450, margin=dict(l=20, r=20, t=60, b=20), paper_bgcolor='#ffffff', plot_bgcolor='#ffffff',
-                        annotations=[
-                            dict(x=0.95, y=0.95, xref="paper", yref="paper", text="<b>🥇 變現王者</b><br>貨賣得快/錢收得快", showarrow=False, font=dict(color="#10B981")),
-                            dict(x=0.05, y=0.05, xref="paper", yref="paper", text="<b>⚠️ 資金卡死區</b><br>庫存高/被客戶欠款", showarrow=False, font=dict(color="#EF4444"))
-                        ]
-                    )
-                    ccc_fig.add_hline(y=df_peers_ccc['存貨周轉天數'].median(), line_dash="dot", line_color="#94A3B8")
-                    ccc_fig.add_vline(x=df_peers_ccc['應收帳款天數'].median(), line_dash="dot", line_color="#94A3B8")
-                st.plotly_chart(ccc_fig, use_container_width=True)
-        
-        st.markdown("### 📑 核心財務數據矩陣 (2024Q1~2025Q4)")
-        tab1, tab2 = st.tabs(["📊 單季表現 (Quarterly)", "📈 累計表現 (Year-To-Date)"])
-        format_dict = {'單季營收 (億)': '{:,.1f}', '毛利 (億)': '{:,.1f}', '營業費用 (億)': '{:,.1f}', '淨利 (億)': '{:,.1f}', '毛利率 (%)': '{:.1f}%', '淨利率 (%)': '{:.1f}%', '單季EPS (元)': '{:.2f}', '存貨周轉天數': '{:.1f}', '應收帳款天數': '{:.1f}'}
-        with tab1: st.dataframe(df_quarterly.style.format(format_dict), use_container_width=True, height=320)
-        with tab2:
-            ytd_cols = ['季度', '累計營收 (億)', '累計毛利 (億)', '毛利率 (%)', '累計淨利 (億)', '淨利率 (%)', '累計EPS (元)']
-            format_ytd = {'累計營收 (億)': '{:,.1f}', '累計毛利 (億)': '{:,.1f}', '累計淨利 (億)': '{:,.1f}', '毛利率 (%)': '{:.1f}%', '淨利率 (%)': '{:.1f}%', '累計EPS (元)': '{:.2f}'}
-            st.dataframe(df_ytd[ytd_cols].style.format(format_ytd), use_container_width=True, height=320)
-    else: st.warning("⚠️ 系統連線異常，請重新整理頁面。")
+    if tej_df is not None and not tej_df.empty:
+        company_df = tej_df[tej_df['stock_id'] == str(code)].sort_values('date', ascending=False)
+        if not company_df.empty:
+            latest = company_df.iloc[0]
+            company_name = latest.get('company_name', f'公司 {code}')
+            
+            # 找出同業（TEJ 檔案中其他公司）
+            peers_df = tej_df[tej_df['stock_id'] != str(code)].sort_values('date', ascending=False)
+            peer_latest = peers_df.groupby('stock_id').first()
+            
+            st.markdown(f"### 🔍 目前分析公司：**{company_name} ({code})**")
+            
+            # 稽核 AI 分數（基於 TEJ 真實數據）
+            score = 75
+            if latest.get('gross_margin', 0) < 15: score -= 15
+            if latest.get('net_margin', 0) < 5: score -= 15
+            if latest.get('ar_days', 0) > 60: score -= 10
+            if latest.get('inv_days', 0) > 80: score -= 10
+            if latest.get('revenue', 0) == 0: score -= 20
+            score = max(10, min(100, int(score)))
+            
+            col_score, col_compare = st.columns([1, 3])
+            with col_score:
+                st.markdown(f"""
+                <div class="ai-score-box">
+                    <div style="font-size:14px; color:#94a3b8;">稽核 AI 分數</div>
+                    <div style="font-size:48px; font-weight:800; color:{'#4ade80' if score >= 70 else '#f87171'};">{score}</div>
+                    <div style="font-size:13px;">基於 TEJ 最新財報</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col_compare:
+                st.markdown("#### 📈 最新關鍵指標")
+                metrics = pd.DataFrame({
+                    "指標": ["單季營收 (億)", "毛利率 (%)", "淨利率 (%)", "存貨周轉天數", "應收帳款天數"],
+                    "本公司": [
+                        round(latest.get('revenue', 0), 1),
+                        round(latest.get('gross_margin', 0), 1),
+                        round(latest.get('net_margin', 0), 1),
+                        round(latest.get('inv_days', 0), 1),
+                        round(latest.get('ar_days', 0), 1)
+                    ],
+                    "同業平均": [
+                        round(peer_latest['revenue'].mean(), 1),
+                        round(peer_latest['gross_margin'].mean(), 1),
+                        round(peer_latest['net_margin'].mean(), 1),
+                        round(peer_latest['inv_days'].mean(), 1),
+                        round(peer_latest['ar_days'].mean(), 1)
+                    ]
+                })
+                st.dataframe(metrics.style.format({"本公司": "{:.1f}", "同業平均": "{:.1f}"}), use_container_width=True, hide_index=True)
+            
+            # 優劣勢分析
+            st.markdown("#### ⚖️ 優劣勢分析")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown('<div class="strength-box">', unsafe_allow_html=True)
+                st.markdown("**✅ 優勢**")
+                if latest.get('gross_margin', 0) > peer_latest['gross_margin'].mean():
+                    st.write("• 毛利率高於同業，產品競爭力強")
+                if latest.get('ar_days', 0) < peer_latest['ar_days'].mean():
+                    st.write("• 應收帳款回收速度快，現金流健康")
+                st.markdown('</div>', unsafe_allow_html=True)
+            with col2:
+                st.markdown('<div class="weakness-box">', unsafe_allow_html=True)
+                st.markdown("**⚠️ 劣勢 / 風險點**")
+                if latest.get('inv_days', 0) > peer_latest['inv_days'].mean():
+                    st.write("• 存貨周轉天數高於同業，可能有滯銷風險")
+                if latest.get('net_margin', 0) < peer_latest['net_margin'].mean():
+                    st.write("• 淨利率低於同業，成本控制需加強")
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            # 稽核應關注重點
+            st.markdown("#### 🔴 稽核應重點關注事項")
+            points = []
+            if latest.get('ar_days', 0) > 60:
+                points.append("應收帳款天數偏高，需確認是否有壞帳或客戶信用風險")
+            if latest.get('inv_days', 0) > 80:
+                points.append("存貨周轉天數過長，可能面臨跌價或庫存減值風險")
+            if latest.get('gross_margin', 0) < 15:
+                points.append("毛利率偏低，毛利結構需檢討")
+            if not points:
+                points.append("目前財務指標健康，無明顯異常")
+            for p in points:
+                st.markdown(f"- {p}")
+            
+            st.caption(f"資料來源：TEJ 最新財報（{latest.get('date').strftime('%Y-%m') if isinstance(latest.get('date'), pd.Timestamp) else '最新'}）")
+        else:
+            st.warning("TEJ 資料中尚未找到該公司資訊，請確認上傳檔案是否正確")
+    else:
+        st.info("請先上傳 TEJ 檔案以啟用財務健檢與同業對標分析")
 
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
-st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：TWSE, Yahoo Finance, FinMind, TEJ（永久保存）</div>', unsafe_allow_html=True)
+st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：TWSE, Yahoo Finance, TEJ（永久保存）</div>', unsafe_allow_html=True)
