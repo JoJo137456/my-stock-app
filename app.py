@@ -52,7 +52,7 @@ def clear_saved_tej_data():
         return True
     return False
 
-# ====================== TEJ 解析（針對你提供的三個檔案完全優化） ======================
+# ====================== TEJ 解析（自動判斷三種報表 + 你最新欄位對應） ======================
 @st.cache_data
 def parse_tej_excel_files(uploaded_files):
     if not uploaded_files:
@@ -63,20 +63,31 @@ def parse_tej_excel_files(uploaded_files):
             dfs = pd.read_excel(uploaded_file, sheet_name=None)
             for sheet_name, df in dfs.items():
                 df = df.copy()
+                
                 col_mapping = {
                     '代號': 'stock_id',
                     '名稱': 'company_name',
                     '年/月': 'date',
+                    # 損益表
                     '營業收入淨額': 'revenue',
-                    '營收－租金收入': 'revenue',
+                    '營業成本': 'cogs',
                     '營業毛利': 'gross_profit',
+                    '稅前息前淨利': 'pre_tax_profit',
+                    '常續性稅後淨利': 'net_profit',
                     '稅後淨利': 'net_profit',
                     '淨利': 'net_profit',
                     '每股盈餘(元)': 'eps',
                     'EPS': 'eps',
+                    # 經營能力指標
                     '平均收帳天數': 'ar_days',
                     '平均售貨天數': 'inv_days',
                     '存貨週轉率（次）': 'inv_turnover_times',
+                    # 資產負債表
+                    '存貨': 'inventory',
+                    '應收帳款及票據': 'ar_notes',
+                    '其他應收款': 'ar_other',
+                    '資產總額': 'total_assets',
+                    '股東權益總額': 'equity',
                 }
                 df = df.rename(columns={k: v for k, v in col_mapping.items() if k in df.columns})
                 
@@ -88,16 +99,23 @@ def parse_tej_excel_files(uploaded_files):
                 if 'date' in df.columns:
                     df['date'] = pd.to_datetime(df['date'], errors='coerce')
                 
-                for col in ['revenue', 'gross_profit', 'net_profit']:
+                # 單位轉換（千元 → 億元）
+                for col in ['revenue', 'cogs', 'gross_profit', 'pre_tax_profit', 'net_profit', 'inventory', 'ar_notes', 'ar_other', 'total_assets', 'equity']:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors='coerce') / 100000
                 
+                # 應收帳款 = 應收帳款及票據 + 其他應收款
+                if 'ar_notes' in df.columns or 'ar_other' in df.columns:
+                    df['ar'] = df.get('ar_notes', 0) + df.get('ar_other', 0)
+                
+                # 毛利率、淨利率
                 if 'revenue' in df.columns and 'gross_profit' in df.columns:
                     df['gross_margin'] = (df['gross_profit'] / df['revenue'] * 100).round(1)
                 if 'revenue' in df.columns and 'net_profit' in df.columns:
                     df['net_margin'] = (df['net_profit'] / df['revenue'] * 100).round(1)
                 
-                if 'inv_turnover_times' in df.columns and 'inv_days' not in df.columns:
+                # 存貨周轉天數
+                if 'inv_turnover_times' in df.columns:
                     df['inv_days'] = (365 / df['inv_turnover_times']).round(1)
                 
                 all_dfs.append(df)
@@ -109,6 +127,11 @@ def parse_tej_excel_files(uploaded_files):
         sort_cols = [col for col in ['stock_id', 'date'] if col in combined.columns]
         if sort_cols:
             combined = combined.sort_values(sort_cols, ascending=[True] * len(sort_cols)).reset_index(drop=True)
+        
+        # 強制確保所有計算欄位存在
+        for col in ['gross_margin', 'net_margin', 'ar', 'inventory']:
+            if col not in combined.columns:
+                combined[col] = np.nan
         return combined
     return None
 
@@ -116,7 +139,7 @@ def parse_tej_excel_files(uploaded_files):
 st.set_page_config(page_title="FENC Audit Department | Executive Dashboard", layout="wide", initial_sidebar_state="expanded")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-# === 淺藍系現代化登入介面 ===
+# === 登入介面 ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -384,13 +407,11 @@ if is_tw_stock:
             latest = company_df.iloc[0]
             company_name = latest.get('company_name', f'公司 {code}')
             
-            # 找出同業（TEJ 檔案中其他公司）
             peers_df = tej_df[tej_df['stock_id'] != str(code)].sort_values('date', ascending=False)
             peer_latest = peers_df.groupby('stock_id').first()
             
             st.markdown(f"### 🔍 目前分析公司：**{company_name} ({code})**")
             
-            # 稽核 AI 分數（基於 TEJ 真實數據）
             score = 75
             if latest.get('gross_margin', 0) < 15: score -= 15
             if latest.get('net_margin', 0) < 5: score -= 15
@@ -413,44 +434,30 @@ if is_tw_stock:
                 st.markdown("#### 📈 最新關鍵指標")
                 metrics = pd.DataFrame({
                     "指標": ["單季營收 (億)", "毛利率 (%)", "淨利率 (%)", "存貨周轉天數", "應收帳款天數"],
-                    "本公司": [
-                        round(latest.get('revenue', 0), 1),
-                        round(latest.get('gross_margin', 0), 1),
-                        round(latest.get('net_margin', 0), 1),
-                        round(latest.get('inv_days', 0), 1),
-                        round(latest.get('ar_days', 0), 1)
-                    ],
-                    "同業平均": [
-                        round(peer_latest['revenue'].mean(), 1),
-                        round(peer_latest['gross_margin'].mean(), 1),
-                        round(peer_latest['net_margin'].mean(), 1),
-                        round(peer_latest['inv_days'].mean(), 1),
-                        round(peer_latest['ar_days'].mean(), 1)
-                    ]
+                    "本公司": [round(latest.get('revenue', 0), 1), round(latest.get('gross_margin', 0), 1), round(latest.get('net_margin', 0), 1), round(latest.get('inv_days', 0), 1), round(latest.get('ar_days', 0), 1)],
+                    "同業平均": [round(peer_latest.get('revenue', pd.Series([0])).mean(), 1), round(peer_latest.get('gross_margin', pd.Series([0])).mean(), 1), round(peer_latest.get('net_margin', pd.Series([0])).mean(), 1), round(peer_latest.get('inv_days', pd.Series([0])).mean(), 1), round(peer_latest.get('ar_days', pd.Series([0])).mean(), 1)]
                 })
                 st.dataframe(metrics.style.format({"本公司": "{:.1f}", "同業平均": "{:.1f}"}), use_container_width=True, hide_index=True)
             
-            # 優劣勢分析
             st.markdown("#### ⚖️ 優劣勢分析")
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown('<div class="strength-box">', unsafe_allow_html=True)
                 st.markdown("**✅ 優勢**")
-                if latest.get('gross_margin', 0) > peer_latest['gross_margin'].mean():
+                if latest.get('gross_margin', 0) > peer_latest.get('gross_margin', pd.Series([0])).mean():
                     st.write("• 毛利率高於同業，產品競爭力強")
-                if latest.get('ar_days', 0) < peer_latest['ar_days'].mean():
+                if latest.get('ar_days', 0) < peer_latest.get('ar_days', pd.Series([0])).mean():
                     st.write("• 應收帳款回收速度快，現金流健康")
                 st.markdown('</div>', unsafe_allow_html=True)
             with col2:
                 st.markdown('<div class="weakness-box">', unsafe_allow_html=True)
                 st.markdown("**⚠️ 劣勢 / 風險點**")
-                if latest.get('inv_days', 0) > peer_latest['inv_days'].mean():
+                if latest.get('inv_days', 0) > peer_latest.get('inv_days', pd.Series([0])).mean():
                     st.write("• 存貨周轉天數高於同業，可能有滯銷風險")
-                if latest.get('net_margin', 0) < peer_latest['net_margin'].mean():
+                if latest.get('net_margin', 0) < peer_latest.get('net_margin', pd.Series([0])).mean():
                     st.write("• 淨利率低於同業，成本控制需加強")
                 st.markdown('</div>', unsafe_allow_html=True)
             
-            # 稽核應關注重點
             st.markdown("#### 🔴 稽核應重點關注事項")
             points = []
             if latest.get('ar_days', 0) > 60:
