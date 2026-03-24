@@ -156,7 +156,7 @@ def check_password():
 if not check_password():
     st.stop()
 
-# === 2. 核心 UI 樣式與 CSS 注入 (隱藏預設文字) ===
+# === 2. 核心 UI 樣式與 CSS 注入 (恢復白底乾淨專業版) ===
 st.markdown("""
     <style>
         html, body, [class*="css"] { font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif !important; }
@@ -187,35 +187,18 @@ st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div 
 MACRO_IMPACT = {
     "🇹🇼 台灣加權指數": "台灣加權指數為台灣整體經濟及半導體產業景氣的綜合指標。主要與台積電等科技巨頭連動，可作為評估外資資金流向及國內資本市場活力的關鍵參考。",
     "🇺🇸 S&P 500": "S&P 500 指數涵蓋美國前 500 大企業，代表美國實體經濟的全貌。其涵蓋多樣產業，為全球長期資金配置及美股市場多空趨勢判斷的基準指標。",
-    "🇺🇸 Dow Jones": "道瓊工業指數涵蓋 30 家歷史悠久的美國藍籌企業（涵蓋工業、金融等領域）。有助於評估美國傳統經濟基礎的穩健性，並對傳統企業獲利能力高度敏感。",
-    "🇺🇸 Nasdaq": "納斯達克指數為全球科技創新的領先指標，聚集微軟、蘋果等科技巨頭。直接反映市場對 AI、軟硬體等高科技領域資本支出的成長預期。",
-    "🇺🇸 SOX (費半)": "費城半導體指數為全球半導體產業鏈的核心指標，涵蓋晶片設計至設備製造等環節，可精準預測電子業庫存循環及終端需求趨勢。",
-    "⚠️ VIX 恐慌指數": "VIX 恐慌指數用以衡量市場投資人的恐慌程度。當指數大幅上升時，顯示投資人預期未來市場波動加劇，常伴隨股市下跌，為重要的避險指標。",
-    "🏦 U.S. 10Y Treasury": "美國 10 年期公債殖利率為全球資金定價的無風險基準。殖利率上升會吸引資金離開股市並提高企業融資成本，為評估科技股估值及通膨預期的關鍵指標。",
-    "🥇 黃金": "黃金為市場動盪時的資金避險資產。當通膨失控或地緣政治危機發生時，金價通常上漲，反映市場對法定貨幣的不信任。",
-    "🛢️ WTI 原油": "WTI 原油為實體工業與運輸業的關鍵能源指標。油價上漲會提高全球製造業成本並引發通膨壓力，為評估美國工業活動及通膨趨勢的重要參考。",
-    "🛢️ 布蘭特原油 (Brent)": "布蘭特原油為全球國際貿易的基準油價。對中東衝突及 OPEC+ 減產等事件高度敏感，直接影響歐洲與亞洲的能源成本。",
-    "🔥 天然氣 (Natural Gas)": "天然氣為重工業運轉及冬季供暖的核心能源。價格受極端氣候及地緣政治事件影響顯著，上漲時將衝擊高耗能產業（如石化、水泥）的獲利能力。",
-    "🚢 航運運價指標 (BDRY)": "BDRY 航運運價指數反映全球原物料海上運輸需求。運價上漲表示基礎建設需求強勁，為實體經濟擴張的領先指標。",
-    "₿ 比特幣": "比特幣為數位時代的高風險資產。價格波動劇烈，並與全球過剩資金流向高度相關，為市場投機情緒的領先指標。",
-    "💵 美元指數": "美元指數衡量美元相對於全球主要貨幣的強弱。強勢美元會導致熱錢撤出新興市場（如台灣），雖有利出口業，但會增加進口原物料成本。",
-    "💱 美元兌台幣": "美元兌台幣匯率為台灣出口企業獲利的重要因素。台幣貶值可使電子代工及紡織業獲得匯兌收益，但會提高進口物價。"
+    "🇺🇸 SOX (費半)": "費城半導體指數為全球半導體產業鏈的核心指標，涵蓋晶片設計至設備製造等環節，可精準預測電子業庫存循環及終端需求趨勢。"
 }
 
 # === 4. 板塊分類字典 ===
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
-        "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC",
-        "🇺🇸 SOX (費半)": "^SOX", "⚠️ VIX 恐慌指數": "^VIX", "🏦 U.S. 10Y Treasury": "^TNX", "🥇 黃金": "GC=F",
-        "🛢️ WTI 原油": "CL=F", "🛢️ 布蘭特原油 (Brent)": "BZ=F", "🔥 天然氣 (Natural Gas)": "NG=F",
-        "🚢 航運運價指標 (BDRY)": "BDRY", "₿ 比特幣": "BTC-USD", "💵 美元指數": "DX-Y.NYB", "💱 美元兌台幣": "TWD=X"
+        "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 SOX (費半)": "^SOX"
     },
     "🏢 遠東集團核心事業體": {
         "👕 1402 遠東新": "1402", "🏗️ 1102 亞泥": "1102", "🚢 2606 裕民": "2606", "🧵 1460 宏遠": "1460",
         "🛍️ 2903 遠百": "2903", "📱 4904 遠傳": "4904", "🧪 1710 東聯": "1710", "🏦 2845 遠東銀": "2845"
-    },
-    "👟 國際品牌終端 (紡織板塊對標)": {"🇺🇸 Nike": "NKE", "🇺🇸 Under Armour": "UAA", "🇺🇸 Lululemon": "LULU"},
-    "🥤 國際品牌終端 (化纖板塊對標)": {"🇺🇸 Coca-Cola": "KO", "🇺🇸 PepsiCo": "PEP"}
+    }
 }
 
 # === 5. API 與真實資料抓取模組 ===
@@ -371,24 +354,13 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
-    exp_text = MACRO_IMPACT[option]
-    html_payload = f"""
-    <div style="background-color: #ffffff; padding: 20px 25px; border-radius: 8px; border-left: 5px solid #3b82f6; margin-top: 10px; margin-bottom: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
-        <div style="font-size: 16px; color: #1e293b; line-height: 1.8; font-weight: 500; text-align: justify;">
-            {exp_text}
-        </div>
-    </div>
-    """
-    st.markdown(html_payload.replace('\n', ''), unsafe_allow_html=True)
-
 col1, col2 = st.columns([1, 1])
 with col1:
     if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
 with col2:
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
 
-# === 8. 財務健檢與同業對標分析（含去識別化、趨勢重構） ===
+# === 8. 財務健檢與同業對標分析（含去識別化、群組柱狀圖重構） ===
 if is_tw_stock:
     st.divider()
     
@@ -397,6 +369,7 @@ if is_tw_stock:
     if fin_df is not None and not fin_df.empty:
         peer_dict = {'1402': '遠東新', '1409': '新纖', '1464': '得力', '1303': '南亞', '1718': '中纖'}
         all_ids = list(peer_dict.keys())
+        peer_ids = [pid for pid in all_ids if pid != str(code)] # 競爭對手清單
         
         latest_data = {}
         data_date_str = "最新期數"
@@ -414,8 +387,7 @@ if is_tw_stock:
 
         if str(code) in latest_data:
             current_company_name = peer_dict.get(str(code), f"公司 {code}")
-            st.markdown(f"### 🔍 目前分析主體：**{current_company_name} ({code})**")
-
+            
             indicators_dict = {
                 'inv_ar_to_equity': {'name': '存貨及應收帳款/淨值', 'better': 'lower'},
                 'ar_turnover_times': {'name': '應收帳款週轉次數', 'better': 'higher'},
@@ -481,73 +453,9 @@ if is_tw_stock:
             metrics_df = pd.DataFrame(table_data)
             st.dataframe(metrics_df, use_container_width=True, hide_index=True)
 
-            # --- 區塊 3：X-Y 軸財經科技感散佈圖 ---
-            st.markdown("#### 🎯 營運雙核心矩陣 (存貨週轉率 vs 應收帳款週轉次數)")
-            x_metric = 'inv_turnover_times'
-            y_metric = 'ar_turnover_times'
-            
-            fig_xy = go.Figure()
-            
-            for pid in all_ids:
-                if pid in latest_data:
-                    data = latest_data[pid]
-                    x_val = data.get(x_metric, np.nan)
-                    y_val = data.get(y_metric, np.nan)
-                    
-                    if pd.notna(x_val) and pd.notna(y_val):
-                        is_target = (pid == str(code))
-                        fig_xy.add_trace(go.Scatter(
-                            x=[x_val],
-                            y=[y_val],
-                            mode='markers+text',
-                            name=peer_dict[pid],
-                            text=[peer_dict[pid]],
-                            textposition="top center",
-                            textfont=dict(size=14, color="#1e293b" if not is_target else "#ef4444", weight="bold" if is_target else "normal"),
-                            marker=dict(
-                                size=24 if is_target else 18,
-                                color='#ef4444' if is_target else '#94a3b8',
-                                line=dict(width=2, color='white'),
-                                opacity=0.9
-                            ),
-                            hovertemplate=f"<b>{peer_dict[pid]}</b><br>存貨週轉率: %{{x:.2f}}<br>應收帳款週轉: %{{y:.2f}}<extra></extra>"
-                        ))
-
-            fig_xy.update_layout(
-                height=500,
-                plot_bgcolor='#f8fafc',
-                paper_bgcolor='#ffffff',
-                margin=dict(l=40, r=40, t=40, b=40),
-                xaxis=dict(
-                    title=dict(text="存貨週轉率 (次) ➔ 越高越好", font=dict(size=14, color="#475569")),
-                    gridcolor="white",
-                    zerolinecolor="#cbd5e1",
-                    zerolinewidth=2
-                ),
-                yaxis=dict(
-                    title=dict(text="應收帳款週轉次數 (次) ➔ 越高越好", font=dict(size=14, color="#475569")),
-                    gridcolor="white",
-                    zerolinecolor="#cbd5e1",
-                    zerolinewidth=2
-                ),
-                showlegend=False,
-                font=dict(family="Noto Sans TC")
-            )
-            
-            avg_x = industry_avg.get(x_metric, 0)
-            avg_y = industry_avg.get(y_metric, 0)
-            
-            if pd.notna(avg_x) and pd.notna(avg_y):
-                fig_xy.add_vline(x=avg_x, line_width=1, line_dash="dash", line_color="#94a3b8")
-                fig_xy.add_hline(y=avg_y, line_width=1, line_dash="dash", line_color="#94a3b8")
-                fig_xy.add_annotation(x=avg_x, y=max([latest_data[p].get(y_metric, 0) for p in all_ids if p in latest_data]), text="業界平均", showarrow=False, font=dict(size=11, color="#94a3b8"), xanchor="left")
-            
-            st.plotly_chart(fig_xy, use_container_width=True)
-            st.caption("右上角象限代表「存貨去化快」且「帳款回收快」，為最佳營運狀態。")
-
-            # === 區塊 4：酷炫猛！動能戰略對標面板 (取代混亂的折線圖) ===
-            st.markdown("#### 🚀 核心指標戰略對標與成長動能")
-            st.markdown("<p style='color:#64748b; font-size:14px; margin-top:-10px;'>放棄雜亂線條，直擊當前排名與最新一期成長動能 (MoM/QoQ)</p>", unsafe_allow_html=True)
+            # === 區塊 3：全新設計 8 季動能群組柱狀圖 (極簡白淨版) ===
+            st.markdown("#### 📈 歷年營運效率趨勢對標 (近 8 季)")
+            st.markdown("<p style='color:#64748b; font-size:14px; margin-top:-10px;'>清晰呈現標的公司與同業平均之差距，並結合逐季成長動能 (QoQ / MoM)</p>", unsafe_allow_html=True)
             
             trend_metric = st.selectbox(
                 "請選擇要深入剖析的戰略指標", 
@@ -555,104 +463,93 @@ if is_tw_stock:
                 format_func=lambda x: indicators_dict[x]['name'],
                 index=4 
             )
+
+            # 1. 整理目標公司 (遠東新) 近 8 期的歷史資料
+            fenc_df = fin_df[fin_df['stock_id'] == str(code)].sort_values('date', ascending=True).dropna(subset=['date', trend_metric])
             
-            is_higher_better = indicators_dict[trend_metric]['better'] == 'higher'
+            # 2. 整理競爭對手同業平均歷史資料
+            peer_df = fin_df[fin_df['stock_id'].isin(peer_ids)].dropna(subset=['date', trend_metric])
+            peer_avg_df = peer_df.groupby('date')[trend_metric].mean().reset_index()
+            peer_avg_df.rename(columns={trend_metric: 'peer_avg'}, inplace=True)
             
-            # 準備數據：抓取最新一期與前一期計算動能 (Delta)
-            momentum_data = []
-            for pid in all_ids:
-                history_df = fin_df[fin_df['stock_id'] == pid].sort_values('date', ascending=True)
-                if not history_df.empty:
-                    history_df = history_df.dropna(subset=['date', trend_metric])
-                    if len(history_df) >= 1:
-                        curr_val = history_df.iloc[-1][trend_metric]
-                        prev_val = history_df.iloc[-2][trend_metric] if len(history_df) >= 2 else curr_val
-                        delta = curr_val - prev_val
-                        momentum_data.append({
-                            'pid': pid, 
-                            'name': peer_dict[pid], 
-                            'val': curr_val, 
-                            'delta': delta
-                        })
+            # 3. 合併資料並取最近 8 季
+            merged_df = pd.merge(fenc_df[['date', trend_metric]], peer_avg_df, on='date', how='inner')
+            merged_df = merged_df.tail(8).reset_index(drop=True)
             
-            if momentum_data:
-                # 排序邏輯：讓表現最好的排在最上面 (Plotly 的 bar 是從下往上畫，所以我們要遞增排序)
-                momentum_data.sort(key=lambda x: x['val'], reverse=not is_higher_better)
+            if not merged_df.empty:
+                # 計算遠東新的百分比變動 (QoQ / MoM)
+                merged_df['pct_change'] = merged_df[trend_metric].pct_change() * 100
                 
-                names_sorted = [d['name'] for d in momentum_data]
-                vals_sorted = [d['val'] for d in momentum_data]
-                deltas_sorted = [d['delta'] for d in momentum_data]
-                
-                # 設定顏色：目標公司用發光質感的科技藍或亮紅
-                bar_colors = []
-                for d in momentum_data:
-                    if d['pid'] == str(code):
-                        bar_colors.append('#38bdf8') # 目標公司：高亮科技藍
+                # 構建帶有 HTML 色彩標籤的標註文字
+                text_annotations = []
+                for idx, row in merged_df.iterrows():
+                    val = row[trend_metric]
+                    pct = row['pct_change']
+                    if pd.isna(pct):
+                        text_annotations.append(f"{val:.2f}")
+                    elif pct > 0:
+                        text_annotations.append(f"{val:.2f}<br><span style='color:#10b981; font-size:12px;'>▲ +{pct:.1f}%</span>")
+                    elif pct < 0:
+                        text_annotations.append(f"{val:.2f}<br><span style='color:#ef4444; font-size:12px;'>▼ {pct:.1f}%</span>")
                     else:
-                        bar_colors.append('#1e293b') # 其他公司：沉穩深灰
+                        text_annotations.append(f"{val:.2f}<br><span style='color:#94a3b8; font-size:12px;'>持平</span>")
                 
-                fig_bar = go.Figure()
+                # 格式化 X 軸日期顯示
+                x_labels = merged_df['date'].dt.strftime('%Y-%m')
                 
-                # 繪製水平長條圖
-                fig_bar.add_trace(go.Bar(
-                    x=vals_sorted,
-                    y=names_sorted,
-                    orientation='h',
-                    marker=dict(
-                        color=bar_colors,
-                        line=dict(color='#0f172a', width=1)
-                    ),
-                    text=[f"{v:.2f}" for v in vals_sorted],
-                    textposition='inside',
-                    insidetextanchor='end',
-                    textfont=dict(color='white', size=16, weight='bold'),
-                    hovertemplate="%{y}<br>數值: %{x:.2f}<extra></extra>"
+                fig_trend = go.Figure()
+                
+                # 添加目標公司柱狀圖 (紅色系)
+                fig_trend.add_trace(go.Bar(
+                    x=x_labels,
+                    y=merged_df[trend_metric],
+                    name=current_company_name,
+                    marker_color='#ef4444',
+                    text=text_annotations,
+                    textposition='outside',
+                    textfont=dict(size=14, color='#0f172a'),
+                    hovertemplate="<b>%{x}</b><br>" + current_company_name + ": %{y:.2f}<extra></extra>"
                 ))
                 
-                # 在長條圖右側動態標註「動能 (Delta)」
-                max_val = max(vals_sorted) if vals_sorted else 1
-                for i, d in enumerate(momentum_data):
-                    delta = d['delta']
-                    # 判斷動能顏色 (看指標性質)
-                    if delta > 0:
-                        delta_color = "#22c55e" if is_higher_better else "#ef4444"
-                        delta_text = f"▲ +{delta:.2f}"
-                    elif delta < 0:
-                        delta_color = "#ef4444" if is_higher_better else "#22c55e"
-                        delta_text = f"▼ {delta:.2f}"
-                    else:
-                        delta_color = "#94a3b8"
-                        delta_text = "持平"
-                        
-                    fig_bar.add_annotation(
-                        x=d['val'] + (max_val * 0.02), # 在 Bar 右側留一點空隙
-                        y=names_sorted[i],
-                        text=delta_text,
-                        font=dict(color=delta_color, size=15, weight='bold'),
-                        xanchor="left",
-                        showarrow=False
-                    )
+                # 添加同業平均柱狀圖 (淺灰色系)
+                fig_trend.add_trace(go.Bar(
+                    x=x_labels,
+                    y=merged_df['peer_avg'],
+                    name='同業平均',
+                    marker_color='#cbd5e1',
+                    text=[f"{v:.2f}" for v in merged_df['peer_avg']],
+                    textposition='outside',
+                    textfont=dict(size=13, color='#64748b'),
+                    hovertemplate="<b>%{x}</b><br>同業平均: %{y:.2f}<extra></extra>"
+                ))
                 
-                # 更新版面：營造黑底高對比的酷炫科技感
-                fig_bar.update_layout(
-                    height=400,
-                    plot_bgcolor='#0b0f19', # 深色底
-                    paper_bgcolor='#ffffff', # 外框保持白底融入背景
-                    margin=dict(l=80, r=80, t=20, b=20),
+                # 調整極簡白淨風格設定
+                fig_trend.update_layout(
+                    barmode='group',
+                    height=500,
+                    plot_bgcolor='#ffffff',
+                    paper_bgcolor='#ffffff',
+                    margin=dict(l=40, r=40, t=60, b=40),
                     xaxis=dict(
-                        showgrid=True,
-                        gridcolor='#1e293b',
-                        zeroline=False,
-                        showticklabels=False # 隱藏底部的數字，讓畫面更簡潔，數字已標在 Bar 上
+                        title=dict(text="時間期數", font=dict(size=14, color="#64748b")),
+                        tickfont=dict(size=13, color="#1e293b"),
+                        showline=True, linecolor="#e2e8f0", linewidth=2
                     ),
                     yaxis=dict(
-                        tickfont=dict(size=14, color="#1e293b", weight="bold"),
+                        title=dict(text=indicators_dict[trend_metric]['name'], font=dict(size=14, color="#64748b")),
+                        gridcolor="#f1f5f9",
+                        zeroline=True, zerolinecolor="#e2e8f0", zerolinewidth=2
+                    ),
+                    legend=dict(
+                        orientation="h", yanchor="bottom", y=1.05, xanchor="center", x=0.5,
+                        font=dict(size=14, color="#1e293b")
                     ),
                     font=dict(family="Noto Sans TC")
                 )
                 
-                st.plotly_chart(fig_bar, use_container_width=True)
-                st.caption(f"指標說明：本圖表排序依照「{'數值越高越好' if is_higher_better else '數值越低越好'}」排列。長條圖右側的箭頭與數字代表相對於上一期的增減變化。")
+                st.plotly_chart(fig_trend, use_container_width=True)
+            else:
+                st.info("資料筆數不足以繪製歷史趨勢，請確認上傳的財報包含足夠的歷史期數。")
 
         else:
             st.warning("資料中尚未找到該公司資訊，請確認上傳檔案是否正確")
