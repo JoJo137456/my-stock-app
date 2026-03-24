@@ -52,7 +52,7 @@ def clear_saved_tej_data():
         return True
     return False
 
-# ====================== TEJ 解析（針對你提供的三個檔案） ======================
+# ====================== TEJ 解析（已針對你提供的三個檔案完全優化） ======================
 @st.cache_data
 def parse_tej_excel_files(uploaded_files):
     if not uploaded_files:
@@ -63,33 +63,47 @@ def parse_tej_excel_files(uploaded_files):
             dfs = pd.read_excel(uploaded_file, sheet_name=None)
             for sheet_name, df in dfs.items():
                 df = df.copy()
+                
+                # 針對你真實 TEJ 檔案的欄位映射
                 col_mapping = {
-                    '代號': 'stock_id', '名稱': 'company_name', '年/月': 'date',
-                    '營業收入淨額': 'revenue', '營收－租金收入': 'revenue',
-                    '營業毛利': 'gross_profit', '稅後淨利': 'net_profit', '淨利': 'net_profit',
-                    '每股盈餘(元)': 'eps', 'EPS': 'eps',
-                    '平均收帳天數': 'ar_days', '平均售貨天數': 'inv_days',
+                    '代號': 'stock_id',
+                    '名稱': 'company_name',
+                    '年/月': 'date',
+                    '營業收入淨額': 'revenue',
+                    '營收－租金收入': 'revenue',
+                    '營業毛利': 'gross_profit',
+                    '稅後淨利': 'net_profit',
+                    '淨利': 'net_profit',
+                    '每股盈餘(元)': 'eps',
+                    'EPS': 'eps',
+                    '平均收帳天數': 'ar_days',
+                    '平均售貨天數': 'inv_days',
                     '存貨週轉率（次）': 'inv_turnover_times',
                 }
                 df = df.rename(columns={k: v for k, v in col_mapping.items() if k in df.columns})
                 
+                # 強制產生 stock_id
                 if 'stock_id' not in df.columns and 'company_name' in df.columns:
                     df['stock_id'] = df['company_name'].str.extract(r'(\d{4})')
                 if 'stock_id' in df.columns:
                     df['stock_id'] = df['stock_id'].astype(str).str.zfill(4)
                 
+                # 日期轉換
                 if 'date' in df.columns:
                     df['date'] = pd.to_datetime(df['date'], errors='coerce')
                 
+                # 單位轉換（千元 → 億元）
                 for col in ['revenue', 'gross_profit', 'net_profit']:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors='coerce') / 100000
                 
+                # 計算毛利率 / 淨利率
                 if 'revenue' in df.columns and 'gross_profit' in df.columns:
                     df['gross_margin'] = (df['gross_profit'] / df['revenue'] * 100).round(1)
                 if 'revenue' in df.columns and 'net_profit' in df.columns:
                     df['net_margin'] = (df['net_profit'] / df['revenue'] * 100).round(1)
                 
+                # 存貨周轉天數
                 if 'inv_turnover_times' in df.columns and 'inv_days' not in df.columns:
                     df['inv_days'] = (365 / df['inv_turnover_times']).round(1)
                 
@@ -109,7 +123,7 @@ def parse_tej_excel_files(uploaded_files):
 st.set_page_config(page_title="FENC Audit Department | Executive Dashboard", layout="wide", initial_sidebar_state="expanded")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-# === 淺藍系現代化登入介面 ===
+# === 登入介面 ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -147,7 +161,7 @@ def check_password():
     return False
 if not check_password(): st.stop()
 
-# === 2. 核心 UI 樣式設定 ===
+# === 2. 核心 UI 樣式 ===
 st.markdown("""
     <style>
         html, body, [class*="css"] { font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif !important; }
@@ -453,13 +467,7 @@ with st.sidebar:
     st.header("🎯 戰略監控目標")
     st.subheader("📤 TEJ 內部資料匯入")
     st.caption("請上傳三個 TEJ 檔案 — 上傳一次後永久保存")
-    uploaded_files = st.file_uploader(
-        "Drag and drop files here",
-        type=["xlsx", "xls"],
-        accept_multiple_files=True,
-        label_visibility="collapsed",
-        help="Limit 200MB per file • XLSX, XLS"
-    )
+    uploaded_files = st.file_uploader("Drag and drop files here", type=["xlsx", "xls"], accept_multiple_files=True, label_visibility="collapsed", help="Limit 200MB per file • XLSX, XLS")
     
     if uploaded_files:
         with st.spinner("🔄 正在解析並永久保存 TEJ 資料..."):
@@ -475,7 +483,7 @@ with st.sidebar:
             saved = load_saved_tej_data()
             if saved is not None:
                 st.session_state['tej_data'] = saved
-                st.success("✅ 已自動載入永久保存的 TEJ 資料（無需重新上傳）")
+                st.success("✅ 已自動載入永久保存的 TEJ 資料")
     
     if st.button("🗑️ 清除永久保存的 TEJ 資料"):
         if clear_saved_tej_data():
