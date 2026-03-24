@@ -239,7 +239,6 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
         if df.empty:
             df = ticker.history(period="5d", interval="5m")
             if not df.empty:
-                # ✅ 已修正：原本缺少 == 導致 unmatched ']'
                 df = df[df.index.date == df.index[-1].date()]
         return df if not df.empty else None
     except: return None
@@ -454,7 +453,7 @@ if is_tw_stock:
                 metrics = pd.DataFrame(data)
                 st.dataframe(metrics, use_container_width=True, hide_index=True)
            
-            # ====================== AI 設計 XY軸圖表 ======================
+            # ====================== AI 設計 XY軸圖表（已修正 update_layout） ======================
             st.markdown("#### 📊 經營能力綜合評分（快速判斷）")
            
             indicators_dict = {
@@ -532,13 +531,12 @@ if is_tw_stock:
                     hovertemplate="<b>%{y}</b><br>同業平均: %{x:.2f}<extra></extra>"
                 ))
                
+                # ✅ 已修正：使用 title_text + title_font + title_x 的標準寫法（解決 ValueError）
                 fig.update_layout(
-                    title=dict(
-                        text="經營能力指標比較<br><sup>紅色 = 遠東新　｜　綠色 = 同業平均</sup>",
-                        font=dict(size=18, family="Noto Sans TC", color="#1e293b"),
-                        x=0.5,
-                        xanchor="center"
-                    ),
+                    title_text="經營能力指標比較",
+                    title_font=dict(size=18, family="Noto Sans TC", color="#1e293b"),
+                    title_x=0.5,
+                    title_xanchor="center",
                     barmode='group',
                     height=620,
                     margin=dict(l=20, r=20, t=80, b=20),
@@ -569,12 +567,13 @@ if is_tw_stock:
                     template="plotly_white"
                 )
                
+                # 自動標註優勢/劣勢
                 for i, (c_val, p_val, name) in enumerate(zip(company_vals, peer_vals, indicator_names)):
                     key = categories[i]
                     if (indicators_dict[key]['better'] == 'higher' and c_val > p_val) or \
                        (indicators_dict[key]['better'] == 'lower' and c_val < p_val):
                         fig.add_annotation(
-                            x=c_val + (max(company_vals) * 0.03),
+                            x=c_val + (max(company_vals + [1]) * 0.03),   # 避免 max=0 時出錯
                             y=name,
                             text="✅ 優勢",
                             showarrow=False,
@@ -583,7 +582,7 @@ if is_tw_stock:
                         )
                     elif c_val != p_val:
                         fig.add_annotation(
-                            x=c_val + (max(company_vals) * 0.03),
+                            x=c_val + (max(company_vals + [1]) * 0.03),
                             y=name,
                             text="⚠️ 待改善",
                             showarrow=False,
@@ -614,7 +613,7 @@ if is_tw_stock:
                 if not weaknesses:
                     st.success("• 無明顯劣勢")
            
-            st.caption(f"資料來源：TEJ 最新財報（{latest.get('date').strftime('%Y-%m') if isinstance(latest.get('date'), pd.Timestamp) else '最新'}）｜AI 設計 XY軸圖表 v2.0")
+            st.caption(f"資料來源：TEJ 最新財報（{latest.get('date').strftime('%Y-%m') if isinstance(latest.get('date'), pd.Timestamp) else '最新'}）｜AI 設計 XY軸圖表 v2.1")
         else:
             st.warning("TEJ 資料中尚未找到該公司資訊，請確認上傳檔案是否正確")
     else:
