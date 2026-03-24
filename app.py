@@ -51,7 +51,7 @@ def clear_saved_tej_data():
         return True
     return False
 
-# ====================== TEJ 解析 ======================
+# ====================== TEJ 解析（已針對你提供的 Excel 截圖大幅強化） ======================
 @st.cache_data
 def parse_tej_excel_files(uploaded_files):
     if not uploaded_files:
@@ -62,53 +62,58 @@ def parse_tej_excel_files(uploaded_files):
             dfs = pd.read_excel(uploaded_file, sheet_name=None)
             for sheet_name, df in dfs.items():
                 df = df.copy()
+                
+                # 強力清理欄位名稱（移除空格、換行、隱藏字元）
+                df.columns = [str(col).strip().replace('\n', '').replace('\r', '').replace(' ', '') for col in df.columns]
+                
+                # === 針對你提供的 TEJ「經營能力指標」檔案的精準欄位對應 ===
                 col_mapping = {
                     '代號': 'stock_id',
                     '名稱': 'company_name',
                     '年/月': 'date',
-                    '營業收入淨額': 'revenue',
-                    '營業成本': 'cogs',
-                    '營業毛利': 'gross_profit',
-                    '稅前息前淨利': 'pre_tax_profit',
-                    '常續性稅後淨利': 'net_profit',
-                    '稅後淨利': 'net_profit',
-                    '淨利': 'net_profit',
-                    '每股盈餘(元)': 'eps',
-                    'EPS': 'eps',
                     '平均收帳天數': 'ar_days',
                     '平均售貨天數': 'inv_days',
                     '存貨週轉率（次）': 'inv_turnover_times',
-                    '存貨': 'inventory',
-                    '應收帳款及票據': 'ar_notes',
-                    '其他應收款': 'ar_other',
-                    '資產總額': 'total_assets',
-                    '股東權益總額': 'equity',
+                    '存貨週轉率(次)': 'inv_turnover_times',
+                    '應收帳款週轉次數': 'ar_turnover_times',
+                    '營業收入淨額': 'revenue',
+                    '營收': 'revenue',
+                    '營業毛利': 'gross_profit',
+                    '稅後淨利': 'net_profit',
+                    '淨利': 'net_profit',
                 }
                 df = df.rename(columns={k: v for k, v in col_mapping.items() if k in df.columns})
-               
+                
+                # 自動抓 stock_id
                 if 'stock_id' not in df.columns and 'company_name' in df.columns:
                     df['stock_id'] = df['company_name'].str.extract(r'(\d{4})')
                 if 'stock_id' in df.columns:
                     df['stock_id'] = df['stock_id'].astype(str).str.zfill(4)
-               
+                
+                # 日期轉換
                 if 'date' in df.columns:
                     df['date'] = pd.to_datetime(df['date'], errors='coerce')
-               
-                for col in ['revenue', 'cogs', 'gross_profit', 'pre_tax_profit', 'net_profit', 'inventory', 'ar_notes', 'ar_other', 'total_assets', 'equity']:
+                
+                # 數值轉換
+                numeric_cols = ['revenue', 'gross_profit', 'net_profit', 'inventory', 'ar_notes', 'ar_other']
+                for col in numeric_cols:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors='coerce') / 100000
-               
+                
+                # 應收帳款合計
                 if 'ar_notes' in df.columns or 'ar_other' in df.columns:
                     df['ar'] = df.get('ar_notes', 0) + df.get('ar_other', 0)
-               
+                
+                # 自動計算毛利率、淨利率（若有營收資料）
                 if 'revenue' in df.columns and 'gross_profit' in df.columns:
                     df['gross_margin'] = (df['gross_profit'] / df['revenue'] * 100).round(1)
                 if 'revenue' in df.columns and 'net_profit' in df.columns:
                     df['net_margin'] = (df['net_profit'] / df['revenue'] * 100).round(1)
-               
-                if 'inv_turnover_times' in df.columns:
+                
+                # 存貨週轉天數（若有週轉率就自動算）
+                if 'inv_turnover_times' in df.columns and 'inv_days' not in df.columns:
                     df['inv_days'] = (365 / df['inv_turnover_times']).round(1)
-               
+                
                 all_dfs.append(df)
         except Exception as e:
             st.warning(f"檔案「{uploaded_file.name}」解析失敗：{str(e)}")
@@ -202,44 +207,20 @@ MACRO_IMPACT = {
     "💱 美元兌台幣": "美元兌台幣匯率為台灣出口企業獲利的重要因素。台幣貶值可使電子代工及紡織業獲得匯兌收益，但會提高進口物價。"
 }
 
-# === 4. 板塊分類字典（完整定義） ===
+# === 4. 板塊分類字典 ===
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
-        "🇹🇼 台灣加權指數": "^TWII",
-        "🇺🇸 S&P 500": "^GSPC",
-        "🇺🇸 Dow Jones": "^DJI",
-        "🇺🇸 Nasdaq": "^IXIC",
-        "🇺🇸 SOX (費半)": "^SOX",
-        "⚠️ VIX 恐慌指數": "^VIX",
-        "🏦 U.S. 10Y Treasury": "^TNX",
-        "🥇 黃金": "GC=F",
-        "🛢️ WTI 原油": "CL=F",
-        "🛢️ 布蘭特原油 (Brent)": "BZ=F",
-        "🔥 天然氣 (Natural Gas)": "NG=F",
-        "🚢 航運運價指標 (BDRY)": "BDRY",
-        "₿ 比特幣": "BTC-USD",
-        "💵 美元指數": "DX-Y.NYB",
-        "💱 美元兌台幣": "TWD=X"
+        "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC",
+        "🇺🇸 SOX (費半)": "^SOX", "⚠️ VIX 恐慌指數": "^VIX", "🏦 U.S. 10Y Treasury": "^TNX", "🥇 黃金": "GC=F",
+        "🛢️ WTI 原油": "CL=F", "🛢️ 布蘭特原油 (Brent)": "BZ=F", "🔥 天然氣 (Natural Gas)": "NG=F",
+        "🚢 航運運價指標 (BDRY)": "BDRY", "₿ 比特幣": "BTC-USD", "💵 美元指數": "DX-Y.NYB", "💱 美元兌台幣": "TWD=X"
     },
     "🏢 遠東集團核心事業體": {
-        "👕 1402 遠東新": "1402",
-        "🏗️ 1102 亞泥": "1102",
-        "🚢 2606 裕民": "2606",
-        "🧵 1460 宏遠": "1460",
-        "🛍️ 2903 遠百": "2903",
-        "📱 4904 遠傳": "4904",
-        "🧪 1710 東聯": "1710",
-        "🏦 2845 遠東銀": "2845"
+        "👕 1402 遠東新": "1402", "🏗️ 1102 亞泥": "1102", "🚢 2606 裕民": "2606", "🧵 1460 宏遠": "1460",
+        "🛍️ 2903 遠百": "2903", "📱 4904 遠傳": "4904", "🧪 1710 東聯": "1710", "🏦 2845 遠東銀": "2845"
     },
-    "👟 國際品牌終端 (紡織板塊對標)": {
-        "🇺🇸 Nike": "NKE",
-        "🇺🇸 Under Armour": "UAA",
-        "🇺🇸 Lululemon": "LULU"
-    },
-    "🥤 國際品牌終端 (化纖板塊對標)": {
-        "🇺🇸 Coca-Cola": "KO",
-        "🇺🇸 PepsiCo": "PEP"
-    }
+    "👟 國際品牌終端 (紡織板塊對標)": {"🇺🇸 Nike": "NKE", "🇺🇸 Under Armour": "UAA", "🇺🇸 Lululemon": "LULU"},
+    "🥤 國際品牌終端 (化纖板塊對標)": {"🇺🇸 Coca-Cola": "KO", "🇺🇸 PepsiCo": "PEP"}
 }
 
 # === 5. API 與真實資料抓取模組 ===
@@ -259,8 +240,7 @@ def fetch_twse_history_proxy(stock_code):
                     def tf(s): return float(s.replace(',', '')) if s != '--' else 0.0
                     data_list.append({'date': date_iso, 'volume': tf(row[1]), 'open': tf(row[3]), 'high': tf(row[4]), 'low': tf(row[5]), 'close': tf(row[6])})
         return sorted(data_list, key=lambda x: x['date'])
-    except: 
-        return None
+    except: return None
 
 @st.cache_data(ttl=3600)
 def fetch_us_history(ticker_symbol):
@@ -269,8 +249,7 @@ def fetch_us_history(ticker_symbol):
         hist = tk.history(period="6mo")
         data_list = [{'date': idx.strftime('%Y-%m-%d'), 'volume': float(row['Volume']), 'open': float(row['Open']), 'high': float(row['High']), 'low': float(row['Low']), 'close': float(row['Close'])} for idx, row in hist.iterrows()]
         return data_list
-    except: 
-        return None
+    except: return None
 
 @st.cache_data(ttl=300)
 def get_intraday_chart_data(stock_code, is_us_source=False):
@@ -279,15 +258,12 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
         df = ticker.history(period="1d", interval="1m")
         if df.empty:
             df = ticker.history(period="5d", interval="5m")
-            if not df.empty: 
-                df = df[df.index.date == df.index[-1].date()]
+            if not df.empty: df = df[df.index.date == df.index[-1].date()]
         return df if not df.empty else None
-    except: 
-        return None
+    except: return None
 
 def plot_daily_k(df):
-    if df.empty: 
-        return None
+    if df.empty: return None
     df = df.copy()
     df.set_index(pd.to_datetime(df['date']), inplace=True)
     df = df.tail(120)
@@ -303,8 +279,7 @@ def plot_daily_k(df):
     return fig
 
 def plot_intraday_line(df):
-    if df is None or df.empty: 
-        return None
+    if df is None or df.empty: return None
     y_min, y_max = df['Close'].min(), df['Close'].max()
     padding = (y_max - y_min) * 0.1 if y_max != y_min else y_max * 0.01
     fig = go.Figure()
@@ -350,7 +325,7 @@ with st.sidebar:
     code = options_dict[option]
     is_tw_stock = code.isdigit()
 
-# === 7. 價格顯示、圖表 ===
+# === 7. 價格顯示、圖表（保持不變） ===
 real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
 if is_tw_stock:
     try:
@@ -359,16 +334,14 @@ if is_tw_stock:
             info = real['realtime']
             latest = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else (float(info['open']) if info['open'] != '-' else 0.0)
             real_data.update({'price': latest, 'high': info.get('high', '-'), 'low': info.get('low', '-'), 'open': info.get('open', '-'), 'volume': info.get('accumulate_trade_volume', '0')})
-    except: 
-        pass
+    except: pass
     hist_data = fetch_twse_history_proxy(code)
 else:
     try:
         tk = yf.Ticker(code)
         fi = tk.fast_info
         real_data.update({'price': fi.last_price, 'open': fi.open, 'high': fi.day_high, 'low': fi.day_low, 'volume': f"{int(fi.last_volume):,}"})
-    except: 
-        pass
+    except: pass
     hist_data = fetch_us_history(code)
 
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
@@ -382,10 +355,8 @@ if (current_price == 0 or current_price is None) and not df_daily.empty:
 prev_close = 0
 if not df_daily.empty:
     if not is_tw_stock:
-        try: 
-            prev_close = tk.fast_info.previous_close
-        except: 
-            prev_close = df_daily.iloc[-2]['close'] if len(df_daily) > 1 else df_daily.iloc[-1]['close']
+        try: prev_close = tk.fast_info.previous_close
+        except: prev_close = df_daily.iloc[-2]['close'] if len(df_daily) > 1 else df_daily.iloc[-1]['close']
     else:
         last_date = df_daily.iloc[-1]['date']
         today_str = datetime.now().strftime('%Y-%m-%d')
@@ -419,13 +390,11 @@ if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option i
 
 col1, col2 = st.columns([1, 1])
 with col1:
-    if df_intra is not None and not df_intra.empty: 
-        st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
+    if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
 with col2:
-    if not df_daily.empty: 
-        st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
+    if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
 
-# === 8. TEJ 財務健檢與同業對標分析 ===
+# === 8. TEJ 財務健檢與同業對標分析（已針對你的 TEJ 檔案優化） ===
 if is_tw_stock:
     st.divider()
     st.markdown("## 📊 TEJ 財務健檢與同業對標分析")
@@ -437,8 +406,13 @@ if is_tw_stock:
             latest = company_df.iloc[0]
             company_name = latest.get('company_name', f'公司 {code}')
            
-            # 同業平均
-            peers_df = tej_df[tej_df['stock_id'] != str(code)].copy()
+            # === 限定4家競爭對手（新纖1409、得力1464、南亞1303、中纖1718）===
+            if str(code) == '1402':
+                peer_ids = ['1409', '1464', '1303', '1718']
+                peers_df = tej_df[tej_df['stock_id'].isin(peer_ids)].copy()
+            else:
+                peers_df = tej_df[tej_df['stock_id'] != str(code)].copy()
+            
             peer_summary = peers_df.groupby('stock_id').first().reset_index()
             peer_means = {
                 'revenue': round(peer_summary['revenue'].mean(), 1) if not peer_summary.empty else 0,
@@ -452,11 +426,11 @@ if is_tw_stock:
            
             # AI 分數
             score = 75
-            if latest.get('gross_margin', 0) < 15: score -= 15
-            if latest.get('net_margin', 0) < 5: score -= 15
-            if latest.get('ar_days', 0) > 60: score -= 10
-            if latest.get('inv_days', 0) > 80: score -= 10
-            if latest.get('revenue', 0) == 0: score -= 20
+            if pd.notna(latest.get('gross_margin')) and latest.get('gross_margin', 0) < 15: score -= 15
+            if pd.notna(latest.get('net_margin')) and latest.get('net_margin', 0) < 5: score -= 15
+            if pd.notna(latest.get('ar_days')) and latest.get('ar_days', 0) > 60: score -= 10
+            if pd.notna(latest.get('inv_days')) and latest.get('inv_days', 0) > 80: score -= 10
+            if pd.notna(latest.get('revenue')) and latest.get('revenue', 0) == 0: score -= 20
             score = max(10, min(100, int(score)))
            
             col_score, col_compare = st.columns([1, 3])
@@ -474,86 +448,83 @@ if is_tw_stock:
            
             with col_compare:
                 st.markdown("#### 📈 最新關鍵指標（TEJ 資料）")
+                company_values = [
+                    round(latest.get('revenue', np.nan), 1) if pd.notna(latest.get('revenue')) else "-",
+                    round(latest.get('gross_margin', np.nan), 1) if pd.notna(latest.get('gross_margin')) else "-",
+                    round(latest.get('net_margin', np.nan), 1) if pd.notna(latest.get('net_margin')) else "-",
+                    round(latest.get('inv_days', np.nan), 1) if pd.notna(latest.get('inv_days')) else "-",
+                    round(latest.get('ar_days', np.nan), 1) if pd.notna(latest.get('ar_days')) else "-"
+                ]
                 metrics = pd.DataFrame({
                     "指標": ["單季營收 (億)", "毛利率 (%)", "淨利率 (%)", "存貨周轉天數", "應收帳款天數"],
-                    "本公司": [
-                        round(latest.get('revenue', 0), 1),
-                        round(latest.get('gross_margin', 0), 1),
-                        round(latest.get('net_margin', 0), 1),
-                        round(latest.get('inv_days', 0), 1),
-                        round(latest.get('ar_days', 0), 1)
-                    ],
-                    "同業平均": [
-                        peer_means['revenue'],
-                        peer_means['gross_margin'],
-                        peer_means['net_margin'],
-                        peer_means['inv_days'],
-                        peer_means['ar_days']
-                    ]
+                    "本公司": company_values,
+                    "同業平均": [peer_means['revenue'], peer_means['gross_margin'], peer_means['net_margin'], peer_means['inv_days'], peer_means['ar_days']]
                 })
                 st.dataframe(
-                    metrics.style.format({"本公司": "{:.1f}", "同業平均": "{:.1f}"}),
+                    metrics.style.format({"同業平均": "{:.1f}"}),
                     use_container_width=True, 
                     hide_index=True
                 )
-           
+            
+            # 除錯資訊（讓你直接看到 1402 這筆資料的原始內容）
+            with st.expander("🔍 除錯資訊：1402 最新一筆 TEJ 原始資料（點開查看實際數值）"):
+                st.json(latest.to_dict())
+            
             # 優劣勢分析
             st.markdown("#### ⚖️ 優劣勢分析")
             col1, col2 = st.columns(2)
             
             strengths = []
-            if latest.get('gross_margin', 0) > peer_means['gross_margin']:
+            if pd.notna(latest.get('gross_margin')) and latest.get('gross_margin', 0) > peer_means['gross_margin']:
                 strengths.append("• 毛利率高於同業平均，產品競爭力與定價能力強")
-            if latest.get('net_margin', 0) > peer_means['net_margin']:
+            if pd.notna(latest.get('net_margin')) and latest.get('net_margin', 0) > peer_means['net_margin']:
                 strengths.append("• 淨利率高於同業平均，成本控管與營運效率優異")
-            if latest.get('ar_days', 0) < peer_means['ar_days']:
+            if pd.notna(latest.get('ar_days')) and latest.get('ar_days', 0) < peer_means['ar_days']:
                 strengths.append("• 應收帳款天數低於同業，現金流回收速度快")
-            if latest.get('inv_days', 0) < peer_means['inv_days']:
+            if pd.notna(latest.get('inv_days')) and latest.get('inv_days', 0) < peer_means['inv_days']:
                 strengths.append("• 存貨周轉天數低於同業，庫存管理高效")
-            if latest.get('revenue', 0) > peer_means['revenue']:
+            if pd.notna(latest.get('revenue')) and latest.get('revenue', 0) > peer_means['revenue']:
                 strengths.append("• 單季營收規模高於同業，市場地位穩固")
             
             with col1:
                 st.markdown('<div class="strength-box">', unsafe_allow_html=True)
                 st.markdown("**✅ 優勢**")
                 if strengths:
-                    for s in strengths:
-                        st.write(s)
+                    for s in strengths: st.write(s)
                 else:
                     st.write("• 目前各項指標與同業相當，無明顯突出優勢")
                 st.markdown('</div>', unsafe_allow_html=True)
             
             weaknesses = []
-            if latest.get('gross_margin', 0) < peer_means['gross_margin']:
+            if pd.notna(latest.get('gross_margin')) and latest.get('gross_margin', 0) < peer_means['gross_margin']:
                 weaknesses.append("• 毛利率低於同業平均，毛利結構需檢討")
-            if latest.get('net_margin', 0) < peer_means['net_margin']:
+            if pd.notna(latest.get('net_margin')) and latest.get('net_margin', 0) < peer_means['net_margin']:
                 weaknesses.append("• 淨利率低於同業平均，成本控制或費用率需加強")
-            if latest.get('ar_days', 0) > peer_means['ar_days']:
+            if pd.notna(latest.get('ar_days')) and latest.get('ar_days', 0) > peer_means['ar_days']:
                 weaknesses.append("• 應收帳款天數高於同業，可能有壞帳或客戶信用風險")
-            if latest.get('inv_days', 0) > peer_means['inv_days']:
+            if pd.notna(latest.get('inv_days')) and latest.get('inv_days', 0) > peer_means['inv_days']:
                 weaknesses.append("• 存貨周轉天數高於同業，可能有滯銷或跌價風險")
-            if latest.get('revenue', 0) < peer_means['revenue']:
+            if pd.notna(latest.get('revenue')) and latest.get('revenue', 0) < peer_means['revenue']:
                 weaknesses.append("• 單季營收規模低於同業，市場競爭力需關注")
             
             with col2:
                 st.markdown('<div class="weakness-box">', unsafe_allow_html=True)
                 st.markdown("**⚠️ 劣勢 / 風險點**")
                 if weaknesses:
-                    for w in weaknesses:
-                        st.write(w)
+                    for w in weaknesses: st.write(w)
                 else:
                     st.write("• 目前各項指標優於或符合同業，無明顯風險")
                 st.markdown('</div>', unsafe_allow_html=True)
            
             st.markdown("#### 🔴 稽核應重點關注事項")
             points = []
-            if latest.get('ar_days', 0) > 60:
+            if pd.notna(latest.get('ar_days')) and latest.get('ar_days', 0) > 60:
                 points.append("應收帳款天數偏高，需確認是否有壞帳或客戶信用風險")
-            if latest.get('inv_days', 0) > 80:
+            if pd.notna(latest.get('inv_days')) and latest.get('inv_days', 0) > 80:
                 points.append("存貨周轉天數過長，可能面臨跌價或庫存減值風險")
-            if latest.get('gross_margin', 0) < 15:
+            if pd.notna(latest.get('gross_margin')) and latest.get('gross_margin', 0) < 15:
                 points.append("毛利率偏低，毛利結構需檢討")
-            if latest.get('net_margin', 0) < 5:
+            if pd.notna(latest.get('net_margin')) and latest.get('net_margin', 0) < 5:
                 points.append("淨利率偏低，營運成本與費用控管需加強")
             if not points:
                 points.append("目前財務指標健康，無明顯異常")
