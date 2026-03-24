@@ -9,6 +9,7 @@ import requests
 import urllib3
 import yfinance as yf
 import numpy as np
+
 # === 0. 系統層級修復 ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 original_request = requests.Session.request
@@ -16,9 +17,11 @@ def patched_request(self, method, url, *args, **kwargs):
     kwargs['verify'] = False
     return original_request(self, method, url, *args, **kwargs)
 requests.Session.request = patched_request
+
 # === 1. 戰情室初始化 ===
 st.set_page_config(page_title="FENC Audit Department | Executive Dashboard", layout="wide", initial_sidebar_state="expanded")
 tw_tz = pytz.timezone('Asia/Taipei')
+
 # === 淺藍系現代化登入介面 ===
 def check_password():
     if "password_correct" not in st.session_state:
@@ -56,7 +59,9 @@ def check_password():
             elif pwd != "":
                 st.error("Invalid credentials")
     return False
+
 if not check_password(): st.stop()
+
 # ==========================================
 # === 2. 核心 UI 樣式設定 ===
 # ==========================================
@@ -68,7 +73,7 @@ st.markdown("""
         .ai-score-box { background: linear-gradient(135deg, #1e293b, #0f172a); color: white; padding: 20px; border-radius: 12px; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.15);}
         .fraud-box-safe { background: #ffffff; border-left: 5px solid #22c55e; padding: 15px; border-radius: 8px; margin-top:15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);}
         .fraud-box-warn { background: #ffffff; border-left: 5px solid #ef4444; padding: 15px; border-radius: 8px; margin-top:15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);}
-       
+        
         /* 極簡條列式排版準備 */
         .minimal-list { padding-left: 1.2rem; margin-top: 0.5rem; margin-bottom: 0;}
         .minimal-list li { margin-bottom: 0.6rem; }
@@ -86,6 +91,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
+
 # ==========================================
 # === 3. API 與真實資料抓取模組 ===
 # ==========================================
@@ -106,6 +112,7 @@ def fetch_twse_history_proxy(stock_code):
                     data_list.append({'date': date_iso, 'volume': tf(row[1]), 'open': tf(row[3]), 'high': tf(row[4]), 'low': tf(row[5]), 'close': tf(row[6])})
         return sorted(data_list, key=lambda x: x['date'])
     except: return None
+
 @st.cache_data(ttl=3600)
 def fetch_us_history(ticker_symbol):
     try:
@@ -114,6 +121,7 @@ def fetch_us_history(ticker_symbol):
         data_list = [{'date': idx.strftime('%Y-%m-%d'), 'volume': float(row['Volume']), 'open': float(row['Open']), 'high': float(row['High']), 'low': float(row['Low']), 'close': float(row['Close'])} for idx, row in hist.iterrows()]
         return data_list
     except: return None
+
 @st.cache_data(ttl=300)
 def get_intraday_chart_data(stock_code, is_us_source=False):
     try:
@@ -124,6 +132,7 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
             if not df.empty: df = df[df.index.date == df.index[-1].date()]
         return df if not df.empty else None
     except: return None
+
 def generate_8q_labels():
     now = datetime.now()
     year = now.year
@@ -132,7 +141,7 @@ def generate_8q_labels():
         y, q = year - 1, 4
     else:
         y, q = year, current_q - 1
-       
+        
     quarters = []
     for _ in range(8):
         quarters.append(f"{y}-Q{q}")
@@ -141,6 +150,7 @@ def generate_8q_labels():
             q = 4
             y -= 1
     return quarters
+
 @st.cache_data(ttl=86400)
 def get_resilient_financials(stock_code):
     try:
@@ -163,7 +173,7 @@ def get_resilient_financials(stock_code):
         q_labels = generate_8q_labels()
         base_q_rev = ttm_rev_b / 4
         base_q_eps = eps_ttm / 4
-       
+        
         results = []
         for q_str in q_labels:
             rev = base_q_rev * np.random.uniform(0.95, 1.05)
@@ -176,13 +186,13 @@ def get_resilient_financials(stock_code):
             health_factor = nm * 100
             inv_days = 60 * np.random.uniform(0.9, 1.1) / (1 + (health_factor/50))
             ar_days = 45 * np.random.uniform(0.9, 1.1)
-           
+            
             results.append({
                 '季度': q_str, '單季營收 (億)': round(rev, 1), '毛利 (億)': round(gp, 1), '毛利率 (%)': round(gp_margin, 1),
                 '營業費用 (億)': round(opex, 1), '淨利 (億)': round(net, 1), '淨利率 (%)': round(net_margin, 1),
                 '單季EPS (元)': round(eps, 2), '存貨周轉天數': round(inv_days, 1), '應收帳款天數': round(ar_days, 1)
             })
-           
+            
         df = pd.DataFrame(results)
         ytd_df = df.copy().iloc[::-1].reset_index(drop=True)
         ytd_df['年份'] = ytd_df['季度'].str[:4]
@@ -194,13 +204,14 @@ def get_resilient_financials(stock_code):
         return df, ytd_df
     except Exception as e:
         return pd.DataFrame(), pd.DataFrame()
+
 def calculate_ai_audit_score(df):
     if len(df) < 2: return 50, "數據不足", "安全"
     latest = df.iloc[0]
     prev = df.iloc[1]
     score = 65
     trend_notes = []
-   
+    
     if latest['單季營收 (億)'] > prev['單季營收 (億)']: score += 10; trend_notes.append("✅ 營收動能向上")
     else: score -= 10; trend_notes.append("⚠️ 營收動能衰退")
     if latest['毛利率 (%)'] > prev['毛利率 (%)']: score += 15; trend_notes.append("✅ 毛利率擴張")
@@ -211,7 +222,7 @@ def calculate_ai_audit_score(df):
     rev_growth = latest['單季營收 (億)'] / prev['單季營收 (億)']
     ar_growth = (latest['應收帳款天數'] * latest['單季營收 (億)']) / (prev['應收帳款天數'] * prev['單季營收 (億)'])
     dsri = ar_growth / rev_growth if rev_growth > 0 else 1
-   
+    
     if dsri > 1.2:
         fraud_risk = f"🟥 高風險警示！應收帳款增速達營收的 {dsri:.1f} 倍，有塞貨或作帳疑慮 (DSRI 異常)。"
         score -= 20
@@ -220,6 +231,7 @@ def calculate_ai_audit_score(df):
          score -= 10
     score = max(0, min(100, int(score)))
     return score, " | ".join(trend_notes), fraud_risk
+
 # ==========================================
 # === 4. 深度戰略連動註解庫 (專業版) ===
 # ==========================================
@@ -240,6 +252,7 @@ MACRO_IMPACT = {
     "💵 美元指數": "美元指數衡量美元相對於全球主要貨幣的強弱。強勢美元會導致熱錢撤出新興市場（如台灣），雖有利出口業，但會增加進口原物料成本。",
     "💱 美元兌台幣": "美元兌台幣匯率為台灣出口企業獲利的重要因素。台幣貶值可使電子代工及紡織業獲得匯兌收益，但會提高進口物價。"
 }
+
 INDUSTRY_PEERS = {
     "1402": {"name": "紡織纖維", "peers": [{"code": "1402", "name": "遠東新"}, {"code": "1476", "name": "儒鴻"}, {"code": "1477", "name": "聚陽"}, {"code": "1440", "name": "南紡"}, {"code": "1444", "name": "力麗"}], "base_inv": 75, "base_ar": 45},
     "1102": {"name": "水泥工業", "peers": [{"code": "1102", "name": "亞泥"}, {"code": "1101", "name": "台泥"}, {"code": "1103", "name": "嘉泥"}, {"code": "1108", "name": "幸福"}, {"code": "1109", "name": "信大"}], "base_inv": 45, "base_ar": 60},
@@ -250,6 +263,7 @@ INDUSTRY_PEERS = {
     "1710": {"name": "化學工業", "peers": [{"code": "1710", "name": "東聯"}, {"code": "1301", "name": "台塑"}, {"code": "1303", "name": "南亞"}, {"code": "1326", "name": "台化"}, {"code": "1722", "name": "台肥"}], "base_inv": 50, "base_ar": 60},
     "2845": {"name": "金融保險", "peers": [{"code": "2845", "name": "遠東銀"}, {"code": "2881", "name": "富邦金"}, {"code": "2882", "name": "國泰金"}, {"code": "2886", "name": "兆豐金"}, {"code": "2891", "name": "中信金"}], "base_inv": 0, "base_ar": 0}
 }
+
 # ==========================================
 # === 🚨 FinMind + yfinance 雙重保險 ===
 # ==========================================
@@ -257,7 +271,7 @@ INDUSTRY_PEERS = {
 def fetch_peers_ccc_real(peer_info):
     results = []
     period_label = "最新單季財報 (FinMind 真實數據)"
-   
+    
     end_date = datetime.now().strftime('%Y-%m-%d')
     start_date = (datetime.now() - pd.DateOffset(years=1)).strftime('%Y-%m-%d')
     fm_url = "https://api.finmindtrade.com/api/v4/data"
@@ -265,7 +279,7 @@ def fetch_peers_ccc_real(peer_info):
         stock_id = p['code']
         ar_days = 0
         inv_days = 0
-       
+        
         try:
             params = {
                 "dataset": "TaiwanStockFinancialStatements",
@@ -275,22 +289,23 @@ def fetch_peers_ccc_real(peer_info):
             }
             res = requests.get(fm_url, params=params, timeout=10)
             data = res.json()
-           
+            
             if data.get("msg") == "success" and data.get("data"):
                 df_fm = pd.DataFrame(data["data"])
                 latest_date = df_fm['date'].max()
                 df_latest = df_fm[df_fm['date'] == latest_date]
                 item_dict = dict(zip(df_latest['origin_name'], df_latest['value']))
-               
+                
                 revenue = item_dict.get('營業收入合計', item_dict.get('淨收益', item_dict.get('收益計', 0)))
                 cogs = item_dict.get('營業成本合計', item_dict.get('營業成本', 0))
                 ar = item_dict.get('應收帳款淨額', item_dict.get('應收帳款', 0))
                 inventory = item_dict.get('存貨', item_dict.get('存貨合計', 0))
-               
+                
                 ar_days = (ar * 90 / revenue) if revenue > 0 else 0
                 inv_days = (inventory * 90 / cogs) if cogs > 0 else 0
         except Exception as e:
             pass
+        
         gm, nm, roe = 0, 0, 0
         try:
             tk = yf.Ticker(f"{stock_id}.TW")
@@ -300,8 +315,10 @@ def fetch_peers_ccc_real(peer_info):
             roe = info.get('returnOnEquity', 0)
         except:
             pass
+        
         if peer_info['base_inv'] == 0:
             inv_days, ar_days = 0, 0
+            
         results.append({
             "公司": f"{p['name']} ({stock_id})",
             "毛利率 (%)": round(gm * 100, 1) if gm else 0,
@@ -310,8 +327,9 @@ def fetch_peers_ccc_real(peer_info):
             "存貨周轉天數": round(inv_days, 1),
             "應收帳款天數": round(ar_days, 1)
         })
-       
+        
     return pd.DataFrame(results), period_label
+
 # ==========================================
 # === 5. 繪圖模組 ===
 # ==========================================
@@ -330,6 +348,7 @@ def plot_daily_k(df):
     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     return fig
+
 def plot_intraday_line(df):
     if df is None or df.empty: return None
     y_min, y_max = df['Close'].min(), df['Close'].max()
@@ -340,6 +359,7 @@ def plot_intraday_line(df):
     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     return fig
+
 # ==========================================
 # === 6. 左側選單互動與資料獲取 ===
 # ==========================================
@@ -357,17 +377,43 @@ market_categories = {
     "👟 國際品牌終端 (紡織板塊對標)": {"🇺🇸 Nike": "NKE", "🇺🇸 Under Armour": "UAA", "🇺🇸 Lululemon": "LULU"},
     "🥤 國際品牌終端 (化纖板塊對標)": {"🇺🇸 Coca-Cola": "KO", "🇺🇸 PepsiCo": "PEP"}
 }
+
 with st.sidebar:
+    st.header("📂 TEJ 內部資料匯入")
+    
+    # 建立上傳按鈕，限制只能上傳 Excel 檔案
+    uploaded_tej = st.file_uploader("請上傳 TEJ 財務資料 (.xlsx)", type=["xlsx", "xls"])
+    
+    # 如果有上傳檔案，就讀取並存入 session_state
+    if uploaded_tej is not None:
+        try:
+            # 讀取 Excel
+            df_tej = pd.read_excel(uploaded_tej)
+            # 存入系統暫存，這樣切換按鈕時資料才不會消失
+            st.session_state['df_tej'] = df_tej
+            st.success(f"✅ 成功讀取！共 {len(df_tej)} 筆資料")
+            
+            # (測試用) 展開一個小區塊讓你確認資料有沒有讀錯
+            with st.expander("👀 預覽 TEJ 資料"):
+                st.dataframe(df_tej.head())
+                
+        except Exception as e:
+            st.error(f"❌ 讀取失敗，請確認檔案格式。錯誤訊息：{e}")
+
+    st.markdown("---")
+
     st.header("🎯 戰略監控目標")
     selected_category = st.selectbox("板塊分類", list(market_categories.keys()))
     st.markdown("---")
     options_dict = market_categories[selected_category]
     option = st.radio("監控標的", list(options_dict.keys()))
     code = options_dict[option]
-   
+    
     is_tw_stock = code.isdigit()
     is_index = not is_tw_stock
+
 real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
+
 if is_tw_stock:
     try:
         real = twstock.realtime.get(code)
@@ -384,12 +430,15 @@ else:
         real_data.update({'price': fi.last_price, 'open': fi.open, 'high': fi.day_high, 'low': fi.day_low, 'volume': f"{int(fi.last_volume):,}"})
     except: pass
     hist_data = fetch_us_history(code)
+
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 df_intra = get_intraday_chart_data(code, is_us_source=not is_tw_stock)
+
 current_price = real_data['price']
 if (current_price == 0 or current_price is None) and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
     real_data.update({'high': df_daily.iloc[-1]['high'], 'low': df_daily.iloc[-1]['low'], 'open': df_daily.iloc[-1]['open']})
+
 prev_close = 0
 if not df_daily.empty:
     if not is_tw_stock:
@@ -399,8 +448,10 @@ if not df_daily.empty:
         last_date = df_daily.iloc[-1]['date']
         today_str = datetime.now().strftime('%Y-%m-%d')
         prev_close = df_daily.iloc[-2]['close'] if last_date == today_str and len(df_daily) > 1 else df_daily.iloc[-1]['close']
+
 change = current_price - prev_close
 pct = (change / prev_close) * 100 if prev_close != 0 else 0
+
 st.markdown(f"""
 <div style="background-color: #ffffff; padding: 25px; border-radius: 8px; margin-bottom: 25px; border-left: 6px solid {'#ef4444' if change >= 0 else '#22c55e'}; box-shadow: 0 2px 5px rgba(0,0,0,0.03);">
     <h2 style="margin:0; color:#475569; font-size: 1.25rem; font-weight: 800;">{option}</h2>
@@ -431,6 +482,7 @@ with col1:
     if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
 with col2:
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
+
 # ==========================================
 # === 7. 下半部：高階經理人專屬財務戰情室 ===
 # ==========================================
@@ -438,20 +490,21 @@ if is_tw_stock:
     st.divider()
     st.markdown("## 📈 企業基本面與高階戰略解析 (Executive Financials)")
     df_quarterly, df_ytd = get_resilient_financials(code)
+    
     if not df_quarterly.empty and len(df_quarterly) >= 2:
         latest = df_quarterly.iloc[0]
         st.markdown("### 🤖 稽核 AI 財報健檢與風險偵測 (Audit AI Engine)")
         ai_score, ai_trend, fraud_risk = calculate_ai_audit_score(df_quarterly)
-       
+        
         col_ai1, col_ai2 = st.columns([1, 2.5])
         with col_ai1:
             st.markdown(f"""<div class="ai-score-box"><div style="font-size:14px; color:#94a3b8;">AI 綜合營運評分</div><div style="font-size:48px; font-weight:800; color:{'#4ade80' if ai_score>=60 else '#f87171'};">{ai_score}</div><div style="font-size:13px;">{ai_trend}</div></div>""", unsafe_allow_html=True)
         with col_ai2:
             box_class = "fraud-box-warn" if "警示" in fraud_risk else "fraud-box-safe"
             st.markdown(f"""<div class="{box_class}"><div style="font-weight:700; margin-bottom:5px; font-size:16px;">⚖️ 財報舞弊與資產品質風險 (Fraud & Asset Quality Risk)</div><div style="font-size:15px;">{fraud_risk}</div><div style="font-size:12px; color:#64748b; margin-top:8px;">*指標說明：嚴格比對應收帳款與存貨周轉效率之異常波動 (參考 Beneish M-Score 模型邏輯)。</div></div>""", unsafe_allow_html=True)
-       
+        
         st.markdown("<br>", unsafe_allow_html=True)
-       
+        
         c_chart1, c_chart2 = st.columns([1, 1.2])
         with c_chart1:
             plot_df = df_quarterly.iloc[::-1]
@@ -461,6 +514,7 @@ if is_tw_stock:
             fig1.add_trace(go.Scatter(x=plot_df['季度'], y=plot_df['淨利率 (%)'], name="淨利率 %", mode='lines+markers', line=dict(color='#3B82F6', width=2)), secondary_y=True)
             fig1.update_layout(title="<b>📊 營收規模與獲利能力趨勢 (近8季)</b>", height=380, margin=dict(l=0, r=0, t=40, b=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), paper_bgcolor='#ffffff', plot_bgcolor='#ffffff')
             st.plotly_chart(fig1, use_container_width=True)
+            
         with c_chart2:
             fig2 = go.Figure(go.Waterfall(
                 name="20", orientation="v", measure=["relative", "relative", "total", "relative", "total"],
@@ -471,11 +525,13 @@ if is_tw_stock:
             ))
             fig2.update_layout(title=f"<b>💰 獲利結構拆解 (最新季度: {latest['季度']})</b>", height=380, margin=dict(l=0, r=0, t=50, b=0), paper_bgcolor='#ffffff', plot_bgcolor='#ffffff')
             st.plotly_chart(fig2, use_container_width=True)
+            
         if code in INDUSTRY_PEERS:
             st.markdown("### ⚔️ 產業營運週期對標矩陣 (Cash Conversion Cycle Matrix)")
             peer_info = INDUSTRY_PEERS[code]
             st.caption(f"📍 目標賽道：{peer_info['name']} | 分析指標：存貨周轉 vs 應收帳款天數")
             df_peers_ccc, period_label = fetch_peers_ccc_real(peer_info)
+            
             if not df_peers_ccc.empty:
                 if peer_info['base_inv'] == 0:
                     ccc_fig = go.Figure()
@@ -489,7 +545,7 @@ if is_tw_stock:
                         marker=dict(size=25, color=df_peers_ccc['毛利率 (%)'], colorscale='Viridis', showscale=True, colorbar=dict(title="毛利率%")),
                         hovertemplate="<b>%{text}</b><br>應收帳款天數: %{x}<br>存貨周轉天數: %{y}<br>毛利率: %{marker.color}%<extra></extra>"
                     ))
-                   
+                    
                     ccc_fig.update_layout(
                         title=f"<b>🎯 營運效率與變現能力矩陣 (資料基準: {period_label})</b>",
                         xaxis=dict(autorange="reversed", title="應收帳款周轉天數 (天) 👉 右方代表收款極快", showgrid=False),
@@ -502,8 +558,9 @@ if is_tw_stock:
                     )
                     ccc_fig.add_hline(y=df_peers_ccc['存貨周轉天數'].median(), line_dash="dot", line_color="#94A3B8")
                     ccc_fig.add_vline(x=df_peers_ccc['應收帳款天數'].median(), line_dash="dot", line_color="#94A3B8")
-                   
+                    
                 st.plotly_chart(ccc_fig, use_container_width=True)
+                
         st.markdown("### 📑 核心財務數據矩陣 (2024Q1~2025Q4)")
         tab1, tab2 = st.tabs(["📊 單季表現 (Quarterly)", "📈 累計表現 (Year-To-Date)"])
         format_dict = {'單季營收 (億)': '{:,.1f}', '毛利 (億)': '{:,.1f}', '營業費用 (億)': '{:,.1f}', '淨利 (億)': '{:,.1f}', '毛利率 (%)': '{:.1f}%', '淨利率 (%)': '{:.1f}%', '單季EPS (元)': '{:.2f}', '存貨周轉天數': '{:.1f}', '應收帳款天數': '{:.1f}'}
@@ -513,5 +570,6 @@ if is_tw_stock:
             format_ytd = {'累計營收 (億)': '{:,.1f}', '累計毛利 (億)': '{:,.1f}', '累計淨利 (億)': '{:,.1f}', '毛利率 (%)': '{:.1f}%', '淨利率 (%)': '{:.1f}%', '累計EPS (元)': '{:.2f}'}
             st.dataframe(df_ytd[ytd_cols].style.format(format_ytd), use_container_width=True, height=320)
     else: st.warning("⚠️ 系統連線異常，請重新整理頁面。")
+
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
 st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：TWSE, Yahoo Finance, FinMind</div>', unsafe_allow_html=True)
