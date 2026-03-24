@@ -86,14 +86,21 @@ st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div 
 # ==========================================
 # === 3. 共用工具與外部 API ===
 # ==========================================
-def safe_extract(row, keys, default=0.0):
-    """彈性資料提取器：負責尋找多種可能的欄位名稱，防禦改名風險"""
-    for key in keys:
-        if key in row and pd.notna(row[key]):
-            try:
-                val = float(str(row[key]).replace(',', ''))
-                return val
-            except: pass
+def get_latest_valid_val(df_target, col_names, default=0.0):
+    """
+    🛡️ 終極容錯萃取引擎：
+    自動掃描 DataFrame，跨越多個零碎上傳的 Excel 檔案，
+    精準找出該欄位第一個出現的「非空值」真實數字。
+    """
+    if df_target.empty: return default
+    for col in col_names:
+        if col in df_target.columns:
+            valid_series = df_target[col].dropna()
+            if not valid_series.empty:
+                val = valid_series.iloc[0]
+                try: 
+                    return float(str(val).replace(',', ''))
+                except: pass
     return default
 
 @st.cache_data(ttl=3600)
@@ -135,7 +142,7 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
     except: return None
 
 # ==========================================
-# === 4. TEJ 真實數據引擎 (核心替換) ===
+# === 4. TEJ 真實數據引擎與智慧 Audit ===
 # ==========================================
 def get_resilient_financials(stock_code):
     if 'df_tej' not in st.session_state or st.session_state['df_tej'].empty:
@@ -152,26 +159,31 @@ def get_resilient_financials(stock_code):
     if df_target.empty:
         return pd.DataFrame(), pd.DataFrame()
 
-    df_target = df_target.sort_values(by='年/月', ascending=False).head(8)
+    # 取得近 8 季獨立的季別清單
+    quarters = df_target['年/月'].dropna().unique()
+    quarters = sorted(quarters, reverse=True)[:8]
     
     results = []
-    for _, row in df_target.iterrows():
+    for q in quarters:
+        # 針對特定季度切片，確保資料萃取不會跨季
+        df_q = df_target[df_target['年/月'] == q]
+        
         # TEJ 預設單位多為「千元」，除以 100,000 轉為「億」
-        rev = safe_extract(row, ['營業收入淨額', '營業收入', '營收淨額']) / 100000
-        gp = safe_extract(row, ['營業毛利（毛損）', '營業毛利', '營業毛利(損)']) / 100000
-        net = safe_extract(row, ['本期淨利（淨損）', '本期淨利', '稅後淨利']) / 100000
-        opex = safe_extract(row, ['營業費用', '推銷費用', '管理費用']) / 100000 # 概算
-        eps = safe_extract(row, ['基本每股盈餘（元）', '每股盈餘', 'EPS'])
+        rev = get_latest_valid_val(df_q, ['營業收入淨額', '營業收入', '營收淨額']) / 100000
+        gp = get_latest_valid_val(df_q, ['營業毛利（毛損）', '營業毛利', '營業毛利(損)']) / 100000
+        net = get_latest_valid_val(df_q, ['本期淨利（淨損）', '本期淨利', '稅後淨利']) / 100000
+        opex = get_latest_valid_val(df_q, ['營業費用', '推銷費用', '管理費用']) / 100000
+        eps = get_latest_valid_val(df_q, ['基本每股盈餘（元）', '每股盈餘', 'EPS'])
         
         # 週轉天數
-        inv_days = safe_extract(row, ['存貨週轉天數（次）', '存貨週轉天數', '存貨天數'])
-        ar_days = safe_extract(row, ['應收帳款週轉天數（次）', '應收帳款週轉天數', '應收帳款天數'])
+        inv_days = get_latest_valid_val(df_q, ['存貨週轉天數（次）', '存貨週轉天數', '存貨天數'])
+        ar_days = get_latest_valid_val(df_q, ['應收帳款週轉天數（次）', '應收帳款週轉天數', '應收帳款天數'])
         
         gp_margin = (gp / rev * 100) if rev != 0 else 0
         net_margin = (net / rev * 100) if rev != 0 else 0
         
         results.append({
-            '季度': str(row.get('年/月', '未知')), 
+            '季度': str(q), 
             '單季營收 (億)': round(rev, 1), 
             '毛利 (億)': round(gp, 1), 
             '毛利率 (%)': round(gp_margin, 1),
@@ -203,12 +215,14 @@ def calculate_ai_audit_score(df):
     score = 80 
     trend_notes = []
     
+    # 1. 成長性指標
     if latest['單季營收 (億)'] > prev['單季營收 (億)']: trend_notes.append("✅ 營收動能向上")
     else: score -= 5; trend_notes.append("⚠️ 營收動能衰退")
         
     if latest['毛利率 (%)'] >= prev['毛利率 (%)']: trend_notes.append("✅ 毛利率穩健")
     else: score -= 5; trend_notes.append("⚠️ 毛利率壓縮")
 
+    # 2. 財報舞弊查核指標 (DSRI & GMI)
     fraud_risk_msgs = []
     
     dsri = latest['應收帳款天數'] / prev['應收帳款天數'] if prev['應收帳款天數'] > 0 else 1
@@ -260,41 +274,59 @@ INDUSTRY_PEERS = {
 @st.cache_data(ttl=86400)
 def fetch_peers_ccc_real(peer_info):
     results = []
-    period_label = "最新單季財報 (TEJ 內部資料庫)"
+    period_label = "最新財報 (TEJ 真實數據)"
     
-    if 'df_tej' not in st.session_state or st.session_state['df_tej'].empty:
-        return pd.DataFrame(), "等待資料匯入"
+    # 建立標記：確認 TEJ 資料庫是否準備就緒
+    has_tej = 'df_tej' in st.session_state and not st.session_state['df_tej'].empty
+    
+    if not has_tej:
+        df_empty = pd.DataFrame(columns=["公司", "毛利率 (%)", "淨利率 (%)", "ROE (%)", "存貨周轉天數", "應收帳款天數"])
+        return df_empty, "尚無 TEJ 資料"
         
     df_all = st.session_state['df_tej']
     
     for p in peer_info['peers']:
         stock_id = p['code']
+        # 尋找該公司的資料，強制轉字串並去除空白，確保比對 100% 命中
         df_peer = df_all[df_all['代號'].astype(str).str.strip() == str(stock_id)]
         
         if not df_peer.empty:
-            latest_row = df_peer.sort_values(by='年/月', ascending=False).iloc[0]
+            # 將該公司的資料依時間由新到舊排序
+            df_peer = df_peer.sort_values(by='年/月', ascending=False)
             
-            rev = safe_extract(latest_row, ['營業收入淨額', '營業收入', '營收淨額'])
-            gp = safe_extract(latest_row, ['營業毛利（毛損）', '營業毛利', '營業毛利(損)'])
-            net = safe_extract(latest_row, ['本期淨利（淨損）', '本期淨利', '稅後淨利'])
-            
-            gm = (gp / rev * 100) if rev > 0 else 0
-            nm = (net / rev * 100) if rev > 0 else 0
-            
-            inv_days = safe_extract(latest_row, ['存貨週轉天數（次）', '存貨週轉天數', '存貨天數'])
-            ar_days = safe_extract(latest_row, ['應收帳款週轉天數（次）', '應收帳款週轉天數', '應收帳款天數'])
-            roe = safe_extract(latest_row, ['ROE(A)－稅後', 'ROE', '股東權益報酬率'])
-            
-            results.append({
-                "公司": f"{p['name']} ({stock_id})",
-                "毛利率 (%)": round(gm, 1),
-                "淨利率 (%)": round(nm, 1),
-                "ROE (%)": round(roe, 1),
-                "存貨周轉天數": round(inv_days, 1),
-                "應收帳款天數": round(ar_days, 1)
-            })
+            # 獲取各項指標 (跨越多檔案/空值萃取)
+            gm = get_latest_valid_val(df_peer, ['營業毛利率', '營業毛利率(%)', '毛利率'], None)
+            if gm is None:
+                rev = get_latest_valid_val(df_peer, ['營業收入淨額', '營業收入', '營收淨額'], 0)
+                gp = get_latest_valid_val(df_peer, ['營業毛利（毛損）', '營業毛利'], 0)
+                gm = (gp / rev * 100) if rev > 0 else 0
                 
-    return pd.DataFrame(results), period_label
+            nm = get_latest_valid_val(df_peer, ['常續性稅後淨利率', '稅後淨利率', '本期淨利率', '淨利率'], None)
+            if nm is None:
+                rev = get_latest_valid_val(df_peer, ['營業收入淨額', '營業收入', '營收淨額'], 0)
+                net = get_latest_valid_val(df_peer, ['本期淨利（淨損）', '本期淨利', '稅後淨利'], 0)
+                nm = (net / rev * 100) if rev > 0 else 0
+                
+            roe = get_latest_valid_val(df_peer, ['ROE(A)－稅後', 'ROE', '股東權益報酬率'], 0)
+            
+            inv_days = get_latest_valid_val(df_peer, ['存貨週轉天數', '存貨週轉天數（次）', '存貨天數'], 0)
+            ar_days = get_latest_valid_val(df_peer, ['應收帳款週轉天數', '應收帳款週轉天數（次）', '應收帳款天數'], 0)
+            
+            if gm != 0 or inv_days != 0 or ar_days != 0:
+                results.append({
+                    "公司": f"{p['name']} ({stock_id})",
+                    "毛利率 (%)": round(gm, 1),
+                    "淨利率 (%)": round(nm, 1),
+                    "ROE (%)": round(roe, 1),
+                    "存貨周轉天數": round(inv_days, 1),
+                    "應收帳款天數": round(ar_days, 1)
+                })
+                
+    df_results = pd.DataFrame(results)
+    if df_results.empty:
+        df_results = pd.DataFrame(columns=["公司", "毛利率 (%)", "淨利率 (%)", "ROE (%)", "存貨周轉天數", "應收帳款天數"])
+
+    return df_results, period_label
 
 def plot_daily_k(df):
     if df.empty: return None
@@ -424,7 +456,6 @@ if is_tw_stock:
     st.divider()
     st.markdown("## 📈 企業基本面與高階戰略解析 (Executive Financials)")
     
-    # 從 TEJ 抓取資料
     df_quarterly, df_ytd = get_resilient_financials(code)
     
     if df_quarterly.empty:
@@ -471,7 +502,7 @@ if is_tw_stock:
             df_peers_ccc, period_label = fetch_peers_ccc_real(peer_info)
             
             if not df_peers_ccc.empty:
-                if code == "2845": # 金融保險業不看存貨
+                if code == "2845": 
                     ccc_fig = go.Figure()
                     ccc_fig.add_trace(go.Bar(x=df_peers_ccc['公司'], y=df_peers_ccc['ROE (%)'], name='ROE (%)', marker_color='#0F172A'))
                     ccc_fig.update_layout(title="<b>🏦 金融業獲利指標 (ROE)</b>", height=400, paper_bgcolor='#ffffff', plot_bgcolor='#ffffff')
@@ -494,8 +525,13 @@ if is_tw_stock:
                             dict(x=0.05, y=0.05, xref="paper", yref="paper", text="<b>⚠️ 資金卡死區</b><br>庫存高/被客戶欠款", showarrow=False, font=dict(color="#EF4444"))
                         ]
                     )
-                    ccc_fig.add_hline(y=df_peers_ccc['存貨周轉天數'].median(), line_dash="dot", line_color="#94A3B8")
-                    ccc_fig.add_vline(x=df_peers_ccc['應收帳款天數'].median(), line_dash="dot", line_color="#94A3B8")
+                    
+                    # 避免沒有數據時計算 median 報錯
+                    if len(df_peers_ccc) > 0:
+                        try:
+                            ccc_fig.add_hline(y=df_peers_ccc['存貨周轉天數'].median(), line_dash="dot", line_color="#94A3B8")
+                            ccc_fig.add_vline(x=df_peers_ccc['應收帳款天數'].median(), line_dash="dot", line_color="#94A3B8")
+                        except: pass
                     
                 st.plotly_chart(ccc_fig, use_container_width=True)
                 
