@@ -168,7 +168,7 @@ def check_password():
     return False
 if not check_password(): st.stop()
 
-# === 2. 核心 UI 樣式（文青上傳區） ===
+# === 2. 核心 UI 樣式 ===
 st.markdown("""
     <style>
         html, body, [class*="css"] { font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif !important; }
@@ -177,8 +177,6 @@ st.markdown("""
         .ai-score-box { background: linear-gradient(135deg, #1e293b, #0f172a); color: white; padding: 20px; border-radius: 12px; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.15);}
         .strength-box { background: #ffffff; border-left: 5px solid #22c55e; padding: 15px; border-radius: 8px; margin-top:15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);}
         .weakness-box { background: #ffffff; border-left: 5px solid #ef4444; padding: 15px; border-radius: 8px; margin-top:15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);}
-        .stFileUploader > div > div { background: #f8f1e9 !important; border: 2px dashed #d1b48c !important; border-radius: 16px !important; padding: 40px 20px !important; text-align: center !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; }
-        .stFileUploader label { color: #8c6f4e !important; font-size: 1.1rem !important; font-weight: 500 !important; letter-spacing: 0.5px !important; }
     </style>
 """, unsafe_allow_html=True)
 st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
@@ -227,9 +225,12 @@ def plot_daily_k(df):
     df = df.copy()
     df.set_index(pd.to_datetime(df['date']), inplace=True)
     df = df.tail(120)
-    fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'],
+    fig = go.Figure(data=[go.Candlestick(
+        x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'],
         increasing_line_color='#ef4444', increasing_fillcolor='#ef4444',
-        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e', name="日K")])
+        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e',
+        name="日K"
+    )])
     fig.update_layout(title="<b>📊 歷史價格走勢 (近半年)</b>", xaxis_rangeslider_visible=False, height=380, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='#ffffff', plot_bgcolor='#ffffff')
     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
@@ -265,7 +266,7 @@ MACRO_IMPACT = {
     "💱 美元兌台幣": "美元兌台幣匯率為台灣出口企業獲利的重要因素。台幣貶值可使電子代工及紡織業獲得匯兌收益，但會提高進口物價。"
 }
 
-# === 5. 左側選單（文青風） ===
+# === 5. 左側選單（已修改文字） ===
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
         "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC",
@@ -284,7 +285,7 @@ market_categories = {
 with st.sidebar:
     st.header("🎯 戰略監控目標")
     st.subheader("📤 數據庫資料匯入")
-    st.caption("請上傳三個 TEJ 檔案 — 上傳一次後永久保存")
+    st.caption("請上傳 TEJ 報表 — 上傳一次後永久保存")
     uploaded_files = st.file_uploader("檔案上傳路徑", type=["xlsx", "xls"], accept_multiple_files=True, label_visibility="collapsed")
     
     if uploaded_files:
@@ -414,7 +415,7 @@ if is_tw_stock:
                 <div class="ai-score-box">
                     <div style="font-size:14px; color:#94a3b8;">稽核 AI 分數</div>
                     <div style="font-size:48px; font-weight:800; color:{'#4ade80' if score >= 70 else '#f87171'};">{score}</div>
-                    <div style="font-size:13px;">基於 TEJ 最新財報</div>
+                    <div style="font-size:13px;">70~80 分為優等，60~69 分為普通，<60 分為需加強</div>
                 </div>
                 """, unsafe_allow_html=True)
             
@@ -458,6 +459,8 @@ if is_tw_stock:
                 points.append("目前財務指標健康，無明顯異常")
             for p in points:
                 st.markdown(f"- {p}")
+            
+            st.markdown("**稽核建議**：建議立即針對上述風險點進行詳細抽查，並要求相關部門提供佐證文件。")
             
             st.caption(f"資料來源：TEJ 最新財報（{latest.get('date').strftime('%Y-%m') if isinstance(latest.get('date'), pd.Timestamp) else '最新'}）")
         else:
