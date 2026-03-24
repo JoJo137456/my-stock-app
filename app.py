@@ -381,24 +381,32 @@ market_categories = {
 with st.sidebar:
     st.header("📂 TEJ 內部資料匯入")
     
-    # 建立上傳按鈕，限制只能上傳 Excel 檔案
-    uploaded_tej = st.file_uploader("請上傳 TEJ 財務資料 (.xlsx)", type=["xlsx", "xls"])
+    # 1. 開啟多檔案上傳功能 (accept_multiple_files=True)
+    uploaded_files = st.file_uploader("請上傳 TEJ 財務資料 (.xlsx)", type=["xlsx", "xls"], accept_multiple_files=True)
     
-    # 如果有上傳檔案，就讀取並存入 session_state
-    if uploaded_tej is not None:
+    # 2. 如果有檔案被上傳 (此時 uploaded_files 是一個列表)
+    if uploaded_files:
         try:
-            # 讀取 Excel
-            df_tej = pd.read_excel(uploaded_tej)
-            # 存入系統暫存，這樣切換按鈕時資料才不會消失
-            st.session_state['df_tej'] = df_tej
-            st.success(f"✅ 成功讀取！共 {len(df_tej)} 筆資料")
+            df_list = []
             
-            # (測試用) 展開一個小區塊讓你確認資料有沒有讀錯
-            with st.expander("👀 預覽 TEJ 資料"):
-                st.dataframe(df_tej.head())
+            # 遍歷每一個上傳的檔案，先全部讀取並暫存到清單中
+            for file in uploaded_files:
+                df = pd.read_excel(file)
+                df_list.append(df)
+            
+            # 3. 將清單內所有的 DataFrame 進行垂直合併，並重置索引以防混亂
+            df_tej_combined = pd.concat(df_list, ignore_index=True)
+            
+            # 存入系統暫存，供整個儀表板使用
+            st.session_state['df_tej'] = df_tej_combined
+            st.success(f"✅ 成功合併 {len(uploaded_files)} 個檔案！共 {len(df_tej_combined)} 筆資料")
+            
+            # 展開預覽區塊，讓你確認合併後的長相
+            with st.expander("👀 預覽合併後的 TEJ 資料"):
+                st.dataframe(df_tej_combined.head(10))
                 
         except Exception as e:
-            st.error(f"❌ 讀取失敗，請確認檔案格式。錯誤訊息：{e}")
+            st.error(f"❌ 讀取或合併失敗，請確認所有上傳的 Excel 欄位格式是否一致。錯誤訊息：{e}")
 
     st.markdown("---")
 
