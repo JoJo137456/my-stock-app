@@ -266,7 +266,7 @@ MACRO_IMPACT = {
     "💱 美元兌台幣": "美元兌台幣匯率為台灣出口企業獲利的重要因素。台幣貶值可使電子代工及紡織業獲得匯兌收益，但會提高進口物價。"
 }
 
-# === 5. 左側選單（已修改文字） ===
+# === 5. 左側選單（已按你要求修改） ===
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
         "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC",
@@ -415,7 +415,7 @@ if is_tw_stock:
                 <div class="ai-score-box">
                     <div style="font-size:14px; color:#94a3b8;">稽核 AI 分數</div>
                     <div style="font-size:48px; font-weight:800; color:{'#4ade80' if score >= 70 else '#f87171'};">{score}</div>
-                    <div style="font-size:13px;">70~80 分為優等，60~69 分為普通，<60 分為需加強</div>
+                    <div style="font-size:13px;">90~100 分為極優　70~89 分為優等　60~69 分為普通　低於60 分需加強</div>
                 </div>
                 """, unsafe_allow_html=True)
             
