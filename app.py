@@ -167,7 +167,7 @@ st.markdown("""
         .score-card-value { font-size: 36px; font-weight: 800; color: #0f172a;}
         .highlight-card { border: 2px solid #3b82f6; background: #f8fafc;}
         
-        /* 徹底隱藏上傳區塊的預設英文文字，替換為簡潔中文 */
+        /* 隱藏上傳區塊的預設英文文字，替換為簡潔中文 */
         [data-testid="stFileUploadDropzone"] > div > span { display: none !important; }
         [data-testid="stFileUploadDropzone"] > div::after { 
             content: "📤 點擊或拖曳上傳財報檔案"; 
@@ -388,7 +388,7 @@ with col1:
 with col2:
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
 
-# === 8. 財務健檢與同業對標分析（去識別化、加上時間點與趨勢圖） ===
+# === 8. 財務健檢與同業對標分析（含去識別化、趨勢重構） ===
 if is_tw_stock:
     st.divider()
     
@@ -545,77 +545,114 @@ if is_tw_stock:
             st.plotly_chart(fig_xy, use_container_width=True)
             st.caption("右上角象限代表「存貨去化快」且「帳款回收快」，為最佳營運狀態。")
 
-            # --- 區塊 4：新增期間變化趨勢圖 (動態指標選擇 + 降噪視覺設計) ---
-            st.markdown("#### 📈 歷年營運趨勢軌跡 (時間序列分析)")
+            # === 區塊 4：酷炫猛！動能戰略對標面板 (取代混亂的折線圖) ===
+            st.markdown("#### 🚀 核心指標戰略對標與成長動能")
+            st.markdown("<p style='color:#64748b; font-size:14px; margin-top:-10px;'>放棄雜亂線條，直擊當前排名與最新一期成長動能 (MoM/QoQ)</p>", unsafe_allow_html=True)
             
-            # 動態指標選擇，預設為存貨週轉率
-            trend_metric_options = list(indicators_dict.keys())
             trend_metric = st.selectbox(
-                "請選擇要觀察的趨勢指標", 
-                options=trend_metric_options, 
+                "請選擇要深入剖析的戰略指標", 
+                options=list(indicators_dict.keys()), 
                 format_func=lambda x: indicators_dict[x]['name'],
                 index=4 
             )
             
-            fig_trend = go.Figure()
+            is_higher_better = indicators_dict[trend_metric]['better'] == 'higher'
             
+            # 準備數據：抓取最新一期與前一期計算動能 (Delta)
+            momentum_data = []
             for pid in all_ids:
                 history_df = fin_df[fin_df['stock_id'] == pid].sort_values('date', ascending=True)
                 if not history_df.empty:
                     history_df = history_df.dropna(subset=['date', trend_metric])
-                    if not history_df.empty:
-                        is_target = (pid == str(code))
-                        
-                        # 視覺降噪：主體用紅色粗線，同業用淺灰色細線
-                        line_color = '#ef4444' if is_target else '#cbd5e1'
-                        line_width = 4 if is_target else 2
-                        opacity = 1.0 if is_target else 0.6
-                        
-                        fig_trend.add_trace(go.Scatter(
-                            x=history_df['date'],
-                            y=history_df[trend_metric],
-                            mode='lines+markers',
-                            name=peer_dict[pid],
-                            line=dict(width=line_width, color=line_color),
-                            opacity=opacity,
-                            marker=dict(size=6 if is_target else 4),
-                            hovertemplate=f"<b>{peer_dict[pid]}</b><br>期間: %{{x|%Y-%m}}<br>數值: %{{y:.2f}}<extra></extra>"
-                        ))
-                        
-                        # 直接標記 (Direct Labeling)：在線條最後方直接標註公司名稱
-                        last_row = history_df.iloc[-1]
-                        fig_trend.add_annotation(
-                            x=last_row['date'],
-                            y=last_row[trend_metric],
-                            text=f"{peer_dict[pid]}",
-                            font=dict(color='#0f172a' if is_target else '#64748b', size=13, weight="bold" if is_target else "normal"),
-                            xanchor="left",
-                            xshift=10,
-                            showarrow=False
-                        )
-
-            fig_trend.update_layout(
-                height=450,
-                plot_bgcolor='#ffffff',
-                paper_bgcolor='#ffffff',
-                margin=dict(l=40, r=80, t=40, b=40), # 右側留白給標籤
-                hovermode="x unified",
-                xaxis=dict(
-                    title=dict(text="時間期數", font=dict(size=14, color="#475569")),
-                    gridcolor="#f1f5f9",
-                    tickformat="%Y-%m",
-                    showline=True, linewidth=1, linecolor='#cbd5e1'
-                ),
-                yaxis=dict(
-                    title=dict(text=indicators_dict[trend_metric]['name'], font=dict(size=14, color="#475569")),
-                    gridcolor="#f1f5f9",
-                    zeroline=False
-                ),
-                showlegend=False, # 隱藏圖例，依賴直接標記
-                font=dict(family="Noto Sans TC")
-            )
+                    if len(history_df) >= 1:
+                        curr_val = history_df.iloc[-1][trend_metric]
+                        prev_val = history_df.iloc[-2][trend_metric] if len(history_df) >= 2 else curr_val
+                        delta = curr_val - prev_val
+                        momentum_data.append({
+                            'pid': pid, 
+                            'name': peer_dict[pid], 
+                            'val': curr_val, 
+                            'delta': delta
+                        })
             
-            st.plotly_chart(fig_trend, use_container_width=True)
+            if momentum_data:
+                # 排序邏輯：讓表現最好的排在最上面 (Plotly 的 bar 是從下往上畫，所以我們要遞增排序)
+                momentum_data.sort(key=lambda x: x['val'], reverse=not is_higher_better)
+                
+                names_sorted = [d['name'] for d in momentum_data]
+                vals_sorted = [d['val'] for d in momentum_data]
+                deltas_sorted = [d['delta'] for d in momentum_data]
+                
+                # 設定顏色：目標公司用發光質感的科技藍或亮紅
+                bar_colors = []
+                for d in momentum_data:
+                    if d['pid'] == str(code):
+                        bar_colors.append('#38bdf8') # 目標公司：高亮科技藍
+                    else:
+                        bar_colors.append('#1e293b') # 其他公司：沉穩深灰
+                
+                fig_bar = go.Figure()
+                
+                # 繪製水平長條圖
+                fig_bar.add_trace(go.Bar(
+                    x=vals_sorted,
+                    y=names_sorted,
+                    orientation='h',
+                    marker=dict(
+                        color=bar_colors,
+                        line=dict(color='#0f172a', width=1)
+                    ),
+                    text=[f"{v:.2f}" for v in vals_sorted],
+                    textposition='inside',
+                    insidetextanchor='end',
+                    textfont=dict(color='white', size=16, weight='bold'),
+                    hovertemplate="%{y}<br>數值: %{x:.2f}<extra></extra>"
+                ))
+                
+                # 在長條圖右側動態標註「動能 (Delta)」
+                max_val = max(vals_sorted) if vals_sorted else 1
+                for i, d in enumerate(momentum_data):
+                    delta = d['delta']
+                    # 判斷動能顏色 (看指標性質)
+                    if delta > 0:
+                        delta_color = "#22c55e" if is_higher_better else "#ef4444"
+                        delta_text = f"▲ +{delta:.2f}"
+                    elif delta < 0:
+                        delta_color = "#ef4444" if is_higher_better else "#22c55e"
+                        delta_text = f"▼ {delta:.2f}"
+                    else:
+                        delta_color = "#94a3b8"
+                        delta_text = "持平"
+                        
+                    fig_bar.add_annotation(
+                        x=d['val'] + (max_val * 0.02), # 在 Bar 右側留一點空隙
+                        y=names_sorted[i],
+                        text=delta_text,
+                        font=dict(color=delta_color, size=15, weight='bold'),
+                        xanchor="left",
+                        showarrow=False
+                    )
+                
+                # 更新版面：營造黑底高對比的酷炫科技感
+                fig_bar.update_layout(
+                    height=400,
+                    plot_bgcolor='#0b0f19', # 深色底
+                    paper_bgcolor='#ffffff', # 外框保持白底融入背景
+                    margin=dict(l=80, r=80, t=20, b=20),
+                    xaxis=dict(
+                        showgrid=True,
+                        gridcolor='#1e293b',
+                        zeroline=False,
+                        showticklabels=False # 隱藏底部的數字，讓畫面更簡潔，數字已標在 Bar 上
+                    ),
+                    yaxis=dict(
+                        tickfont=dict(size=14, color="#1e293b", weight="bold"),
+                    ),
+                    font=dict(family="Noto Sans TC")
+                )
+                
+                st.plotly_chart(fig_bar, use_container_width=True)
+                st.caption(f"指標說明：本圖表排序依照「{'數值越高越好' if is_higher_better else '數值越低越好'}」排列。長條圖右側的箭頭與數字代表相對於上一期的增減變化。")
 
         else:
             st.warning("資料中尚未找到該公司資訊，請確認上傳檔案是否正確")
