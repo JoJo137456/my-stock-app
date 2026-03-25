@@ -10,6 +10,7 @@ import yfinance as yf
 import numpy as np
 import os
 import pickle
+import io
 
 # === 0. 系統層級修復 ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -59,15 +60,27 @@ def parse_fin_excel_files(uploaded_files):
     all_dfs = []
     for uploaded_file in uploaded_files:
         try:
-            dfs = pd.read_excel(uploaded_file, sheet_name=None)
+            # 擴充：支援 CSV 與 Excel 格式
+            if uploaded_file.name.lower().endswith('.csv'):
+                try:
+                    df = pd.read_csv(uploaded_file, encoding='utf-8')
+                except UnicodeDecodeError:
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file, encoding='big5-hkscs')
+                dfs = {'Sheet1': df}
+            else:
+                dfs = pd.read_excel(uploaded_file, sheet_name=None)
+                
             for sheet_name, df in dfs.items():
                 df = df.copy()
                 df.columns = [str(col).strip().replace('\n', '').replace('\r', '').replace(' ', '') for col in df.columns]
-              
+               
+                # 擴充：納入銀行業指標
                 col_mapping = {
                     '代號': 'stock_id',
                     '名稱': 'company_name',
                     '年/月': 'date',
+                    # 製造業/一般產業指標
                     '存貨及應收帳款/淨值': 'inv_ar_to_equity',
                     '應收帳款週轉次數': 'ar_turnover_times',
                     '總資產週轉次數': 'total_assets_turnover',
@@ -79,27 +92,41 @@ def parse_fin_excel_files(uploaded_files):
                     '淨值週轉率（次）': 'equity_turnover',
                     '應付帳款付現天數': 'ap_days',
                     '淨營業週期（日）': 'net_operating_cycle',
+                    # 銀行業專屬指標
+                    '土地/淨值': 'land_to_equity',
+                    '固定資產/淨值': 'fixed_assets_to_equity',
+                    '利息未收現比率': 'uncollected_interest_ratio',
+                    '催收款比率': 'npl_ratio',
+                    '資產市占率': 'asset_market_share',
+                    '淨值市占率': 'equity_market_share',
+                    '存款市占率': 'deposit_market_share',
+                    '放款市占率': 'loan_market_share'
                 }
                 df = df.rename(columns={k: v for k, v in col_mapping.items() if k in df.columns})
-              
+               
                 if 'stock_id' not in df.columns and 'company_name' in df.columns:
-                    df['stock_id'] = df['company_name'].str.extract(r'(\d{4})')
+                    df['stock_id'] = df['company_name'].astype(str).str.extract(r'(\d{4})')
                 if 'stock_id' in df.columns:
                     df['stock_id'] = df['stock_id'].astype(str).str.zfill(4)
-              
+               
                 if 'date' in df.columns:
                     df['date'] = pd.to_datetime(df['date'], errors='coerce')
-              
-                numeric_cols = ['inv_ar_to_equity', 'ar_turnover_times', 'total_assets_turnover', 'ar_days',
-                                'inv_turnover_times', 'inv_days', 'fixed_assets_turnover', 'equity_turnover',
-                                'ap_days', 'net_operating_cycle']
+               
+                numeric_cols = [
+                    'inv_ar_to_equity', 'ar_turnover_times', 'total_assets_turnover', 'ar_days',
+                    'inv_turnover_times', 'inv_days', 'fixed_assets_turnover', 'equity_turnover',
+                    'ap_days', 'net_operating_cycle',
+                    'land_to_equity', 'fixed_assets_to_equity', 'uncollected_interest_ratio',
+                    'npl_ratio', 'asset_market_share', 'equity_market_share', 
+                    'deposit_market_share', 'loan_market_share'
+                ]
                 for col in numeric_cols:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors='coerce')
-              
+               
                 if 'inv_turnover_times' in df.columns:
                     df['inv_days'] = (365 / df['inv_turnover_times']).round(1)
-              
+               
                 all_dfs.append(df)
         except Exception as e:
             st.warning(f"檔案「{uploaded_file.name}」解析失敗：{str(e)}")
@@ -156,7 +183,7 @@ def check_password():
 if not check_password():
     st.stop()
 
-# === 2. 核心 UI 樣式與 CSS 注入 (恢復白底乾淨專業版) ===
+# === 2. 核心 UI 樣式與 CSS 注入 ===
 st.markdown("""
     <style>
         html, body, [class*="css"] { font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif !important; }
@@ -166,11 +193,10 @@ st.markdown("""
         .score-card-title { font-size: 14px; color: #64748b; font-weight: 600; margin-bottom: 5px;}
         .score-card-value { font-size: 36px; font-weight: 800; color: #0f172a;}
         .highlight-card { border: 2px solid #3b82f6; background: #f8fafc;}
-       
-        /* 隱藏上傳區塊的預設英文文字，替換為簡潔中文 */
+        
         [data-testid="stFileUploadDropzone"] > div > span { display: none !important; }
         [data-testid="stFileUploadDropzone"] > div::after {
-            content: "📤 點擊或拖曳上傳財報檔案";
+            content: "📤 點擊或拖曳上傳財報/銀行同業檔案 (支援 xlsx, csv)";
             display: block;
             font-weight: 600;
             color: #475569;
@@ -218,16 +244,16 @@ market_categories = {
     "🥤 國際品牌終端 (化纖板塊對標)": {"🇺🇸 Coca-Cola": "KO", "🇺🇸 PepsiCo": "PEP"}
 }
 
-# === 新增：外部競爭對手定義（已徹底排除遠東集團內部公司）===
+# === 擴充：加入銀行業的外部競爭對手 ===
 external_peers = {
-    '1402': ['1409', '1718', '1464'],      # 遠東新 → 新纖、中纖、得力
-    '1460': ['1409', '1718', '1464'],      # 宏遠 → 同上
-    '1710': ['1718'],                      # 東聯 → 中纖
-    '1102': ['1101', '1103', '1104', '1108', '1109', '1110', '2504'],  # 亞泥 → 水泥同業
-    '2606': ['2605', '5608', '2617', '2612', '2641'],                  # 裕民 → 航運同業
-    '2903': [],                            # 遠百 → 無明顯外部對手
-    '4904': ['2412', '3045'],              # 遠傳 → 中華電、台灣大
-    '2845': []                             # 遠東銀 → 目前無資料
+    '1402': ['1409', '1718', '1464'],
+    '1460': ['1409', '1718', '1464'],
+    '1710': ['1718'],
+    '1102': ['1101', '1103', '1104', '1108', '1109', '1110', '2504'],
+    '2606': ['2605', '5608', '2617', '2612', '2641'],
+    '2903': [],
+    '4904': ['2412', '3045'],
+    '2845': ['2801', '2812', '2838', '2897', '2834', '2809', '2836', '2849', '5876'] # 遠東銀的同業名單
 }
 
 # 完整公司名稱對照表（用於顯示）
@@ -237,7 +263,9 @@ company_name_dict = {
     '1109': '信大', '1110': '東泥', '2504': '國產',
     '2605': '新興', '5608': '四維航', '2617': '台航', '2612': '中航', '2641': '正德',
     '2412': '中華電', '3045': '台灣大',
-    '1460': '宏遠', '1710': '東聯', '2903': '遠百', '4904': '遠傳', '2845': '遠東銀'
+    '1460': '宏遠', '1710': '東聯', '2903': '遠百', '4904': '遠傳', '2845': '遠東銀',
+    '2801': '彰銀', '2812': '台中銀', '2838': '聯邦銀', '2897': '王道銀行', 
+    '2834': '臺企銀', '2809': '京城銀', '2836': '高雄銀', '2849': '安泰銀', '5876': '上海商銀'
 }
 
 # === 5. API 與真實資料抓取模組 ===
@@ -262,7 +290,7 @@ def fetch_twse_history_proxy(stock_code):
 @st.cache_data(ttl=3600)
 def fetch_us_history(ticker_symbol):
     try:
-        tk = yf.Ticker(ticker_symbol)
+        tk = yfinance.Ticker(ticker_symbol)
         hist = tk.history(period="6mo")
         data_list = [{'date': idx.strftime('%Y-%m-%d'), 'volume': float(row['Volume']), 'open': float(row['Open']), 'high': float(row['High']), 'low': float(row['Low']), 'close': float(row['Close'])} for idx, row in hist.iterrows()]
         return data_list
@@ -312,7 +340,7 @@ with st.sidebar:
     st.header("🎯 戰略監控目標")
     st.subheader("📤 財務數據資料匯入")
  
-    uploaded_files = st.file_uploader("上傳財報檔案", type=["xlsx", "xls"], accept_multiple_files=True, label_visibility="collapsed")
+    uploaded_files = st.file_uploader("上傳財報檔案", type=["xlsx", "xls", "csv"], accept_multiple_files=True, label_visibility="collapsed")
  
     if uploaded_files:
         with st.spinner("🔄 正在解析並保存資料..."):
@@ -410,16 +438,15 @@ with col1:
 with col2:
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
 
-# === 8. 財務健檢與同業對標分析（已改為動態外部競爭對手） ===
+# === 8. 財務健檢與同業對標分析 ===
 if is_tw_stock:
     st.divider()
     fin_df = st.session_state.get('fin_data', None)
  
     if fin_df is not None and not fin_df.empty:
-        # === 動態取得外部競爭對手 ===
+        # 動態取得外部競爭對手
         peer_codes = external_peers.get(str(code), [])
         all_ids = [str(code)] + peer_codes
-        # 建立顯示用的peer_dict
         peer_dict = {pid: company_name_dict.get(pid, pid) for pid in all_ids}
  
         latest_data = {}
@@ -434,11 +461,31 @@ if is_tw_stock:
             if pd.notna(latest_date_val):
                 data_date_str = latest_date_val.strftime('%Y-%m')
  
-            st.markdown(f"## 📊 財務健檢與同業對標分析 <span style='font-size: 1rem; color: #64748b; font-weight: 500;'>（資料期數：{data_date_str}）</span>", unsafe_allow_html=True)
-            current_company_name = peer_dict.get(str(code), f"公司 {code}")
-            st.markdown(f"### 🔍 目前分析主體：**{current_company_name} ({code})**")
+        st.markdown(f"## 📊 財務健檢與同業對標分析 <span style='font-size: 1rem; color: #64748b; font-weight: 500;'>（資料期數：{data_date_str}）</span>", unsafe_allow_html=True)
+        current_company_name = peer_dict.get(str(code), f"公司 {code}")
+        st.markdown(f"### 🔍 目前分析主體：**{current_company_name} ({code})**")
  
-            # 指標定義（不變）
+        # === 動態判定產業指標 (銀行業 vs 製造業) ===
+        is_bank = (str(code) in ['2845'] or str(code) in external_peers.get('2845', []))
+        
+        if is_bank:
+            indicators_dict = {
+                'land_to_equity': {'name': '土地/淨值', 'better': 'lower'},
+                'fixed_assets_to_equity': {'name': '固定資產/淨值', 'better': 'lower'},
+                'uncollected_interest_ratio': {'name': '利息未收現比率', 'better': 'lower'},
+                'npl_ratio': {'name': '催收款比率', 'better': 'lower'}
+            }
+            # 如果有市佔率資料，自動加入顯示
+            optional_bank_metrics = {
+                'asset_market_share': {'name': '資產市占率', 'better': 'higher'},
+                'equity_market_share': {'name': '淨值市占率', 'better': 'higher'},
+                'deposit_market_share': {'name': '存款市占率', 'better': 'higher'},
+                'loan_market_share': {'name': '放款市占率', 'better': 'higher'}
+            }
+            for k, v in optional_bank_metrics.items():
+                if k in fin_df.columns and not fin_df[k].isna().all():
+                    indicators_dict[k] = v
+        else:
             indicators_dict = {
                 'inv_ar_to_equity': {'name': '存貨及應收帳款/淨值', 'better': 'lower'},
                 'ar_turnover_times': {'name': '應收帳款週轉次數', 'better': 'higher'},
@@ -452,126 +499,152 @@ if is_tw_stock:
                 'net_operating_cycle': {'name': '淨營業週期', 'better': 'lower'}
             }
  
-            # 計算業界平均（只含有資料的peer）
-            industry_avg = {}
-            for key in indicators_dict.keys():
-                vals = [latest_data[pid].get(key) for pid in latest_data if pd.notna(latest_data[pid].get(key))]
-                industry_avg[key] = np.mean(vals) if vals else np.nan
+        # 計算業界平均
+        industry_avg = {}
+        for key in indicators_dict.keys():
+            vals = [latest_data[pid].get(key) for pid in latest_data if pd.notna(latest_data[pid].get(key))]
+            industry_avg[key] = np.mean(vals) if vals else np.nan
  
-            # 計算綜合評分
-            scores = {}
-            for pid, data in latest_data.items():
-                score = 0
-                for key, info in indicators_dict.items():
-                    val = data.get(key)
-                    avg = industry_avg.get(key)
-                    if pd.notna(val) and pd.notna(avg):
-                        if info['better'] == 'higher' and val >= avg:
-                            score += 10
-                        elif info['better'] == 'lower' and val <= avg:
-                            score += 10
-                scores[pid] = score
+        # 計算綜合評分
+        scores = {}
+        for pid, data in latest_data.items():
+            score = 0
+            valid_metrics_count = 0
+            for key, info in indicators_dict.items():
+                val = data.get(key)
+                avg = industry_avg.get(key)
+                if pd.notna(val) and pd.notna(avg):
+                    valid_metrics_count += 1
+                    if info['better'] == 'higher' and val >= avg:
+                        score += 10
+                    elif info['better'] == 'lower' and val <= avg:
+                        score += 10
+            # 針對指標數量較少的銀行業校準滿分邏輯，若只有4個指標，總分拉伸至100
+            final_score = int((score / (valid_metrics_count * 10)) * 100) if valid_metrics_count > 0 else 0
+            scores[pid] = final_score
  
-            # --- 區塊 1：綜合評分看板 ---
-            st.markdown("#### 🏆 經營能力綜合評分比較 (滿分 100 分)")
-            cols = st.columns(len(latest_data))
-            for i, (pid, score) in enumerate(scores.items()):
-                comp_name = peer_dict.get(pid, pid)
-                is_current = (pid == str(code))
-                highlight_class = "highlight-card" if is_current else ""
-                color = "#22c55e" if score >= 60 else "#ef4444"
-                with cols[i]:
-                    st.markdown(f"""
-                    <div class="score-card {highlight_class}">
-                        <div class="score-card-title">{comp_name} ({pid})</div>
-                        <div class="score-card-value" style="color: {color};">{score}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+        # --- 區塊 1：綜合評分看板 ---
+        st.markdown("#### 🏆 經營能力綜合評分比較 (滿分 100 分)")
+        cols = st.columns(len(latest_data))
+        for i, (pid, score) in enumerate(scores.items()):
+            comp_name = peer_dict.get(pid, pid)
+            is_current = (pid == str(code))
+            highlight_class = "highlight-card" if is_current else ""
+            color = "#22c55e" if score >= 60 else "#ef4444"
+            with cols[i]:
+                st.markdown(f"""
+                <div class="score-card {highlight_class}">
+                    <div class="score-card-title">{comp_name} ({pid})</div>
+                    <div class="score-card-value" style="color: {color};">{score}</div>
+                </div>
+                """, unsafe_allow_html=True)
  
-            st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
  
-            # --- 區塊 2：數據表 ---
-            st.markdown("#### 📝 最新關鍵指標明細 (原始數據)")
-            table_data = {"指標": [info['name'] for info in indicators_dict.values()]}
-            for pid in all_ids:
-                if pid in latest_data:
-                    c_data = latest_data[pid]
-                    col_name = f"{peer_dict[pid]} ({pid})"
-                    table_data[col_name] = [
-                        round(c_data.get(k, np.nan), 2) if pd.notna(c_data.get(k)) else "-"
-                        for k in indicators_dict.keys()
-                    ]
-            metrics_df = pd.DataFrame(table_data)
-            st.dataframe(metrics_df, use_container_width=True, hide_index=True)
+        # --- 區塊 2：數據表 ---
+        st.markdown("#### 📝 最新關鍵指標明細 (原始數據)")
+        table_data = {"指標": [info['name'] for info in indicators_dict.values()]}
+        for pid in all_ids:
+            if pid in latest_data:
+                c_data = latest_data[pid]
+                col_name = f"{peer_dict[pid]} ({pid})"
+                table_data[col_name] = [
+                    round(c_data.get(k, np.nan), 2) if pd.notna(c_data.get(k)) else "-"
+                    for k in indicators_dict.keys()
+                ]
+        metrics_df = pd.DataFrame(table_data)
+        st.dataframe(metrics_df, use_container_width=True, hide_index=True)
  
-            # --- 區塊 3：X-Y 軸矩陣 ---
-            st.markdown("#### 🎯 營運雙核心矩陣 (存貨週轉率 vs 應收帳款週轉次數)")
+        # --- 區塊 3：X-Y 軸矩陣 ---
+        st.markdown("#### 🎯 營運雙核心矩陣")
+        
+        if is_bank:
+            x_metric = 'uncollected_interest_ratio'
+            y_metric = 'npl_ratio'
+            x_title = "利息未收現比率 (%) ➔ 越低越好"
+            y_title = "催收款比率 (%) ➔ 越低越好"
+            quadrant_caption = "左下角象限代表「利息收現狀況佳」且「資產品質優良 (催收款少)」，為最佳營運狀態。"
+            hover_x_name = "利息未收現比率"
+            hover_y_name = "催收款比率"
+        else:
             x_metric = 'inv_turnover_times'
             y_metric = 'ar_turnover_times'
-            fig_xy = go.Figure()
-            for pid in all_ids:
-                if pid in latest_data:
-                    data = latest_data[pid]
-                    x_val = data.get(x_metric, np.nan)
-                    y_val = data.get(y_metric, np.nan)
-                    if pd.notna(x_val) and pd.notna(y_val):
-                        is_target = (pid == str(code))
-                        fig_xy.add_trace(go.Scatter(
-                            x=[x_val], y=[y_val],
-                            mode='markers+text',
-                            name=peer_dict[pid],
-                            text=[peer_dict[pid]],
-                            textposition="top center",
-                            textfont=dict(size=14, color="#1e293b" if not is_target else "#ef4444", weight="bold" if is_target else "normal"),
-                            marker=dict(size=24 if is_target else 18, color='#ef4444' if is_target else '#94a3b8', line=dict(width=2, color='white'), opacity=0.9),
-                            hovertemplate=f"<b>{peer_dict[pid]}</b><br>存貨週轉率: %{{x:.2f}}<br>應收帳款週轉: %{{y:.2f}}<extra></extra>"
-                        ))
-            fig_xy.update_layout(height=500, plot_bgcolor='#f8fafc', paper_bgcolor='#ffffff', margin=dict(l=40,r=40,t=40,b=40),
-                                  xaxis=dict(title="存貨週轉率 (次) ➔ 越高越好", gridcolor="white", zerolinecolor="#cbd5e1", zerolinewidth=2),
-                                  yaxis=dict(title="應收帳款週轉次數 (次) ➔ 越高越好", gridcolor="white", zerolinecolor="#cbd5e1", zerolinewidth=2),
-                                  showlegend=False)
-            st.plotly_chart(fig_xy, use_container_width=True)
-            st.caption("右上角象限代表「存貨去化快」且「帳款回收快」，為最佳營運狀態。")
+            x_title = "存貨週轉率 (次) ➔ 越高越好"
+            y_title = "應收帳款週轉次數 (次) ➔ 越高越好"
+            quadrant_caption = "右上角象限代表「存貨去化快」且「帳款回收快」，為最佳營運狀態。"
+            hover_x_name = "存貨週轉率"
+            hover_y_name = "應收帳款週轉"
+            
+        fig_xy = go.Figure()
+        for pid in all_ids:
+            if pid in latest_data:
+                data = latest_data[pid]
+                x_val = data.get(x_metric, np.nan)
+                y_val = data.get(y_metric, np.nan)
+                if pd.notna(x_val) and pd.notna(y_val):
+                    is_target = (pid == str(code))
+                    fig_xy.add_trace(go.Scatter(
+                        x=[x_val], y=[y_val],
+                        mode='markers+text',
+                        name=peer_dict[pid],
+                        text=[peer_dict[pid]],
+                        textposition="top center",
+                        textfont=dict(size=14, color="#1e293b" if not is_target else "#ef4444", weight="bold" if is_target else "normal"),
+                        marker=dict(size=24 if is_target else 18, color='#ef4444' if is_target else '#94a3b8', line=dict(width=2, color='white'), opacity=0.9),
+                        hovertemplate=f"<b>{peer_dict[pid]}</b><br>{hover_x_name}: %{{x:.2f}}<br>{hover_y_name}: %{{y:.2f}}<extra></extra>"
+                    ))
+        
+        # 根據銀行業(越低越好)與製造業(越高越好)決定坐標軸反轉邏輯
+        if is_bank:
+            # 銀行業：指標越低越好，將原點設在左下角，但不反轉坐標，自然形成左下角為佳
+            pass
+            
+        fig_xy.update_layout(height=500, plot_bgcolor='#f8fafc', paper_bgcolor='#ffffff', margin=dict(l=40,r=40,t=40,b=40),
+                              xaxis=dict(title=x_title, gridcolor="white", zerolinecolor="#cbd5e1", zerolinewidth=2),
+                              yaxis=dict(title=y_title, gridcolor="white", zerolinecolor="#cbd5e1", zerolinewidth=2),
+                              showlegend=False)
+        st.plotly_chart(fig_xy, use_container_width=True)
+        st.caption(quadrant_caption)
  
-            # --- 區塊 4：8季趨勢圖 ---
-            st.markdown("#### 📈 歷年營運效率趨勢對標 (近 8 季)")
-            trend_metric = st.selectbox("請選擇要深入剖析的戰略指標", options=list(indicators_dict.keys()), format_func=lambda x: indicators_dict[x]['name'], index=4)
+        # --- 區塊 4：趨勢圖 ---
+        st.markdown("#### 📈 歷年營運效率趨勢對標")
+        trend_metric = st.selectbox("請選擇要深入剖析的戰略指標", options=list(indicators_dict.keys()), format_func=lambda x: indicators_dict[x]['name'])
  
-            fenc_df = fin_df[fin_df['stock_id'] == str(code)].sort_values('date', ascending=True).dropna(subset=['date', trend_metric])
-            fenc_df['pct_change'] = fenc_df[trend_metric].pct_change() * 100
+        fenc_df = fin_df[fin_df['stock_id'] == str(code)].sort_values('date', ascending=True).dropna(subset=['date', trend_metric])
+        fenc_df['pct_change'] = fenc_df[trend_metric].pct_change() * 100
  
-            peer_df = fin_df[fin_df['stock_id'].isin(peer_codes)].dropna(subset=['date', trend_metric])
-            peer_avg_df = peer_df.groupby('date')[trend_metric].mean().reset_index().rename(columns={trend_metric: 'peer_avg'})
+        peer_df = fin_df[fin_df['stock_id'].isin(peer_codes)].dropna(subset=['date', trend_metric])
+        peer_avg_df = peer_df.groupby('date')[trend_metric].mean().reset_index().rename(columns={trend_metric: 'peer_avg'})
  
-            merged_df = pd.merge(fenc_df[['date', trend_metric, 'pct_change']], peer_avg_df, on='date', how='inner').tail(8)
+        merged_df = pd.merge(fenc_df[['date', trend_metric, 'pct_change']], peer_avg_df, on='date', how='inner').tail(8)
  
-            if not merged_df.empty:
-                x_labels = merged_df['date'].dt.strftime('%Y-%m')
-                text_annotations = []
-                for _, row in merged_df.iterrows():
-                    val = row[trend_metric]
-                    pct = row['pct_change']
-                    if pd.isna(pct):
-                        text_annotations.append(f"{val:.2f}")
-                    elif pct > 0:
-                        text_annotations.append(f"{val:.2f}<br>▲ {pct:.1f}%")
-                    elif pct < 0:
-                        text_annotations.append(f"{val:.2f}<br>▼ {abs(pct):.1f}%")
-                    else:
-                        text_annotations.append(f"{val:.2f}<br>持平")
+        if not merged_df.empty:
+            x_labels = merged_df['date'].dt.strftime('%Y-%m')
+            text_annotations = []
+            for _, row in merged_df.iterrows():
+                val = row[trend_metric]
+                pct = row['pct_change']
+                if pd.isna(pct):
+                    text_annotations.append(f"{val:.2f}")
+                elif pct > 0:
+                    text_annotations.append(f"{val:.2f}<br>▲ {pct:.1f}%")
+                elif pct < 0:
+                    text_annotations.append(f"{val:.2f}<br>▼ {abs(pct):.1f}%")
+                else:
+                    text_annotations.append(f"{val:.2f}<br>持平")
  
-                fig_trend = go.Figure()
-                fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df[trend_metric], name=current_company_name, marker_color='#ef4444', text=text_annotations, textposition='outside'))
-                fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df['peer_avg'], name='外部同業平均', marker_color='#cbd5e1', text=[f"{v:.2f}" for v in merged_df['peer_avg']], textposition='outside'))
-                fig_trend.update_layout(barmode='group', height=500, plot_bgcolor='#ffffff', paper_bgcolor='#ffffff',
-                                        xaxis=dict(title="時間期數"), yaxis=dict(title=indicators_dict[trend_metric]['name']),
-                                        legend=dict(orientation="h", y=1.05, x=0.5))
-                st.plotly_chart(fig_trend, use_container_width=True)
-            else:
-                st.info("資料筆數不足以繪製歷史趨勢，請確認上傳的財報包含足夠的歷史期數。")
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df[trend_metric], name=current_company_name, marker_color='#ef4444', text=text_annotations, textposition='outside'))
+            fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df['peer_avg'], name='外部同業平均', marker_color='#cbd5e1', text=[f"{v:.2f}" for v in merged_df['peer_avg']], textposition='outside'))
+            fig_trend.update_layout(barmode='group', height=500, plot_bgcolor='#ffffff', paper_bgcolor='#ffffff',
+                                    xaxis=dict(title="時間期數"), yaxis=dict(title=indicators_dict[trend_metric]['name']),
+                                    legend=dict(orientation="h", y=1.05, x=0.5))
+            st.plotly_chart(fig_trend, use_container_width=True)
+        else:
+            st.info("資料筆數不足以繪製歷史趨勢，請確認上傳的財報包含足夠的歷史期數。")
  
     else:
-        st.info("請先上傳財務資料以啟用分析功能")
+        st.info("請先上傳財務/銀行同業資料以啟用分析功能")
 
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
 st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：內部財報系統（永久保存）</div>', unsafe_allow_html=True)
