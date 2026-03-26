@@ -60,7 +60,6 @@ def parse_fin_excel_files(uploaded_files):
     all_dfs = []
     for uploaded_file in uploaded_files:
         try:
-            # 擴充：支援 CSV 與 Excel 格式
             if uploaded_file.name.lower().endswith('.csv'):
                 try:
                     df = pd.read_csv(uploaded_file, encoding='utf-8')
@@ -74,13 +73,11 @@ def parse_fin_excel_files(uploaded_files):
             for sheet_name, df in dfs.items():
                 df = df.copy()
                 df.columns = [str(col).strip().replace('\n', '').replace('\r', '').replace(' ', '') for col in df.columns]
-               
-                # 擴充：納入銀行業指標
+                
                 col_mapping = {
                     '代號': 'stock_id',
                     '名稱': 'company_name',
                     '年/月': 'date',
-                    # 製造業/一般產業指標
                     '存貨及應收帳款/淨值': 'inv_ar_to_equity',
                     '應收帳款週轉次數': 'ar_turnover_times',
                     '總資產週轉次數': 'total_assets_turnover',
@@ -92,7 +89,6 @@ def parse_fin_excel_files(uploaded_files):
                     '淨值週轉率（次）': 'equity_turnover',
                     '應付帳款付現天數': 'ap_days',
                     '淨營業週期（日）': 'net_operating_cycle',
-                    # 銀行業專屬指標
                     '土地/淨值': 'land_to_equity',
                     '固定資產/淨值': 'fixed_assets_to_equity',
                     '利息未收現比率': 'uncollected_interest_ratio',
@@ -103,15 +99,15 @@ def parse_fin_excel_files(uploaded_files):
                     '放款市占率': 'loan_market_share'
                 }
                 df = df.rename(columns={k: v for k, v in col_mapping.items() if k in df.columns})
-               
+                
                 if 'stock_id' not in df.columns and 'company_name' in df.columns:
                     df['stock_id'] = df['company_name'].astype(str).str.extract(r'(\d{4})')
                 if 'stock_id' in df.columns:
                     df['stock_id'] = df['stock_id'].astype(str).str.zfill(4)
-               
+                
                 if 'date' in df.columns:
                     df['date'] = pd.to_datetime(df['date'], errors='coerce')
-               
+                
                 numeric_cols = [
                     'inv_ar_to_equity', 'ar_turnover_times', 'total_assets_turnover', 'ar_days',
                     'inv_turnover_times', 'inv_days', 'fixed_assets_turnover', 'equity_turnover',
@@ -123,14 +119,14 @@ def parse_fin_excel_files(uploaded_files):
                 for col in numeric_cols:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors='coerce')
-               
+                
                 if 'inv_turnover_times' in df.columns:
                     df['inv_days'] = (365 / df['inv_turnover_times']).round(1)
-               
+                
                 all_dfs.append(df)
         except Exception as e:
             st.warning(f"檔案「{uploaded_file.name}」解析失敗：{str(e)}")
- 
+            
     if all_dfs:
         combined = pd.concat(all_dfs, ignore_index=True)
         sort_cols = [col for col in ['stock_id', 'date'] if col in combined.columns]
@@ -253,10 +249,9 @@ external_peers = {
     '2606': ['2605', '5608', '2617', '2612', '2641'],
     '2903': [],
     '4904': ['2412', '3045'],
-    '2845': ['2801', '2812', '2838', '2897', '2834', '2809', '2836', '2849', '5876'] # 遠東銀的同業名單
+    '2845': ['2801', '2812', '2838', '2897', '2834', '2809', '2836', '2849', '5876']
 }
 
-# 完整公司名稱對照表（用於顯示）
 company_name_dict = {
     '1402': '遠東新', '1409': '新纖', '1464': '得力', '1718': '中纖',
     '1101': '台泥', '1103': '嘉泥', '1104': '環泥', '1108': '幸福',
@@ -268,33 +263,33 @@ company_name_dict = {
     '2834': '臺企銀', '2809': '京城銀', '2836': '高雄銀', '2849': '安泰銀', '5876': '上海商銀'
 }
 
-# === 5. API 與真實資料抓取模組 ===
+# === 5. API 與真實資料抓取模組 (已升級為 yfinance 統一抓取，解決 TWSE IP 限制) ===
 @st.cache_data(ttl=3600)
-def fetch_twse_history_proxy(stock_code):
+def fetch_history_yf(stock_code, is_tw=False):
+    """統一使用 yfinance 抓取歷史 K 線，避免被台灣證交所 API 封鎖 IP"""
     try:
-        data_list = []
-        now = datetime.now()
-        for i in range(6):
-            target_date = (now.replace(day=1) - pd.DateOffset(months=i)).strftime('%Y%m01')
-            url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date={target_date}&stockNo={stock_code}"
-            r = requests.get(url).json()
-            if r['stat'] == 'OK':
-                for row in r['data']:
-                    parts = row[0].split('/')
-                    date_iso = f"{int(parts[0])+1911}-{parts[1]}-{parts[2]}"
-                    def tf(s): return float(s.replace(',', '')) if s != '--' else 0.0
-                    data_list.append({'date': date_iso, 'volume': tf(row[1]), 'open': tf(row[3]), 'high': tf(row[4]), 'low': tf(row[5]), 'close': tf(row[6])})
-        return sorted(data_list, key=lambda x: x['date'])
-    except: return None
-
-@st.cache_data(ttl=3600)
-def fetch_us_history(ticker_symbol):
-    try:
-        tk = yfinance.Ticker(ticker_symbol)
+        symbol = f"{stock_code}.TW" if is_tw else stock_code
+        tk = yf.Ticker(symbol)
         hist = tk.history(period="6mo")
-        data_list = [{'date': idx.strftime('%Y-%m-%d'), 'volume': float(row['Volume']), 'open': float(row['Open']), 'high': float(row['High']), 'low': float(row['Low']), 'close': float(row['Close'])} for idx, row in hist.iterrows()]
+        # 針對少數上櫃股票的 fallback
+        if hist.empty and is_tw:
+            symbol = f"{stock_code}.TWO"
+            tk = yf.Ticker(symbol)
+            hist = tk.history(period="6mo")
+            
+        data_list = []
+        for idx, row in hist.iterrows():
+            data_list.append({
+                'date': idx.strftime('%Y-%m-%d'), 
+                'volume': float(row['Volume']), 
+                'open': float(row['Open']), 
+                'high': float(row['High']), 
+                'low': float(row['Low']), 
+                'close': float(row['Close'])
+            })
         return data_list
-    except: return None
+    except:
+        return []
 
 @st.cache_data(ttl=300)
 def get_intraday_chart_data(stock_code, is_us_source=False):
@@ -313,14 +308,27 @@ def plot_daily_k(df):
     df = df.copy()
     df.set_index(pd.to_datetime(df['date']), inplace=True)
     df = df.tail(120)
+    
     fig = go.Figure(data=[go.Candlestick(
-        x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'],
-        increasing_line_color='#ef4444', increasing_fillcolor='#ef4444',
-        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e',
+        x=df.index, 
+        open=df['open'], high=df['high'], low=df['low'], close=df['close'],
+        increasing_line_color='#ef4444', increasing_fillcolor='#ef4444', # 紅色 (漲)
+        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e', # 綠色 (跌)
         name="日K"
     )])
-    fig.update_layout(title="<b>📊 歷史價格走勢 (近半年)</b>", xaxis_rangeslider_visible=False, height=380, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='#ffffff', plot_bgcolor='#ffffff')
-    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
+    
+    fig.update_layout(
+        title="<b>📊 歷史價格走勢 (近半年)</b>", 
+        xaxis_rangeslider_visible=False, 
+        height=380, 
+        margin=dict(l=10, r=10, t=40, b=10), 
+        paper_bgcolor='#ffffff', 
+        plot_bgcolor='#ffffff'
+    )
+    fig.update_xaxes(
+        showgrid=True, gridwidth=1, gridcolor='#f1f5f9',
+        rangebreaks=[dict(bounds=["sat", "mon"])] # 隱藏週末斷層，讓K線連續
+    )
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     return fig
 
@@ -339,9 +347,9 @@ def plot_intraday_line(df):
 with st.sidebar:
     st.header("🎯 戰略監控目標")
     st.subheader("📤 財務數據資料匯入")
- 
+    
     uploaded_files = st.file_uploader("上傳財報檔案", type=["xlsx", "xls", "csv"], accept_multiple_files=True, label_visibility="collapsed")
- 
+    
     if uploaded_files:
         with st.spinner("🔄 正在解析並保存資料..."):
             fin_df = parse_fin_excel_files(uploaded_files)
@@ -355,13 +363,13 @@ with st.sidebar:
             if saved is not None:
                 st.session_state['fin_data'] = saved
                 st.success("✅ 已自動載入保存的財務資料")
- 
+                
     if st.button("🗑️ 清除保存的財務資料"):
         if clear_saved_fin_data():
             st.session_state.pop('fin_data', None)
             st.success("✅ 已清除保存資料")
             st.rerun()
- 
+            
     st.markdown("---")
     selected_category = st.selectbox("板塊分類", list(market_categories.keys()))
     st.markdown("---")
@@ -380,14 +388,14 @@ if is_tw_stock:
             latest = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else (float(info['open']) if info['open'] != '-' else 0.0)
             real_data.update({'price': latest, 'high': info.get('high', '-'), 'low': info.get('low', '-'), 'open': info.get('open', '-'), 'volume': info.get('accumulate_trade_volume', '0')})
     except: pass
-    hist_data = fetch_twse_history_proxy(code)
+    hist_data = fetch_history_yf(code, is_tw=True) # 使用 yfinance 抓取台股歷史
 else:
     try:
         tk = yf.Ticker(code)
         fi = tk.fast_info
         real_data.update({'price': fi.last_price, 'open': fi.open, 'high': fi.day_high, 'low': fi.day_low, 'volume': f"{int(fi.last_volume):,}"})
     except: pass
-    hist_data = fetch_us_history(code)
+    hist_data = fetch_history_yf(code, is_tw=False) # 使用 yfinance 抓取美股歷史
 
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 df_intra = get_intraday_chart_data(code, is_us_source=not is_tw_stock)
@@ -442,29 +450,29 @@ with col2:
 if is_tw_stock:
     st.divider()
     fin_df = st.session_state.get('fin_data', None)
- 
+    
     if fin_df is not None and not fin_df.empty:
         # 動態取得外部競爭對手
         peer_codes = external_peers.get(str(code), [])
         all_ids = [str(code)] + peer_codes
         peer_dict = {pid: company_name_dict.get(pid, pid) for pid in all_ids}
- 
+
         latest_data = {}
         data_date_str = "最新期數"
         for pid in all_ids:
             c_df = fin_df[fin_df['stock_id'] == pid].sort_values('date', ascending=False)
             if not c_df.empty:
                 latest_data[pid] = c_df.iloc[0]
- 
+
         if str(code) in latest_data:
             latest_date_val = latest_data[str(code)].get('date')
             if pd.notna(latest_date_val):
                 data_date_str = latest_date_val.strftime('%Y-%m')
- 
+
         st.markdown(f"## 📊 財務健檢與同業對標分析 <span style='font-size: 1rem; color: #64748b; font-weight: 500;'>（資料期數：{data_date_str}）</span>", unsafe_allow_html=True)
         current_company_name = peer_dict.get(str(code), f"公司 {code}")
         st.markdown(f"### 🔍 目前分析主體：**{current_company_name} ({code})**")
- 
+
         # === 動態判定產業指標 (銀行業 vs 製造業) ===
         is_bank = (str(code) in ['2845'] or str(code) in external_peers.get('2845', []))
         
@@ -498,13 +506,13 @@ if is_tw_stock:
                 'ap_days': {'name': '應付帳款付現天數', 'better': 'lower'},
                 'net_operating_cycle': {'name': '淨營業週期', 'better': 'lower'}
             }
- 
+
         # 計算業界平均
         industry_avg = {}
         for key in indicators_dict.keys():
             vals = [latest_data[pid].get(key) for pid in latest_data if pd.notna(latest_data[pid].get(key))]
             industry_avg[key] = np.mean(vals) if vals else np.nan
- 
+
         # 計算綜合評分
         scores = {}
         for pid, data in latest_data.items():
@@ -522,7 +530,7 @@ if is_tw_stock:
             # 針對指標數量較少的銀行業校準滿分邏輯，若只有4個指標，總分拉伸至100
             final_score = int((score / (valid_metrics_count * 10)) * 100) if valid_metrics_count > 0 else 0
             scores[pid] = final_score
- 
+
         # --- 區塊 1：綜合評分看板 ---
         st.markdown("#### 🏆 經營能力綜合評分比較 (滿分 100 分)")
         cols = st.columns(len(latest_data))
@@ -538,9 +546,9 @@ if is_tw_stock:
                     <div class="score-card-value" style="color: {color};">{score}</div>
                 </div>
                 """, unsafe_allow_html=True)
- 
+
         st.markdown("<br>", unsafe_allow_html=True)
- 
+
         # --- 區塊 2：數據表 ---
         st.markdown("#### 📝 最新關鍵指標明細 (原始數據)")
         table_data = {"指標": [info['name'] for info in indicators_dict.values()]}
@@ -554,7 +562,7 @@ if is_tw_stock:
                 ]
         metrics_df = pd.DataFrame(table_data)
         st.dataframe(metrics_df, use_container_width=True, hide_index=True)
- 
+
         # --- 區塊 3：X-Y 軸矩陣 ---
         st.markdown("#### 🎯 營運雙核心矩陣")
         
@@ -594,30 +602,25 @@ if is_tw_stock:
                         hovertemplate=f"<b>{peer_dict[pid]}</b><br>{hover_x_name}: %{{x:.2f}}<br>{hover_y_name}: %{{y:.2f}}<extra></extra>"
                     ))
         
-        # 根據銀行業(越低越好)與製造業(越高越好)決定坐標軸反轉邏輯
-        if is_bank:
-            # 銀行業：指標越低越好，將原點設在左下角，但不反轉坐標，自然形成左下角為佳
-            pass
-            
         fig_xy.update_layout(height=500, plot_bgcolor='#f8fafc', paper_bgcolor='#ffffff', margin=dict(l=40,r=40,t=40,b=40),
                               xaxis=dict(title=x_title, gridcolor="white", zerolinecolor="#cbd5e1", zerolinewidth=2),
                               yaxis=dict(title=y_title, gridcolor="white", zerolinecolor="#cbd5e1", zerolinewidth=2),
                               showlegend=False)
         st.plotly_chart(fig_xy, use_container_width=True)
         st.caption(quadrant_caption)
- 
+
         # --- 區塊 4：趨勢圖 ---
         st.markdown("#### 📈 歷年營運效率趨勢對標")
         trend_metric = st.selectbox("請選擇要深入剖析的戰略指標", options=list(indicators_dict.keys()), format_func=lambda x: indicators_dict[x]['name'])
- 
+
         fenc_df = fin_df[fin_df['stock_id'] == str(code)].sort_values('date', ascending=True).dropna(subset=['date', trend_metric])
         fenc_df['pct_change'] = fenc_df[trend_metric].pct_change() * 100
- 
+
         peer_df = fin_df[fin_df['stock_id'].isin(peer_codes)].dropna(subset=['date', trend_metric])
         peer_avg_df = peer_df.groupby('date')[trend_metric].mean().reset_index().rename(columns={trend_metric: 'peer_avg'})
- 
+
         merged_df = pd.merge(fenc_df[['date', trend_metric, 'pct_change']], peer_avg_df, on='date', how='inner').tail(8)
- 
+
         if not merged_df.empty:
             x_labels = merged_df['date'].dt.strftime('%Y-%m')
             text_annotations = []
@@ -632,7 +635,7 @@ if is_tw_stock:
                     text_annotations.append(f"{val:.2f}<br>▼ {abs(pct):.1f}%")
                 else:
                     text_annotations.append(f"{val:.2f}<br>持平")
- 
+
             fig_trend = go.Figure()
             fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df[trend_metric], name=current_company_name, marker_color='#ef4444', text=text_annotations, textposition='outside'))
             fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df['peer_avg'], name='外部同業平均', marker_color='#cbd5e1', text=[f"{v:.2f}" for v in merged_df['peer_avg']], textposition='outside'))
@@ -642,7 +645,7 @@ if is_tw_stock:
             st.plotly_chart(fig_trend, use_container_width=True)
         else:
             st.info("資料筆數不足以繪製歷史趨勢，請確認上傳的財報包含足夠的歷史期數。")
- 
+
     else:
         st.info("請先上傳財務/銀行同業資料以啟用分析功能")
 
