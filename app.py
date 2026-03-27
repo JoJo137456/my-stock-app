@@ -427,25 +427,22 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# === 新增：大盤跌破 33500 點戰略警示區塊 ===
-if option == "🇹🇼 台灣加權指數" and current_price > 0 and current_price < 33500:
+# ==================== 台灣加權指數跌破 33500 點專屬警示區塊 ====================
+if option == "🇹🇼 台灣加權指數" and 0 < current_price < 33500:
     st.markdown("""
-    <div style="background-color: #fef2f2; border: 1px solid #fca5a5; border-left: 8px solid #dc2626; padding: 20px 25px; border-radius: 8px; margin-bottom: 30px; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.1);">
-        <h3 style="color: #991b1b; margin-top: 0; font-size: 1.25rem; font-weight: 800; display: flex; align-items: center; gap: 10px;">
-            ⚠️ 戰略層級警示：大盤跌破 33,500 點關鍵支撐
-        </h3>
-        <div style="color: #7f1d1d; font-size: 15px; line-height: 1.7; font-weight: 500;">
-            <p style="margin-bottom: 10px;"><strong>📉 技術面結構破壞：</strong><br>
-            日K線實體已明確跌破 33,500 點的重要多方防線與長期上升趨勢線。這意味著原本的籌碼支撐區已正式轉為上檔壓力區，市場的主導權正由多頭轉向震盪或空方控盤。</p>
-            
-            <p style="margin-bottom: 10px;"><strong>🏢 總經與集團營運連動影響：</strong><br>
-            跌破此一重大關卡，通常伴隨著外資機構法人的停損機制觸發與大規模資金匯出。對於遠東集團而言，需高度防範外資提款所引發的流動性緊縮，以及科技權值股估值下修後，對國內總體消費市場（如零售百貨、電信終端）產生的排擠效應。</p>
-            
-            <p style="margin-bottom: 0;"><strong>🛡️ 財務與資金防禦建議：</strong><br>
-            建議稽核總部與財務層峰啟動防禦性資金壓力測試。首要之務是檢視各事業群的自由現金流與短期債務覆蓋率，並建議暫緩非急迫性之擴張資本支出，耐心等待市場出現量縮築底或長下影線等明確止跌訊號。</p>
+    <div style="background-color: #fef2f2; border-left: 6px solid #dc2626; padding: 20px; border-radius: 8px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.1);">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+            <span style="font-size: 1.6rem;">🚨</span>
+            <h3 style="margin: 0; color: #991b1b; font-size: 1.2rem; font-weight: 800;">系統自動警示：大盤跌破關鍵支撐水位 (33,500 點)</h3>
+        </div>
+        <div style="color: #7f1d1d; font-size: 0.95rem; line-height: 1.7; margin-left: 38px;">
+            <b>📉 技術面型態轉弱：</b>最新日 K 棒實體已明確跌破 33,500 點整數大關。此現象通常代表近期建立的上升軌道遭到破壞，頸線支撐轉為壓力，暗示多方防守失利，短期技術面已落入弱勢整理格局。<br>
+            <b>🌊 籌碼與資金動能：</b>跌破重要的心理與技術雙重關卡，極易觸發市場上量化基金與演算法交易的停損賣壓（Stop-Loss Cascade），須高度警戒外資後續是否有連續提款權值股、將資金匯出的現象。<br>
+            <b>🛡️ 集團戰略建議：</b>總體市場風險溢酬（ERP）正在快速上升。建議聯合稽核總部啟動壓力測試，並密切監控集團旗下高 Beta 值或具備較高槓桿依賴之核心事業體的流動性，防範系統性風險蔓延。
         </div>
     </div>
     """, unsafe_allow_html=True)
+# =================================================================================
 
 if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
     exp_text = MACRO_IMPACT[option]
