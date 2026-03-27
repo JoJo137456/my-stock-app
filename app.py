@@ -263,15 +263,13 @@ company_name_dict = {
     '2834': '臺企銀', '2809': '京城銀', '2836': '高雄銀', '2849': '安泰銀', '5876': '上海商銀'
 }
 
-# === 5. API 與真實資料抓取模組 (已升級為 yfinance 統一抓取，解決 TWSE IP 限制) ===
+# === 5. API 與真實資料抓取模組 ===
 @st.cache_data(ttl=3600)
 def fetch_history_yf(stock_code, is_tw=False):
-    """統一使用 yfinance 抓取歷史 K 線，避免被台灣證交所 API 封鎖 IP"""
     try:
         symbol = f"{stock_code}.TW" if is_tw else stock_code
         tk = yf.Ticker(symbol)
         hist = tk.history(period="6mo")
-        # 針對少數上櫃股票的 fallback
         if hist.empty and is_tw:
             symbol = f"{stock_code}.TWO"
             tk = yf.Ticker(symbol)
@@ -312,8 +310,8 @@ def plot_daily_k(df):
     fig = go.Figure(data=[go.Candlestick(
         x=df.index, 
         open=df['open'], high=df['high'], low=df['low'], close=df['close'],
-        increasing_line_color='#ef4444', increasing_fillcolor='#ef4444', # 紅色 (漲)
-        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e', # 綠色 (跌)
+        increasing_line_color='#ef4444', increasing_fillcolor='#ef4444',
+        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e',
         name="日K"
     )])
     
@@ -327,7 +325,7 @@ def plot_daily_k(df):
     )
     fig.update_xaxes(
         showgrid=True, gridwidth=1, gridcolor='#f1f5f9',
-        rangebreaks=[dict(bounds=["sat", "mon"])] # 隱藏週末斷層，讓K線連續
+        rangebreaks=[dict(bounds=["sat", "mon"])]
     )
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     return fig
@@ -388,14 +386,14 @@ if is_tw_stock:
             latest = float(info['latest_trade_price']) if info['latest_trade_price'] != '-' else (float(info['open']) if info['open'] != '-' else 0.0)
             real_data.update({'price': latest, 'high': info.get('high', '-'), 'low': info.get('low', '-'), 'open': info.get('open', '-'), 'volume': info.get('accumulate_trade_volume', '0')})
     except: pass
-    hist_data = fetch_history_yf(code, is_tw=True) # 使用 yfinance 抓取台股歷史
+    hist_data = fetch_history_yf(code, is_tw=True)
 else:
     try:
         tk = yf.Ticker(code)
         fi = tk.fast_info
         real_data.update({'price': fi.last_price, 'open': fi.open, 'high': fi.day_high, 'low': fi.day_low, 'volume': f"{int(fi.last_volume):,}"})
     except: pass
-    hist_data = fetch_history_yf(code, is_tw=False) # 使用 yfinance 抓取美股歷史
+    hist_data = fetch_history_yf(code, is_tw=False)
 
 df_daily = pd.DataFrame(hist_data) if hist_data else pd.DataFrame()
 df_intra = get_intraday_chart_data(code, is_us_source=not is_tw_stock)
@@ -429,6 +427,26 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# === 新增：大盤跌破 33500 點戰略警示區塊 ===
+if option == "🇹🇼 台灣加權指數" and current_price > 0 and current_price < 33500:
+    st.markdown("""
+    <div style="background-color: #fef2f2; border: 1px solid #fca5a5; border-left: 8px solid #dc2626; padding: 20px 25px; border-radius: 8px; margin-bottom: 30px; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.1);">
+        <h3 style="color: #991b1b; margin-top: 0; font-size: 1.25rem; font-weight: 800; display: flex; align-items: center; gap: 10px;">
+            ⚠️ 戰略層級警示：大盤跌破 33,500 點關鍵支撐
+        </h3>
+        <div style="color: #7f1d1d; font-size: 15px; line-height: 1.7; font-weight: 500;">
+            <p style="margin-bottom: 10px;"><strong>📉 技術面結構破壞：</strong><br>
+            日K線實體已明確跌破 33,500 點的重要多方防線與長期上升趨勢線。這意味著原本的籌碼支撐區已正式轉為上檔壓力區，市場的主導權正由多頭轉向震盪或空方控盤。</p>
+            
+            <p style="margin-bottom: 10px;"><strong>🏢 總經與集團營運連動影響：</strong><br>
+            跌破此一重大關卡，通常伴隨著外資機構法人的停損機制觸發與大規模資金匯出。對於遠東集團而言，需高度防範外資提款所引發的流動性緊縮，以及科技權值股估值下修後，對國內總體消費市場（如零售百貨、電信終端）產生的排擠效應。</p>
+            
+            <p style="margin-bottom: 0;"><strong>🛡️ 財務與資金防禦建議：</strong><br>
+            建議稽核總部與財務層峰啟動防禦性資金壓力測試。首要之務是檢視各事業群的自由現金流與短期債務覆蓋率，並建議暫緩非急迫性之擴張資本支出，耐心等待市場出現量縮築底或長下影線等明確止跌訊號。</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
     exp_text = MACRO_IMPACT[option]
     html_payload = f"""
@@ -452,7 +470,6 @@ if is_tw_stock:
     fin_df = st.session_state.get('fin_data', None)
     
     if fin_df is not None and not fin_df.empty:
-        # 動態取得外部競爭對手
         peer_codes = external_peers.get(str(code), [])
         all_ids = [str(code)] + peer_codes
         peer_dict = {pid: company_name_dict.get(pid, pid) for pid in all_ids}
@@ -473,7 +490,6 @@ if is_tw_stock:
         current_company_name = peer_dict.get(str(code), f"公司 {code}")
         st.markdown(f"### 🔍 目前分析主體：**{current_company_name} ({code})**")
 
-        # === 動態判定產業指標 (銀行業 vs 製造業) ===
         is_bank = (str(code) in ['2845'] or str(code) in external_peers.get('2845', []))
         
         if is_bank:
@@ -483,7 +499,6 @@ if is_tw_stock:
                 'uncollected_interest_ratio': {'name': '利息未收現比率', 'better': 'lower'},
                 'npl_ratio': {'name': '催收款比率', 'better': 'lower'}
             }
-            # 如果有市佔率資料，自動加入顯示
             optional_bank_metrics = {
                 'asset_market_share': {'name': '資產市占率', 'better': 'higher'},
                 'equity_market_share': {'name': '淨值市占率', 'better': 'higher'},
@@ -507,13 +522,11 @@ if is_tw_stock:
                 'net_operating_cycle': {'name': '淨營業週期', 'better': 'lower'}
             }
 
-        # 計算業界平均
         industry_avg = {}
         for key in indicators_dict.keys():
             vals = [latest_data[pid].get(key) for pid in latest_data if pd.notna(latest_data[pid].get(key))]
             industry_avg[key] = np.mean(vals) if vals else np.nan
 
-        # 計算綜合評分
         scores = {}
         for pid, data in latest_data.items():
             score = 0
@@ -527,11 +540,9 @@ if is_tw_stock:
                         score += 10
                     elif info['better'] == 'lower' and val <= avg:
                         score += 10
-            # 針對指標數量較少的銀行業校準滿分邏輯，若只有4個指標，總分拉伸至100
             final_score = int((score / (valid_metrics_count * 10)) * 100) if valid_metrics_count > 0 else 0
             scores[pid] = final_score
 
-        # --- 區塊 1：綜合評分看板 ---
         st.markdown("#### 🏆 經營能力綜合評分比較 (滿分 100 分)")
         cols = st.columns(len(latest_data))
         for i, (pid, score) in enumerate(scores.items()):
@@ -549,7 +560,6 @@ if is_tw_stock:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # --- 區塊 2：數據表 ---
         st.markdown("#### 📝 最新關鍵指標明細 (原始數據)")
         table_data = {"指標": [info['name'] for info in indicators_dict.values()]}
         for pid in all_ids:
@@ -563,7 +573,6 @@ if is_tw_stock:
         metrics_df = pd.DataFrame(table_data)
         st.dataframe(metrics_df, use_container_width=True, hide_index=True)
 
-        # --- 區塊 3：X-Y 軸矩陣 ---
         st.markdown("#### 🎯 營運雙核心矩陣")
         
         if is_bank:
@@ -609,7 +618,6 @@ if is_tw_stock:
         st.plotly_chart(fig_xy, use_container_width=True)
         st.caption(quadrant_caption)
 
-        # --- 區塊 4：趨勢圖 ---
         st.markdown("#### 📈 歷年營運效率趨勢對標")
         trend_metric = st.selectbox("請選擇要深入剖析的戰略指標", options=list(indicators_dict.keys()), format_func=lambda x: indicators_dict[x]['name'])
 
