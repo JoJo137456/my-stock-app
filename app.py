@@ -23,11 +23,9 @@ requests.Session.request = patched_request
 # ====================== 財務資料 永久保存 ======================
 DATA_DIR = "./data"
 FIN_FILE = os.path.join(DATA_DIR, "fin_data.pkl")
-
 def ensure_data_dir():
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR)
-
 def load_saved_fin_data():
     if os.path.exists(FIN_FILE):
         try:
@@ -36,7 +34,6 @@ def load_saved_fin_data():
         except:
             return None
     return None
-
 def save_fin_data(df):
     ensure_data_dir()
     try:
@@ -45,7 +42,6 @@ def save_fin_data(df):
         return True
     except:
         return False
-
 def clear_saved_fin_data():
     if os.path.exists(FIN_FILE):
         os.remove(FIN_FILE)
@@ -69,11 +65,11 @@ def parse_fin_excel_files(uploaded_files):
                 dfs = {'Sheet1': df}
             else:
                 dfs = pd.read_excel(uploaded_file, sheet_name=None)
-                
+               
             for sheet_name, df in dfs.items():
                 df = df.copy()
                 df.columns = [str(col).strip().replace('\n', '').replace('\r', '').replace(' ', '') for col in df.columns]
-                
+               
                 col_mapping = {
                     '代號': 'stock_id',
                     '名稱': 'company_name',
@@ -99,34 +95,34 @@ def parse_fin_excel_files(uploaded_files):
                     '放款市占率': 'loan_market_share'
                 }
                 df = df.rename(columns={k: v for k, v in col_mapping.items() if k in df.columns})
-                
+               
                 if 'stock_id' not in df.columns and 'company_name' in df.columns:
                     df['stock_id'] = df['company_name'].astype(str).str.extract(r'(\d{4})')
                 if 'stock_id' in df.columns:
                     df['stock_id'] = df['stock_id'].astype(str).str.zfill(4)
-                
+               
                 if 'date' in df.columns:
                     df['date'] = pd.to_datetime(df['date'], errors='coerce')
-                
+               
                 numeric_cols = [
                     'inv_ar_to_equity', 'ar_turnover_times', 'total_assets_turnover', 'ar_days',
                     'inv_turnover_times', 'inv_days', 'fixed_assets_turnover', 'equity_turnover',
                     'ap_days', 'net_operating_cycle',
                     'land_to_equity', 'fixed_assets_to_equity', 'uncollected_interest_ratio',
-                    'npl_ratio', 'asset_market_share', 'equity_market_share', 
+                    'npl_ratio', 'asset_market_share', 'equity_market_share',
                     'deposit_market_share', 'loan_market_share'
                 ]
                 for col in numeric_cols:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors='coerce')
-                
+               
                 if 'inv_turnover_times' in df.columns:
                     df['inv_days'] = (365 / df['inv_turnover_times']).round(1)
-                
+               
                 all_dfs.append(df)
         except Exception as e:
             st.warning(f"檔案「{uploaded_file.name}」解析失敗：{str(e)}")
-            
+           
     if all_dfs:
         combined = pd.concat(all_dfs, ignore_index=True)
         sort_cols = [col for col in ['stock_id', 'date'] if col in combined.columns]
@@ -175,7 +171,6 @@ def check_password():
             elif pwd != "":
                 st.error("Invalid credentials")
     return False
-
 if not check_password():
     st.stop()
 
@@ -189,7 +184,7 @@ st.markdown("""
         .score-card-title { font-size: 14px; color: #64748b; font-weight: 600; margin-bottom: 5px;}
         .score-card-value { font-size: 36px; font-weight: 800; color: #0f172a;}
         .highlight-card { border: 2px solid #3b82f6; background: #f8fafc;}
-        
+       
         [data-testid="stFileUploadDropzone"] > div > span { display: none !important; }
         [data-testid="stFileUploadDropzone"] > div::after {
             content: "📤 點擊或拖曳上傳財報/銀行同業檔案 (支援 xlsx, csv)";
@@ -202,8 +197,63 @@ st.markdown("""
         [data-testid="stFileUploadDropzone"] small { display: none !important; }
     </style>
 """, unsafe_allow_html=True)
-
 st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
+
+# ====================== 【新增】台灣加權指數緊急警示系統 ======================
+@st.cache_data(ttl=60)   # 每 60 秒自動更新一次
+def get_twii_current_price():
+    """優先使用 twstock，失敗則 fallback yfinance"""
+    try:
+        real = twstock.realtime.get("^TWII")
+        if real.get('success'):
+            latest = real['realtime'].get('latest_trade_price')
+            if latest and latest != '-':
+                return float(latest), True   # True 表示即時價格
+    except:
+        pass
+    # fallback 到 yfinance
+    try:
+        tk = yf.Ticker("^TWII")
+        price = tk.fast_info.last_price
+        return price, False
+    except:
+        return None, False
+
+# 取得當前指數
+twii_price, is_realtime = get_twii_current_price()
+
+# 若低於 33500 點，立即顯示紅色緊急警示
+if twii_price is not None and twii_price < 33500:
+    status_text = "🟢 即時" if is_realtime else "⏰ 非交易時間（最新收盤）"
+    drop_points = 33500 - twii_price
+    html_alert = f"""
+    <div style="background: linear-gradient(90deg, #ef4444, #b91c1c); 
+                color: white; 
+                padding: 25px 30px; 
+                border-radius: 16px; 
+                margin: 20px 0 30px 0; 
+                box-shadow: 0 10px 25px rgba(239, 68, 68, 0.4);
+                text-align: center; 
+                animation: pulse 2s infinite;">
+        <h2 style="margin:0; font-size: 2.1rem; font-weight: 900; letter-spacing: -1px;">
+            ⚠️ 緊急警示！台灣加權指數已跌破 33500 點 ⚠️
+        </h2>
+        <div style="font-size: 1.6rem; margin: 15px 0;">
+            目前指數：<strong>{twii_price:,.0f}</strong> 點　　|　　{status_text}
+        </div>
+        <div style="font-size: 1.3rem; background: rgba(255,255,255,0.2); display: inline-block; padding: 8px 24px; border-radius: 9999px;">
+            跌破 {drop_points:,.0f} 點　　🔴 請立即關注外資流向與半導體族群風險
+        </div>
+    </div>
+    <style>
+        @keyframes pulse {{
+            0% {{ opacity: 1; }}
+            50% {{ opacity: 0.85; }}
+            100% {{ opacity: 1; }}
+        }}
+    </style>
+    """
+    st.markdown(html_alert, unsafe_allow_html=True)
 
 # === 3. 深度戰略連動註解庫 ===
 MACRO_IMPACT = {
@@ -251,7 +301,6 @@ external_peers = {
     '4904': ['2412', '3045'],
     '2845': ['2801', '2812', '2838', '2897', '2834', '2809', '2836', '2849', '5876']
 }
-
 company_name_dict = {
     '1402': '遠東新', '1409': '新纖', '1464': '得力', '1718': '中纖',
     '1101': '台泥', '1103': '嘉泥', '1104': '環泥', '1108': '幸福',
@@ -259,7 +308,7 @@ company_name_dict = {
     '2605': '新興', '5608': '四維航', '2617': '台航', '2612': '中航', '2641': '正德',
     '2412': '中華電', '3045': '台灣大',
     '1460': '宏遠', '1710': '東聯', '2903': '遠百', '4904': '遠傳', '2845': '遠東銀',
-    '2801': '彰銀', '2812': '台中銀', '2838': '聯邦銀', '2897': '王道銀行', 
+    '2801': '彰銀', '2812': '台中銀', '2838': '聯邦銀', '2897': '王道銀行',
     '2834': '臺企銀', '2809': '京城銀', '2836': '高雄銀', '2849': '安泰銀', '5876': '上海商銀'
 }
 
@@ -274,15 +323,15 @@ def fetch_history_yf(stock_code, is_tw=False):
             symbol = f"{stock_code}.TWO"
             tk = yf.Ticker(symbol)
             hist = tk.history(period="6mo")
-            
+           
         data_list = []
         for idx, row in hist.iterrows():
             data_list.append({
-                'date': idx.strftime('%Y-%m-%d'), 
-                'volume': float(row['Volume']), 
-                'open': float(row['Open']), 
-                'high': float(row['High']), 
-                'low': float(row['Low']), 
+                'date': idx.strftime('%Y-%m-%d'),
+                'volume': float(row['Volume']),
+                'open': float(row['Open']),
+                'high': float(row['High']),
+                'low': float(row['Low']),
                 'close': float(row['Close'])
             })
         return data_list
@@ -306,21 +355,21 @@ def plot_daily_k(df):
     df = df.copy()
     df.set_index(pd.to_datetime(df['date']), inplace=True)
     df = df.tail(120)
-    
+   
     fig = go.Figure(data=[go.Candlestick(
-        x=df.index, 
+        x=df.index,
         open=df['open'], high=df['high'], low=df['low'], close=df['close'],
         increasing_line_color='#ef4444', increasing_fillcolor='#ef4444',
         decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e',
         name="日K"
     )])
-    
+   
     fig.update_layout(
-        title="<b>📊 歷史價格走勢 (近半年)</b>", 
-        xaxis_rangeslider_visible=False, 
-        height=380, 
-        margin=dict(l=10, r=10, t=40, b=10), 
-        paper_bgcolor='#ffffff', 
+        title="<b>📊 歷史價格走勢 (近半年)</b>",
+        xaxis_rangeslider_visible=False,
+        height=380,
+        margin=dict(l=10, r=10, t=40, b=10),
+        paper_bgcolor='#ffffff',
         plot_bgcolor='#ffffff'
     )
     fig.update_xaxes(
@@ -345,9 +394,9 @@ def plot_intraday_line(df):
 with st.sidebar:
     st.header("🎯 戰略監控目標")
     st.subheader("📤 財務數據資料匯入")
-    
+   
     uploaded_files = st.file_uploader("上傳財報檔案", type=["xlsx", "xls", "csv"], accept_multiple_files=True, label_visibility="collapsed")
-    
+   
     if uploaded_files:
         with st.spinner("🔄 正在解析並保存資料..."):
             fin_df = parse_fin_excel_files(uploaded_files)
@@ -361,13 +410,13 @@ with st.sidebar:
             if saved is not None:
                 st.session_state['fin_data'] = saved
                 st.success("✅ 已自動載入保存的財務資料")
-                
+               
     if st.button("🗑️ 清除保存的財務資料"):
         if clear_saved_fin_data():
             st.session_state.pop('fin_data', None)
             st.success("✅ 已清除保存資料")
             st.rerun()
-            
+           
     st.markdown("---")
     selected_category = st.selectbox("板塊分類", list(market_categories.keys()))
     st.markdown("---")
@@ -401,7 +450,6 @@ current_price = real_data['price']
 if (current_price == 0 or current_price is None) and not df_daily.empty:
     current_price = df_daily.iloc[-1]['close']
     real_data.update({'high': df_daily.iloc[-1]['high'], 'low': df_daily.iloc[-1]['low'], 'open': df_daily.iloc[-1]['open']})
-
 prev_close = 0
 if not df_daily.empty:
     if not is_tw_stock:
@@ -411,10 +459,8 @@ if not df_daily.empty:
         last_date = df_daily.iloc[-1]['date']
         today_str = datetime.now().strftime('%Y-%m-%d')
         prev_close = df_daily.iloc[-2]['close'] if last_date == today_str and len(df_daily) > 1 else df_daily.iloc[-1]['close']
-
 change = current_price - prev_close
 pct = (change / prev_close) * 100 if prev_close != 0 else 0
-
 st.markdown(f"""
 <div style="background-color: #ffffff; padding: 25px; border-radius: 8px; margin-bottom: 25px; border-left: 6px solid {'#ef4444' if change >= 0 else '#22c55e'}; box-shadow: 0 2px 5px rgba(0,0,0,0.03);">
     <h2 style="margin:0; color:#475569; font-size: 1.25rem; font-weight: 800;">{option}</h2>
@@ -426,24 +472,6 @@ st.markdown(f"""
     </div>
 </div>
 """, unsafe_allow_html=True)
-
-# ==================== 台灣加權指數跌破 33500 點專屬警示區塊 ====================
-if option == "🇹🇼 台灣加權指數" and 0 < current_price < 33500:
-    st.markdown("""
-    <div style="background-color: #fef2f2; border-left: 6px solid #dc2626; padding: 20px; border-radius: 8px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.1);">
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-            <span style="font-size: 1.6rem;">🚨</span>
-            <h3 style="margin: 0; color: #991b1b; font-size: 1.2rem; font-weight: 800;">系統自動警示：大盤跌破關鍵支撐水位 (33,500 點)</h3>
-        </div>
-        <div style="color: #7f1d1d; font-size: 0.95rem; line-height: 1.7; margin-left: 38px;">
-            <b>📉 技術面型態轉弱：</b>最新日 K 棒實體已明確跌破 33,500 點整數大關。此現象通常代表近期建立的上升軌道遭到破壞，頸線支撐轉為壓力，暗示多方防守失利，短期技術面已落入弱勢整理格局。<br>
-            <b>🌊 籌碼與資金動能：</b>跌破重要的心理與技術雙重關卡，極易觸發市場上量化基金與演算法交易的停損賣壓（Stop-Loss Cascade），須高度警戒外資後續是否有連續提款權值股、將資金匯出的現象。<br>
-            <b>🛡️ 集團戰略建議：</b>總體市場風險溢酬（ERP）正在快速上升。建議聯合稽核總部啟動壓力測試，並密切監控集團旗下高 Beta 值或具備較高槓桿依賴之核心事業體的流動性，防範系統性風險蔓延。
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-# =================================================================================
-
 if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
     exp_text = MACRO_IMPACT[option]
     html_payload = f"""
@@ -454,7 +482,6 @@ if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option i
     </div>
     """
     st.markdown(html_payload.replace('\n', ''), unsafe_allow_html=True)
-
 col1, col2 = st.columns([1, 1])
 with col1:
     if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
@@ -465,30 +492,26 @@ with col2:
 if is_tw_stock:
     st.divider()
     fin_df = st.session_state.get('fin_data', None)
-    
+   
     if fin_df is not None and not fin_df.empty:
         peer_codes = external_peers.get(str(code), [])
         all_ids = [str(code)] + peer_codes
         peer_dict = {pid: company_name_dict.get(pid, pid) for pid in all_ids}
-
         latest_data = {}
         data_date_str = "最新期數"
         for pid in all_ids:
             c_df = fin_df[fin_df['stock_id'] == pid].sort_values('date', ascending=False)
             if not c_df.empty:
                 latest_data[pid] = c_df.iloc[0]
-
         if str(code) in latest_data:
             latest_date_val = latest_data[str(code)].get('date')
             if pd.notna(latest_date_val):
                 data_date_str = latest_date_val.strftime('%Y-%m')
-
         st.markdown(f"## 📊 財務健檢與同業對標分析 <span style='font-size: 1rem; color: #64748b; font-weight: 500;'>（資料期數：{data_date_str}）</span>", unsafe_allow_html=True)
         current_company_name = peer_dict.get(str(code), f"公司 {code}")
         st.markdown(f"### 🔍 目前分析主體：**{current_company_name} ({code})**")
-
         is_bank = (str(code) in ['2845'] or str(code) in external_peers.get('2845', []))
-        
+       
         if is_bank:
             indicators_dict = {
                 'land_to_equity': {'name': '土地/淨值', 'better': 'lower'},
@@ -518,12 +541,10 @@ if is_tw_stock:
                 'ap_days': {'name': '應付帳款付現天數', 'better': 'lower'},
                 'net_operating_cycle': {'name': '淨營業週期', 'better': 'lower'}
             }
-
         industry_avg = {}
         for key in indicators_dict.keys():
             vals = [latest_data[pid].get(key) for pid in latest_data if pd.notna(latest_data[pid].get(key))]
             industry_avg[key] = np.mean(vals) if vals else np.nan
-
         scores = {}
         for pid, data in latest_data.items():
             score = 0
@@ -539,7 +560,6 @@ if is_tw_stock:
                         score += 10
             final_score = int((score / (valid_metrics_count * 10)) * 100) if valid_metrics_count > 0 else 0
             scores[pid] = final_score
-
         st.markdown("#### 🏆 經營能力綜合評分比較 (滿分 100 分)")
         cols = st.columns(len(latest_data))
         for i, (pid, score) in enumerate(scores.items()):
@@ -554,9 +574,7 @@ if is_tw_stock:
                     <div class="score-card-value" style="color: {color};">{score}</div>
                 </div>
                 """, unsafe_allow_html=True)
-
         st.markdown("<br>", unsafe_allow_html=True)
-
         st.markdown("#### 📝 最新關鍵指標明細 (原始數據)")
         table_data = {"指標": [info['name'] for info in indicators_dict.values()]}
         for pid in all_ids:
@@ -569,9 +587,8 @@ if is_tw_stock:
                 ]
         metrics_df = pd.DataFrame(table_data)
         st.dataframe(metrics_df, use_container_width=True, hide_index=True)
-
         st.markdown("#### 🎯 營運雙核心矩陣")
-        
+       
         if is_bank:
             x_metric = 'uncollected_interest_ratio'
             y_metric = 'npl_ratio'
@@ -588,7 +605,7 @@ if is_tw_stock:
             quadrant_caption = "右上角象限代表「存貨去化快」且「帳款回收快」，為最佳營運狀態。"
             hover_x_name = "存貨週轉率"
             hover_y_name = "應收帳款週轉"
-            
+           
         fig_xy = go.Figure()
         for pid in all_ids:
             if pid in latest_data:
@@ -607,25 +624,20 @@ if is_tw_stock:
                         marker=dict(size=24 if is_target else 18, color='#ef4444' if is_target else '#94a3b8', line=dict(width=2, color='white'), opacity=0.9),
                         hovertemplate=f"<b>{peer_dict[pid]}</b><br>{hover_x_name}: %{{x:.2f}}<br>{hover_y_name}: %{{y:.2f}}<extra></extra>"
                     ))
-        
+       
         fig_xy.update_layout(height=500, plot_bgcolor='#f8fafc', paper_bgcolor='#ffffff', margin=dict(l=40,r=40,t=40,b=40),
                               xaxis=dict(title=x_title, gridcolor="white", zerolinecolor="#cbd5e1", zerolinewidth=2),
                               yaxis=dict(title=y_title, gridcolor="white", zerolinecolor="#cbd5e1", zerolinewidth=2),
                               showlegend=False)
         st.plotly_chart(fig_xy, use_container_width=True)
         st.caption(quadrant_caption)
-
         st.markdown("#### 📈 歷年營運效率趨勢對標")
         trend_metric = st.selectbox("請選擇要深入剖析的戰略指標", options=list(indicators_dict.keys()), format_func=lambda x: indicators_dict[x]['name'])
-
         fenc_df = fin_df[fin_df['stock_id'] == str(code)].sort_values('date', ascending=True).dropna(subset=['date', trend_metric])
         fenc_df['pct_change'] = fenc_df[trend_metric].pct_change() * 100
-
         peer_df = fin_df[fin_df['stock_id'].isin(peer_codes)].dropna(subset=['date', trend_metric])
         peer_avg_df = peer_df.groupby('date')[trend_metric].mean().reset_index().rename(columns={trend_metric: 'peer_avg'})
-
         merged_df = pd.merge(fenc_df[['date', trend_metric, 'pct_change']], peer_avg_df, on='date', how='inner').tail(8)
-
         if not merged_df.empty:
             x_labels = merged_df['date'].dt.strftime('%Y-%m')
             text_annotations = []
@@ -640,7 +652,6 @@ if is_tw_stock:
                     text_annotations.append(f"{val:.2f}<br>▼ {abs(pct):.1f}%")
                 else:
                     text_annotations.append(f"{val:.2f}<br>持平")
-
             fig_trend = go.Figure()
             fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df[trend_metric], name=current_company_name, marker_color='#ef4444', text=text_annotations, textposition='outside'))
             fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df['peer_avg'], name='外部同業平均', marker_color='#cbd5e1', text=[f"{v:.2f}" for v in merged_df['peer_avg']], textposition='outside'))
@@ -650,7 +661,6 @@ if is_tw_stock:
             st.plotly_chart(fig_trend, use_container_width=True)
         else:
             st.info("資料筆數不足以繪製歷史趨勢，請確認上傳的財報包含足夠的歷史期數。")
-
     else:
         st.info("請先上傳財務/銀行同業資料以啟用分析功能")
 
