@@ -9,10 +9,10 @@ import urllib3
 import yfinance as yf
 import numpy as np
 import os
-import pickle
+import sqlite3
 import io
 
-# === 0. 系統層級修復 ===
+# === 0. 系統層級與連線安全性修復 ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 original_request = requests.Session.request
 def patched_request(self, method, url, *args, **kwargs):
@@ -20,39 +20,55 @@ def patched_request(self, method, url, *args, **kwargs):
     return original_request(self, method, url, *args, **kwargs)
 requests.Session.request = patched_request
 
-# ====================== 財務資料 永久保存 ======================
+# ====================== 企業級後台資料庫 (SQLite) 建置 ======================
 DATA_DIR = "./data"
-FIN_FILE = os.path.join(DATA_DIR, "fin_data.pkl")
+DB_PATH = os.path.join(DATA_DIR, "fenc_audit_intelligence.db")
 
 def ensure_data_dir():
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR)
 
 def load_saved_fin_data():
-    if os.path.exists(FIN_FILE):
+    """自中央資料庫讀取已儲存之財務與同業數據"""
+    if os.path.exists(DB_PATH):
         try:
-            with open(FIN_FILE, "rb") as f:
-                return pickle.load(f)
-        except:
+            conn = sqlite3.connect(DB_PATH)
+            df = pd.read_sql('SELECT * FROM financial_data', conn)
+            conn.close()
+            
+            # 型態還原：確保日期與字串格式正確
+            if 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'])
+            if 'stock_id' in df.columns:
+                df['stock_id'] = df['stock_id'].astype(str).str.zfill(4)
+            return df
+        except Exception:
             return None
     return None
 
 def save_fin_data(df):
+    """將解析後之數據正式寫入中央資料庫"""
     ensure_data_dir()
     try:
-        with open(FIN_FILE, "wb") as f:
-            pickle.dump(df, f)
+        conn = sqlite3.connect(DB_PATH)
+        # 若資料表已存在則覆蓋，確保維持最新數據狀態
+        df.to_sql('financial_data', conn, if_exists='replace', index=False)
+        conn.close()
         return True
-    except:
+    except Exception:
         return False
 
 def clear_saved_fin_data():
-    if os.path.exists(FIN_FILE):
-        os.remove(FIN_FILE)
-        return True
+    """清空資料庫內之歷史數據"""
+    if os.path.exists(DB_PATH):
+        try:
+            os.remove(DB_PATH)
+            return True
+        except:
+            return False
     return False
 
-# ====================== 財務資料 解析 ======================
+# ====================== 財務資料 解析引擎 ======================
 @st.cache_data
 def parse_fin_excel_files(uploaded_files):
     if not uploaded_files:
@@ -125,7 +141,7 @@ def parse_fin_excel_files(uploaded_files):
                 
                 all_dfs.append(df)
         except Exception as e:
-            st.warning(f"檔案「{uploaded_file.name}」解析失敗：{str(e)}")
+            st.warning(f"檔案解析異常：{uploaded_file.name}，系統回報錯誤碼：{str(e)}")
             
     if all_dfs:
         combined = pd.concat(all_dfs, ignore_index=True)
@@ -139,11 +155,10 @@ def parse_fin_excel_files(uploaded_files):
 st.set_page_config(page_title="FENC Audit Department | Executive Dashboard", layout="wide", initial_sidebar_state="expanded")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-# 初始化價位警示的參數配置字典
 if 'alert_levels' not in st.session_state:
     st.session_state['alert_levels'] = {}
 
-# === 登入介面 ===
+# === 登入安全驗證介面 ===
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -177,13 +192,13 @@ def check_password():
                 st.session_state["password_correct"] = True
                 st.rerun()
             elif pwd != "":
-                st.error("Invalid credentials")
+                st.error("認證失敗：授權憑證無效")
     return False
 
 if not check_password():
     st.stop()
 
-# === 2. 核心 UI 樣式與 CSS 注入 ===
+# === 2. 核心 UI 樣式配置 ===
 st.markdown("""
     <style>
         html, body, [class*="css"] { font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif !important; }
@@ -196,7 +211,7 @@ st.markdown("""
         
         [data-testid="stFileUploadDropzone"] > div > span { display: none !important; }
         [data-testid="stFileUploadDropzone"] > div::after {
-            content: "📤 點擊或拖曳上傳財報/銀行同業檔案 (支援 xlsx, csv)";
+            content: "📤 點擊或拖曳上傳財報/銀行同業數據 (支援 xlsx, csv)";
             display: block;
             font-weight: 600;
             color: #475569;
@@ -228,7 +243,7 @@ MACRO_IMPACT = {
     "💱 美元兌台幣": "美元兌台幣匯率為台灣出口企業獲利的重要因素。台幣貶值可使電子代工及紡織業獲得匯兌收益，但會提高進口物價。"
 }
 
-# === 4. 產業板塊分類 ===
+# === 4. 產業板塊分類與同業對標 ===
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
         "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC",
@@ -375,28 +390,30 @@ def plot_intraday_line(df, alert_price=None):
 # === 6. 側邊控制面板 ===
 with st.sidebar:
     st.header("📊 市場監控指標")
-    st.subheader("📤 財務數據資料匯入")
+    st.subheader("📤 財務數據資料庫同步")
     
-    uploaded_files = st.file_uploader("上傳財報檔案", type=["xlsx", "xls", "csv"], accept_multiple_files=True, label_visibility="collapsed")
+    uploaded_files = st.file_uploader("上傳財報或同業數據", type=["xlsx", "xls", "csv"], accept_multiple_files=True, label_visibility="collapsed")
     
     if uploaded_files:
-        with st.spinner("🔄 正在解析並保存資料..."):
+        with st.spinner("🔄 正在解析數據並寫入中央資料庫..."):
             fin_df = parse_fin_excel_files(uploaded_files)
             if fin_df is not None and not fin_df.empty:
                 st.session_state['fin_data'] = fin_df
                 if save_fin_data(fin_df):
-                    st.success("✅ 財務資料已成功上傳並保存")
+                    st.success("✅ 財務數據已成功建檔並寫入中央資料庫 (SQLite)")
+                else:
+                    st.error("❌ 寫入資料庫失敗，請確認檔案讀寫權限")
     else:
         if 'fin_data' not in st.session_state:
             saved = load_saved_fin_data()
-            if saved is not None:
+            if saved is not None and not saved.empty:
                 st.session_state['fin_data'] = saved
-                st.success("✅ 已自動載入保存的財務資料")
+                st.success("✅ 已自動載入中央資料庫之歷史數據")
                 
-    if st.button("🗑️ 清除暫存資料"):
+    if st.button("🗑️ 清空歷史資料庫"):
         if clear_saved_fin_data():
             st.session_state.pop('fin_data', None)
-            st.success("✅ 已清除保存資料")
+            st.success("✅ 歷史資料庫已重置清空")
             st.rerun()
             
     st.markdown("---")
@@ -732,4 +749,4 @@ if is_tw_stock:
         st.info("請先上傳財務或銀行同業資料以啟用完整分析功能。")
 
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
-st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統資料更新時間：{update_time} ｜ 資料來源：內部財報系統與市場公開數據</div>', unsafe_allow_html=True)
+st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統資料更新時間：{update_time} ｜ 資料庫架構：SQLite 關聯式架構</div>', unsafe_allow_html=True)
