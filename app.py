@@ -135,11 +135,11 @@ def parse_fin_excel_files(uploaded_files):
         return combined
     return None
 
-# === 1. 戰情室初始化 ===
+# === 1. 儀表板初始化 ===
 st.set_page_config(page_title="FENC Audit Department | Executive Dashboard", layout="wide", initial_sidebar_state="expanded")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-# 初始化警戒線的戰略配置字典
+# 初始化價位警示的參數配置字典
 if 'alert_levels' not in st.session_state:
     st.session_state['alert_levels'] = {}
 
@@ -209,7 +209,7 @@ st.markdown("""
 
 st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
 
-# === 3. 深度戰略連動註解庫 ===
+# === 3. 宏觀經濟指標定義 ===
 MACRO_IMPACT = {
     "🇹🇼 台灣加權指數": "台灣加權指數為台灣整體經濟及半導體產業景氣的綜合指標。主要與台積電等科技巨頭連動，可作為評估外資資金流向及國內資本市場活力的關鍵參考。",
     "🇺🇸 S&P 500": "S&P 500 指數涵蓋美國前 500 大企業，代表美國實體經濟的全貌。其涵蓋多樣產業，為全球長期資金配置及美股市場多空趨勢判斷的基準指標。",
@@ -228,7 +228,7 @@ MACRO_IMPACT = {
     "💱 美元兌台幣": "美元兌台幣匯率為台灣出口企業獲利的重要因素。台幣貶值可使電子代工及紡織業獲得匯兌收益，但會提高進口物價。"
 }
 
-# === 4. 板塊分類字典 ===
+# === 4. 產業板塊分類 ===
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
         "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC",
@@ -266,7 +266,7 @@ company_name_dict = {
     '2834': '臺企銀', '2809': '京城銀', '2836': '高雄銀', '2849': '安泰銀', '5876': '上海商銀'
 }
 
-# === 5. API 與真實資料抓取模組 ===
+# === 5. API 與歷史數據擷取 ===
 @st.cache_data(ttl=3600)
 def fetch_history_yf(stock_code, is_tw=False):
     try:
@@ -304,7 +304,6 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
         return df if not df.empty else None
     except: return None
 
-# 修改：加入 alert_price 參數
 def plot_daily_k(df, alert_price=None):
     if df.empty: return None
     df = df.copy()
@@ -319,14 +318,13 @@ def plot_daily_k(df, alert_price=None):
         name="日K"
     )])
     
-    # 若有設定戰略警戒線，畫出紅色的防禦陣線
     if alert_price and alert_price > 0:
         fig.add_hline(
             y=alert_price, 
             line_dash="dash", 
             line_color="#dc2626", 
             line_width=2,
-            annotation_text=f"🚨 戰略防線: {alert_price}", 
+            annotation_text=f"設定警示價位: {alert_price}", 
             annotation_position="top left",
             annotation_font=dict(color="#dc2626", size=12, weight="bold")
         )
@@ -346,12 +344,10 @@ def plot_daily_k(df, alert_price=None):
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     return fig
 
-# 修改：加入 alert_price 參數
 def plot_intraday_line(df, alert_price=None):
     if df is None or df.empty: return None
     y_min, y_max = df['Close'].min(), df['Close'].max()
     
-    # 確保警戒線包含在Y軸視野內
     if alert_price and alert_price > 0:
         y_min = min(y_min, alert_price)
         y_max = max(y_max, alert_price)
@@ -360,26 +356,25 @@ def plot_intraday_line(df, alert_price=None):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', line=dict(color='#0f172a', width=2.5), fill='tozeroy', fillcolor='rgba(15, 23, 42, 0.05)', name='報價'))
     
-    # 若有設定戰略警戒線，畫出紅色的防禦陣線
     if alert_price and alert_price > 0:
         fig.add_hline(
             y=alert_price, 
             line_dash="dash", 
             line_color="#dc2626", 
             line_width=2,
-            annotation_text=f"🚨 戰略防線: {alert_price}", 
+            annotation_text=f"設定警示價位: {alert_price}", 
             annotation_position="top left",
             annotation_font=dict(color="#dc2626", size=12, weight="bold")
         )
 
-    fig.update_layout(title="<b>⚡ 當日分時動態</b>", height=380, margin=dict(l=10, r=10, t=40, b=10), hovermode="x unified", paper_bgcolor='#ffffff', plot_bgcolor='#ffffff', yaxis=dict(range=[y_min - padding, y_max + padding]))
+    fig.update_layout(title="<b>⚡ 當日分時走勢</b>", height=380, margin=dict(l=10, r=10, t=40, b=10), hovermode="x unified", paper_bgcolor='#ffffff', plot_bgcolor='#ffffff', yaxis=dict(range=[y_min - padding, y_max + padding]))
     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     return fig
 
-# === 6. 左側選單 ===
+# === 6. 側邊控制面板 ===
 with st.sidebar:
-    st.header("🎯 戰略監控目標")
+    st.header("📊 市場監控指標")
     st.subheader("📤 財務數據資料匯入")
     
     uploaded_files = st.file_uploader("上傳財報檔案", type=["xlsx", "xls", "csv"], accept_multiple_files=True, label_visibility="collapsed")
@@ -398,49 +393,46 @@ with st.sidebar:
                 st.session_state['fin_data'] = saved
                 st.success("✅ 已自動載入保存的財務資料")
                 
-    if st.button("🗑️ 清除保存的財務資料"):
+    if st.button("🗑️ 清除暫存資料"):
         if clear_saved_fin_data():
             st.session_state.pop('fin_data', None)
             st.success("✅ 已清除保存資料")
             st.rerun()
             
     st.markdown("---")
-    selected_category = st.selectbox("板塊分類", list(market_categories.keys()))
+    selected_category = st.selectbox("產業板塊", list(market_categories.keys()))
     st.markdown("---")
     options_dict = market_categories[selected_category]
     option = st.radio("監控標的", list(options_dict.keys()))
     code = options_dict[option]
     is_tw_stock = code.isdigit()
 
-    # ==================== 新增：戰略警戒線設定區塊 ====================
     st.markdown("---")
-    st.subheader("⚠️ 戰略警戒線設定")
+    st.subheader("⚠️ 價格觸發警示設定")
     
-    # 預設載入該標的已經部署的警戒價位，若無則為 0.0
     current_alert_val = st.session_state['alert_levels'].get(code, 0.0)
     
     new_alert_price = st.number_input(
-        f"設定【{option.split(' ')[-1]}】警戒價位", 
+        f"設定【{option.split(' ')[-1]}】警示價位", 
         min_value=0.0, 
         value=float(current_alert_val), 
         step=1.0,
-        help="輸入數字後點擊部署，系統將在圖表上拉出紅色警戒防線"
+        help="輸入目標價位後點擊啟用，系統將於走勢圖上標示紅線，並依據即時報價提供動態分析建議。"
     )
     
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
-        if st.button("🚀 部署防線", use_container_width=True):
+        if st.button("啟用警示", use_container_width=True):
             st.session_state['alert_levels'][code] = new_alert_price
-            st.success("防線已建構！")
-            st.rerun() # 強制刷新以重繪圖表
+            st.success("警示設定已生效")
+            st.rerun() 
     with col_btn2:
-        if st.button("🏳️ 撤收防線", use_container_width=True):
+        if st.button("解除警示", use_container_width=True):
             st.session_state['alert_levels'][code] = 0.0
-            st.success("防線已撤銷！")
+            st.success("警示設定已移除")
             st.rerun()
-    # ==============================================================
 
-# === 7. 價格顯示、圖表 ===
+# === 7. 報價與動態警示模組 ===
 real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
 if is_tw_stock:
     try:
@@ -491,21 +483,40 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ==================== 台灣加權指數跌破 33500 點專屬警示區塊 ====================
-if option == "🇹🇼 台灣加權指數" and 0 < current_price < 33500:
-    st.markdown("""
-    <div style="background-color: #fef2f2; border-left: 6px solid #dc2626; padding: 20px; border-radius: 8px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.1);">
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-            <span style="font-size: 1.6rem;">🚨</span>
-            <h3 style="margin: 0; color: #991b1b; font-size: 1.2rem; font-weight: 800;">系統自動警示：大盤跌破關鍵支撐水位 (33,500 點)</h3>
+# ==================== 動態警示分析區塊 ====================
+active_alert_price = st.session_state['alert_levels'].get(code, 0.0)
+
+if active_alert_price > 0:
+    distance_pct = abs(current_price - active_alert_price) / active_alert_price * 100
+    
+    if current_price <= active_alert_price:
+        st.markdown(f"""
+        <div style="background-color: #fef2f2; border-left: 6px solid #dc2626; padding: 20px; border-radius: 8px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.1);">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <span style="font-size: 1.4rem;">⚠️</span>
+                <h3 style="margin: 0; color: #991b1b; font-size: 1.15rem; font-weight: 700;">系統自動警示：【{option}】已跌破設定之支撐價位 ({active_alert_price:,.2f})</h3>
+            </div>
+            <div style="color: #7f1d1d; font-size: 0.95rem; line-height: 1.7; margin-left: 36px;">
+                <b>📉 技術面弱勢與趨勢反轉：</b>最新報價（{current_price:,.2f}）已跌破預設之關鍵水位，目前折價乖離率達 {distance_pct:.2f}%。此現象通常暗示短期技術型態已遭到破壞，原先的支撐區間轉為上檔壓力，市場結構進入弱勢整理或空頭格局。<br>
+                <b>🌊 停損賣壓與流動性風險：</b>跌破重要心理與技術關卡，極易觸發程式交易及量化基金的停損機制（Stop-Loss Cascade）。建議密切監測籌碼動向，評估外資或法人機構是否有連續調節之跡象。<br>
+                <b>🛡️ 風險控管與資產配置建議：</b>整體市場之風險溢酬（ERP）面臨上升壓力。建議決策層啟動流動性壓力測試，適度降低高 Beta 值資產比重，並提高防禦性資產部位，以控管系統性風險蔓延。
+            </div>
         </div>
-        <div style="color: #7f1d1d; font-size: 0.95rem; line-height: 1.7; margin-left: 38px;">
-            <b>📉 技術面型態轉弱：</b>最新日 K 棒實體已明確跌破 33,500 點整數大關。此現象通常代表近期建立的上升軌道遭到破壞，頸線支撐轉為壓力，暗示多方防守失利，短期技術面已落入弱勢整理格局。<br>
-            <b>🌊 籌碼與資金動能：</b>跌破重要的心理與技術雙重關卡，極易觸發市場上量化基金與演算法交易的停損賣壓（Stop-Loss Cascade），須高度警戒外資後續是否有連續提款權值股、將資金匯出的現象。<br>
-            <b>🛡️ 集團戰略建議：</b>總體市場風險溢酬（ERP）正在快速上升。建議聯合稽核總部啟動壓力測試，並密切監控集團旗下高 Beta 值或具備較高槓桿依賴之核心事業體的流動性，防範系統性風險蔓延。
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div style="background-color: #f0fdf4; border-left: 6px solid #16a34a; padding: 20px; border-radius: 8px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.1);">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <span style="font-size: 1.4rem;">📈</span>
+                <h3 style="margin: 0; color: #166534; font-size: 1.15rem; font-weight: 700;">系統動態提示：【{option}】維持於目標價位之上 ({active_alert_price:,.2f})</h3>
+            </div>
+            <div style="color: #14532d; font-size: 0.95rem; line-height: 1.7; margin-left: 36px;">
+                <b>📊 趨勢確認與支撐確立：</b>最新報價（{current_price:,.2f}）高於設定之監控水位，溢價乖離率為 {distance_pct:.2f}%。顯示該價位具備實質支撐力道，市場買盤動能穩健，技術面維持偏多格局。<br>
+                <b>🔥 籌碼穩定與估值推升：</b>價格維持於關鍵水位之上，有助於穩固市場信心，降低恐慌性拋售機率。若伴隨成交量溫和放大，將有利於進一步推升資產估值。<br>
+                <b>⚖️ 操作策略與配置建議：</b>目前標的處於相對強勢或穩健區間。建議可維持現有部位，並可將原先設定之警示價位作為移動停利（Trailing Stop）之參考基準，以利在參與潛在上漲空間的同時鎖定既有獲利。
+            </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 # =================================================================================
 
 if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
@@ -520,7 +531,6 @@ if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option i
     st.markdown(html_payload.replace('\n', ''), unsafe_allow_html=True)
 
 col1, col2 = st.columns([1, 1])
-# 取得目前所選標的的警戒價位並傳入繪圖函數
 active_alert_price = st.session_state['alert_levels'].get(code, 0.0)
 
 with col1:
@@ -550,9 +560,9 @@ if is_tw_stock:
             if pd.notna(latest_date_val):
                 data_date_str = latest_date_val.strftime('%Y-%m')
 
-        st.markdown(f"## 📊 財務健檢與同業對標分析 <span style='font-size: 1rem; color: #64748b; font-weight: 500;'>（資料期數：{data_date_str}）</span>", unsafe_allow_html=True)
+        st.markdown(f"## 📊 財務指標健檢與同業對標分析 <span style='font-size: 1rem; color: #64748b; font-weight: 500;'>（資料期數：{data_date_str}）</span>", unsafe_allow_html=True)
         current_company_name = peer_dict.get(str(code), f"公司 {code}")
-        st.markdown(f"### 🔍 目前分析主體：**{current_company_name} ({code})**")
+        st.markdown(f"### 🔍 當前分析主體：**{current_company_name} ({code})**")
 
         is_bank = (str(code) in ['2845'] or str(code) in external_peers.get('2845', []))
         
@@ -624,8 +634,8 @@ if is_tw_stock:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        st.markdown("#### 📝 最新關鍵指標明細 (原始數據)")
-        table_data = {"指標": [info['name'] for info in indicators_dict.values()]}
+        st.markdown("#### 📝 最新關鍵財務指標明細")
+        table_data = {"指標名稱": [info['name'] for info in indicators_dict.values()]}
         for pid in all_ids:
             if pid in latest_data:
                 c_data = latest_data[pid]
@@ -637,22 +647,22 @@ if is_tw_stock:
         metrics_df = pd.DataFrame(table_data)
         st.dataframe(metrics_df, use_container_width=True, hide_index=True)
 
-        st.markdown("#### 🎯 營運雙核心矩陣")
+        st.markdown("#### 🎯 營運效率雙核心矩陣")
         
         if is_bank:
             x_metric = 'uncollected_interest_ratio'
             y_metric = 'npl_ratio'
-            x_title = "利息未收現比率 (%) ➔ 越低越好"
-            y_title = "催收款比率 (%) ➔ 越低越好"
+            x_title = "利息未收現比率 (%) ➔ 較低者佳"
+            y_title = "催收款比率 (%) ➔ 較低者佳"
             quadrant_caption = "左下角象限代表「利息收現狀況佳」且「資產品質優良 (催收款少)」，為最佳營運狀態。"
             hover_x_name = "利息未收現比率"
             hover_y_name = "催收款比率"
         else:
             x_metric = 'inv_turnover_times'
             y_metric = 'ar_turnover_times'
-            x_title = "存貨週轉率 (次) ➔ 越高越好"
-            y_title = "應收帳款週轉次數 (次) ➔ 越高越好"
-            quadrant_caption = "右上角象限代表「存貨去化快」且「帳款回收快」，為最佳營運狀態。"
+            x_title = "存貨週轉率 (次) ➔ 較高者佳"
+            y_title = "應收帳款週轉次數 (次) ➔ 較高者佳"
+            quadrant_caption = "右上角象限代表「存貨去化效率高」且「帳款回收週期短」，為最佳營運狀態。"
             hover_x_name = "存貨週轉率"
             hover_y_name = "應收帳款週轉"
             
@@ -682,8 +692,8 @@ if is_tw_stock:
         st.plotly_chart(fig_xy, use_container_width=True)
         st.caption(quadrant_caption)
 
-        st.markdown("#### 📈 歷年營運效率趨勢對標")
-        trend_metric = st.selectbox("請選擇要深入剖析的戰略指標", options=list(indicators_dict.keys()), format_func=lambda x: indicators_dict[x]['name'])
+        st.markdown("#### 📈 歷年營運指標趨勢分析")
+        trend_metric = st.selectbox("請選擇欲深入分析之指標", options=list(indicators_dict.keys()), format_func=lambda x: indicators_dict[x]['name'])
 
         fenc_df = fin_df[fin_df['stock_id'] == str(code)].sort_values('date', ascending=True).dropna(subset=['date', trend_metric])
         fenc_df['pct_change'] = fenc_df[trend_metric].pct_change() * 100
@@ -710,16 +720,16 @@ if is_tw_stock:
 
             fig_trend = go.Figure()
             fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df[trend_metric], name=current_company_name, marker_color='#ef4444', text=text_annotations, textposition='outside'))
-            fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df['peer_avg'], name='外部同業平均', marker_color='#cbd5e1', text=[f"{v:.2f}" for v in merged_df['peer_avg']], textposition='outside'))
+            fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df['peer_avg'], name='同業平均', marker_color='#cbd5e1', text=[f"{v:.2f}" for v in merged_df['peer_avg']], textposition='outside'))
             fig_trend.update_layout(barmode='group', height=500, plot_bgcolor='#ffffff', paper_bgcolor='#ffffff',
                                     xaxis=dict(title="時間期數"), yaxis=dict(title=indicators_dict[trend_metric]['name']),
                                     legend=dict(orientation="h", y=1.05, x=0.5))
             st.plotly_chart(fig_trend, use_container_width=True)
         else:
-            st.info("資料筆數不足以繪製歷史趨勢，請確認上傳的財報包含足夠的歷史期數。")
+            st.info("歷史資料筆數不足以繪製趨勢圖，請確認上傳之財報包含足夠的歷史期數。")
 
     else:
-        st.info("請先上傳財務/銀行同業資料以啟用分析功能")
+        st.info("請先上傳財務或銀行同業資料以啟用完整分析功能。")
 
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
-st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統更新時間：{update_time} ｜ 資料來源：內部財報系統（永久保存）</div>', unsafe_allow_html=True)
+st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統資料更新時間：{update_time} ｜ 資料來源：內部財報系統與市場公開數據</div>', unsafe_allow_html=True)
