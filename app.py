@@ -139,6 +139,10 @@ def parse_fin_excel_files(uploaded_files):
 st.set_page_config(page_title="FENC Audit Department | Executive Dashboard", layout="wide", initial_sidebar_state="expanded")
 tw_tz = pytz.timezone('Asia/Taipei')
 
+# 初始化警戒線的戰略配置字典
+if 'alert_levels' not in st.session_state:
+    st.session_state['alert_levels'] = {}
+
 # === 登入介面 ===
 def check_password():
     if "password_correct" not in st.session_state:
@@ -240,7 +244,6 @@ market_categories = {
     "🥤 國際品牌終端 (化纖板塊對標)": {"🇺🇸 Coca-Cola": "KO", "🇺🇸 PepsiCo": "PEP"}
 }
 
-# === 擴充：加入銀行業的外部競爭對手 ===
 external_peers = {
     '1402': ['1409', '1718', '1464'],
     '1460': ['1409', '1718', '1464'],
@@ -301,7 +304,8 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
         return df if not df.empty else None
     except: return None
 
-def plot_daily_k(df):
+# 修改：加入 alert_price 參數
+def plot_daily_k(df, alert_price=None):
     if df.empty: return None
     df = df.copy()
     df.set_index(pd.to_datetime(df['date']), inplace=True)
@@ -315,6 +319,18 @@ def plot_daily_k(df):
         name="日K"
     )])
     
+    # 若有設定戰略警戒線，畫出紅色的防禦陣線
+    if alert_price and alert_price > 0:
+        fig.add_hline(
+            y=alert_price, 
+            line_dash="dash", 
+            line_color="#dc2626", 
+            line_width=2,
+            annotation_text=f"🚨 戰略防線: {alert_price}", 
+            annotation_position="top left",
+            annotation_font=dict(color="#dc2626", size=12, weight="bold")
+        )
+
     fig.update_layout(
         title="<b>📊 歷史價格走勢 (近半年)</b>", 
         xaxis_rangeslider_visible=False, 
@@ -330,12 +346,32 @@ def plot_daily_k(df):
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     return fig
 
-def plot_intraday_line(df):
+# 修改：加入 alert_price 參數
+def plot_intraday_line(df, alert_price=None):
     if df is None or df.empty: return None
     y_min, y_max = df['Close'].min(), df['Close'].max()
+    
+    # 確保警戒線包含在Y軸視野內
+    if alert_price and alert_price > 0:
+        y_min = min(y_min, alert_price)
+        y_max = max(y_max, alert_price)
+        
     padding = (y_max - y_min) * 0.1 if y_max != y_min else y_max * 0.01
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', line=dict(color='#0f172a', width=2.5), fill='tozeroy', fillcolor='rgba(15, 23, 42, 0.05)', name='報價'))
+    
+    # 若有設定戰略警戒線，畫出紅色的防禦陣線
+    if alert_price and alert_price > 0:
+        fig.add_hline(
+            y=alert_price, 
+            line_dash="dash", 
+            line_color="#dc2626", 
+            line_width=2,
+            annotation_text=f"🚨 戰略防線: {alert_price}", 
+            annotation_position="top left",
+            annotation_font=dict(color="#dc2626", size=12, weight="bold")
+        )
+
     fig.update_layout(title="<b>⚡ 當日分時動態</b>", height=380, margin=dict(l=10, r=10, t=40, b=10), hovermode="x unified", paper_bgcolor='#ffffff', plot_bgcolor='#ffffff', yaxis=dict(range=[y_min - padding, y_max + padding]))
     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
@@ -375,6 +411,34 @@ with st.sidebar:
     option = st.radio("監控標的", list(options_dict.keys()))
     code = options_dict[option]
     is_tw_stock = code.isdigit()
+
+    # ==================== 新增：戰略警戒線設定區塊 ====================
+    st.markdown("---")
+    st.subheader("⚠️ 戰略警戒線設定")
+    
+    # 預設載入該標的已經部署的警戒價位，若無則為 0.0
+    current_alert_val = st.session_state['alert_levels'].get(code, 0.0)
+    
+    new_alert_price = st.number_input(
+        f"設定【{option.split(' ')[-1]}】警戒價位", 
+        min_value=0.0, 
+        value=float(current_alert_val), 
+        step=1.0,
+        help="輸入數字後點擊部署，系統將在圖表上拉出紅色警戒防線"
+    )
+    
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("🚀 部署防線", use_container_width=True):
+            st.session_state['alert_levels'][code] = new_alert_price
+            st.success("防線已建構！")
+            st.rerun() # 強制刷新以重繪圖表
+    with col_btn2:
+        if st.button("🏳️ 撤收防線", use_container_width=True):
+            st.session_state['alert_levels'][code] = 0.0
+            st.success("防線已撤銷！")
+            st.rerun()
+    # ==============================================================
 
 # === 7. 價格顯示、圖表 ===
 real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
@@ -456,10 +520,13 @@ if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option i
     st.markdown(html_payload.replace('\n', ''), unsafe_allow_html=True)
 
 col1, col2 = st.columns([1, 1])
+# 取得目前所選標的的警戒價位並傳入繪圖函數
+active_alert_price = st.session_state['alert_levels'].get(code, 0.0)
+
 with col1:
-    if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra), use_container_width=True)
+    if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra, active_alert_price), use_container_width=True)
 with col2:
-    if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily), use_container_width=True)
+    if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily, active_alert_price), use_container_width=True)
 
 # === 8. 財務健檢與同業對標分析 ===
 if is_tw_stock:
