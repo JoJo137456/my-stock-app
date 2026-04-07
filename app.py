@@ -11,6 +11,7 @@ import numpy as np
 import os
 import sqlite3
 import io
+import re  # 新增：用於解析 Markdown 情報的裝備
 
 # === 0. 系統層級與連線安全性修復 ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -68,6 +69,43 @@ def clear_saved_fin_data():
             return False
     return False
 
+# ====================== 前線戰略情報解析 (From Pilot_Reports) ======================
+def load_supply_chain_intel(stock_id):
+    """完全依照 discover.py 的原生邏輯，將前線戰場的 Markdown 情報調回指揮中心"""
+    reports_dir = "./Pilot_Reports"
+    if not os.path.exists(reports_dir):
+        return None
+    
+    target_file = None
+    # 掃描軍械庫，尋找對應代碼的情報檔
+    for root, dirs, files in os.walk(reports_dir):
+        for f in files:
+            if f.startswith(f"{stock_id}_") and f.endswith(".md"):
+                target_file = os.path.join(root, f)
+                break
+        if target_file: break
+        
+    if not target_file: return None
+    
+    with open(target_file, "r", encoding="utf-8") as fh:
+        text = fh.read()
+        
+    intel = {"core_business": "", "supply_chain": "", "customer_supplier": ""}
+    
+    # 這裡的程式碼 100% 繼承自你上傳的 discover.py (約 121 行處的邏輯)
+    for section_name, role_name in [
+        ("## 業務簡介", "core_business"),
+        ("## 供應鏈位置", "supply_chain"),
+        ("## 主要客戶及供應商", "customer_supplier"),
+    ]:
+        section_match = re.search(
+            rf"{section_name}\n(.*?)(?=\n## |\Z)", text, re.DOTALL
+        )
+        if section_match:
+            intel[role_name] = section_match.group(1).strip()
+            
+    return intel
+
 # ====================== 財務資料 解析引擎 ======================
 @st.cache_data
 def parse_fin_excel_files(uploaded_files):
@@ -91,27 +129,16 @@ def parse_fin_excel_files(uploaded_files):
                 df.columns = [str(col).strip().replace('\n', '').replace('\r', '').replace(' ', '') for col in df.columns]
                 
                 col_mapping = {
-                    '代號': 'stock_id',
-                    '名稱': 'company_name',
-                    '年/月': 'date',
-                    '存貨及應收帳款/淨值': 'inv_ar_to_equity',
-                    '應收帳款週轉次數': 'ar_turnover_times',
-                    '總資產週轉次數': 'total_assets_turnover',
-                    '平均收帳天數': 'ar_days',
-                    '存貨週轉率（次）': 'inv_turnover_times',
-                    '存貨週轉率(次)': 'inv_turnover_times',
-                    '平均售貨天數': 'inv_days',
-                    '固定資產週轉次數': 'fixed_assets_turnover',
-                    '淨值週轉率（次）': 'equity_turnover',
-                    '應付帳款付現天數': 'ap_days',
-                    '淨營業週期（日）': 'net_operating_cycle',
-                    '土地/淨值': 'land_to_equity',
-                    '固定資產/淨值': 'fixed_assets_to_equity',
-                    '利息未收現比率': 'uncollected_interest_ratio',
-                    '催收款比率': 'npl_ratio',
-                    '資產市占率': 'asset_market_share',
-                    '淨值市占率': 'equity_market_share',
-                    '存款市占率': 'deposit_market_share',
+                    '代號': 'stock_id', '名稱': 'company_name', '年/月': 'date',
+                    '存貨及應收帳款/淨值': 'inv_ar_to_equity', '應收帳款週轉次數': 'ar_turnover_times',
+                    '總資產週轉次數': 'total_assets_turnover', '平均收帳天數': 'ar_days',
+                    '存貨週轉率（次）': 'inv_turnover_times', '存貨週轉率(次)': 'inv_turnover_times',
+                    '平均售貨天數': 'inv_days', '固定資產週轉次數': 'fixed_assets_turnover',
+                    '淨值週轉率（次）': 'equity_turnover', '應付帳款付現天數': 'ap_days',
+                    '淨營業週期（日）': 'net_operating_cycle', '土地/淨值': 'land_to_equity',
+                    '固定資產/淨值': 'fixed_assets_to_equity', '利息未收現比率': 'uncollected_interest_ratio',
+                    '催收款比率': 'npl_ratio', '資產市占率': 'asset_market_share',
+                    '淨值市占率': 'equity_market_share', '存款市占率': 'deposit_market_share',
                     '放款市占率': 'loan_market_share'
                 }
                 df = df.rename(columns={k: v for k, v in col_mapping.items() if k in df.columns})
@@ -127,9 +154,8 @@ def parse_fin_excel_files(uploaded_files):
                 numeric_cols = [
                     'inv_ar_to_equity', 'ar_turnover_times', 'total_assets_turnover', 'ar_days',
                     'inv_turnover_times', 'inv_days', 'fixed_assets_turnover', 'equity_turnover',
-                    'ap_days', 'net_operating_cycle',
-                    'land_to_equity', 'fixed_assets_to_equity', 'uncollected_interest_ratio',
-                    'npl_ratio', 'asset_market_share', 'equity_market_share', 
+                    'ap_days', 'net_operating_cycle', 'land_to_equity', 'fixed_assets_to_equity', 
+                    'uncollected_interest_ratio', 'npl_ratio', 'asset_market_share', 'equity_market_share', 
                     'deposit_market_share', 'loan_market_share'
                 ]
                 for col in numeric_cols:
@@ -539,6 +565,22 @@ if active_alert_price > 0:
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+# ==================== 前線戰略情報與供應鏈地圖展示 ====================
+if is_tw_stock:
+    intel_data = load_supply_chain_intel(code)
+    if intel_data and (intel_data.get('core_business') or intel_data.get('supply_chain')):
+        st.markdown("### 🗺️ 前線戰略情報與供應鏈陣地")
+        st.markdown("從情報總庫 (Pilot_Reports) 調閱之深度作戰資料：")
+        tb1, tb2, tb3 = st.tabs(["🛡️ 業務護城河", "🔗 供應鏈陣地", "🤝 盟友與防線"])
+        
+        with tb1:
+            st.markdown(intel_data['core_business'] if intel_data['core_business'] else "情報兵尚未回傳資料。")
+        with tb2:
+            st.markdown(intel_data['supply_chain'] if intel_data['supply_chain'] else "情報兵尚未回傳資料。")
+        with tb3:
+            st.markdown(intel_data['customer_supplier'] if intel_data['customer_supplier'] else "情報兵尚未回傳資料。")
+        st.divider()
 # =================================================================================
 
 if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
