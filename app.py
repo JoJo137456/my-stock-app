@@ -10,8 +10,10 @@ import yfinance as yf
 import numpy as np
 import os
 import sqlite3
-import io
-import re  # 新增：用於解析 Markdown 情報的裝備
+import zipfile
+import shutil
+import urllib.request
+import re
 
 # === 0. 系統層級與連線安全性修復 ===
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -21,63 +23,56 @@ def patched_request(self, method, url, *args, **kwargs):
     return original_request(self, method, url, *args, **kwargs)
 requests.Session.request = patched_request
 
-# ====================== 企業級後台資料庫 (SQLite) 建置 ======================
-DATA_DIR = "./data"
-DB_PATH = os.path.join(DATA_DIR, "fenc_audit_intelligence.db")
-
-def ensure_data_dir():
-    if not os.path.exists(DATA_DIR):
-        os.makedirs(DATA_DIR)
-
-def load_saved_fin_data():
-    """自中央資料庫讀取已儲存之財務與同業數據"""
-    if os.path.exists(DB_PATH):
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            df = pd.read_sql('SELECT * FROM financial_data', conn)
-            conn.close()
-            
-            # 型態還原：確保日期與字串格式正確
-            if 'date' in df.columns:
-                df['date'] = pd.to_datetime(df['date'])
-            if 'stock_id' in df.columns:
-                df['stock_id'] = df['stock_id'].astype(str).str.zfill(4)
-            return df
-        except Exception:
-            return None
-    return None
-
-def save_fin_data(df):
-    """將解析後之數據正式寫入中央資料庫"""
-    ensure_data_dir()
+# ====================== 終極戰略：衛星軌道空投機制 ======================
+@st.cache_resource
+def fetch_github_intelligence():
+    """
+    開局自動去 GitHub 把原作者的整套情報庫抓下來。
+    使用 @st.cache_resource 確保每次伺服器啟動只會抓取一次。
+    """
+    target_dir = "./Pilot_Reports"
+    
+    # 戰場偵測：如果彈藥庫已經建置完畢，就直接跳過
+    if os.path.exists(target_dir):
+        return
+        
+    zip_url = "https://github.com/Timeverse/My-TW-Coverage/archive/refs/heads/master.zip"
+    zip_path = "master.zip"
+    
     try:
-        conn = sqlite3.connect(DB_PATH)
-        # 若資料表已存在則覆蓋，確保維持最新數據狀態
-        df.to_sql('financial_data', conn, if_exists='replace', index=False)
-        conn.close()
-        return True
-    except Exception:
-        return False
+        # 1. 呼叫軌道空投
+        urllib.request.urlretrieve(zip_url, zip_path)
+        
+        # 2. 拆解空投包
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall("./temp_intel")
+            
+        # 3. 提取核心軍火
+        source_dir = "./temp_intel/My-TW-Coverage-master/Pilot_Reports"
+        if os.path.exists(source_dir):
+            shutil.move(source_dir, target_dir)
+            
+    except Exception as e:
+        print(f"情報庫下載失敗: {e}")
+    finally:
+        # 4. 清理戰場
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        if os.path.exists("./temp_intel"):
+            shutil.rmtree("./temp_intel", ignore_errors=True)
 
-def clear_saved_fin_data():
-    """清空資料庫內之歷史數據"""
-    if os.path.exists(DB_PATH):
-        try:
-            os.remove(DB_PATH)
-            return True
-        except:
-            return False
-    return False
+# 系統啟動時，自動呼叫空投
+fetch_github_intelligence()
 
 # ====================== 前線戰略情報解析 (From Pilot_Reports) ======================
 def load_supply_chain_intel(stock_id):
-    """完全依照 discover.py 的原生邏輯，將前線戰場的 Markdown 情報調回指揮中心"""
+    """將前線戰場的 Markdown 情報調回指揮中心"""
     reports_dir = "./Pilot_Reports"
     if not os.path.exists(reports_dir):
         return None
     
     target_file = None
-    # 掃描軍械庫，尋找對應代碼的情報檔
+    # 掃描軍械庫，自動跨資料夾尋找對應代碼的情報檔
     for root, dirs, files in os.walk(reports_dir):
         for f in files:
             if f.startswith(f"{stock_id}_") and f.endswith(".md"):
@@ -92,7 +87,7 @@ def load_supply_chain_intel(stock_id):
         
     intel = {"core_business": "", "supply_chain": "", "customer_supplier": ""}
     
-    # 這裡的程式碼 100% 繼承自你上傳的 discover.py (約 121 行處的邏輯)
+    # 使用 Regex 正規表示式精準切割三大區塊
     for section_name, role_name in [
         ("## 業務簡介", "core_business"),
         ("## 供應鏈位置", "supply_chain"),
@@ -105,6 +100,48 @@ def load_supply_chain_intel(stock_id):
             intel[role_name] = section_match.group(1).strip()
             
     return intel
+
+# ====================== 企業級後台資料庫 (SQLite) 建置 ======================
+DATA_DIR = "./data"
+DB_PATH = os.path.join(DATA_DIR, "fenc_audit_intelligence.db")
+
+def ensure_data_dir():
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
+
+def load_saved_fin_data():
+    if os.path.exists(DB_PATH):
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            df = pd.read_sql('SELECT * FROM financial_data', conn)
+            conn.close()
+            if 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'])
+            if 'stock_id' in df.columns:
+                df['stock_id'] = df['stock_id'].astype(str).str.zfill(4)
+            return df
+        except Exception:
+            return None
+    return None
+
+def save_fin_data(df):
+    ensure_data_dir()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        df.to_sql('financial_data', conn, if_exists='replace', index=False)
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+def clear_saved_fin_data():
+    if os.path.exists(DB_PATH):
+        try:
+            os.remove(DB_PATH)
+            return True
+        except:
+            return False
+    return False
 
 # ====================== 財務資料 解析引擎 ======================
 @st.cache_data
@@ -453,7 +490,7 @@ with st.sidebar:
 
     st.markdown("---")
     
-    # 3. 財務數據庫同步 (移至最下方)
+    # 3. 財務數據庫同步
     st.subheader("📤 財務數據資料庫同步")
     
     uploaded_files = st.file_uploader("上傳財報或同業數據", type=["xlsx", "xls", "csv"], accept_multiple_files=True, label_visibility="collapsed")
@@ -566,12 +603,12 @@ if active_alert_price > 0:
         </div>
         """, unsafe_allow_html=True)
 
-# ==================== 前線戰略情報與供應鏈地圖展示 ====================
+# ==================== 前線戰略情報與供應鏈地圖展示 (從 GitHub Markdown 提取) ====================
 if is_tw_stock:
     intel_data = load_supply_chain_intel(code)
     if intel_data and (intel_data.get('core_business') or intel_data.get('supply_chain')):
         st.markdown("### 🗺️ 前線戰略情報與供應鏈陣地")
-        st.markdown("從情報總庫 (Pilot_Reports) 調閱之深度作戰資料：")
+        st.markdown(f"從情報總庫調閱之深度作戰資料：**{option}**")
         tb1, tb2, tb3 = st.tabs(["🛡️ 業務護城河", "🔗 供應鏈陣地", "🤝 盟友與防線"])
         
         with tb1:
@@ -581,7 +618,7 @@ if is_tw_stock:
         with tb3:
             st.markdown(intel_data['customer_supplier'] if intel_data['customer_supplier'] else "情報兵尚未回傳資料。")
         st.divider()
-# =================================================================================
+# =================================================================================================
 
 if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
     exp_text = MACRO_IMPACT[option]
