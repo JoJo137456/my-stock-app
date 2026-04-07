@@ -66,7 +66,7 @@ fetch_github_intelligence()
 
 # ====================== 前線戰略情報解析 (From Pilot_Reports) ======================
 def load_supply_chain_intel(stock_id):
-    """將前線戰場的 Markdown 情報調回指揮中心"""
+    """將前線戰場的 Markdown 情報調回指揮中心，並進行專業化文字清洗"""
     reports_dir = "./Pilot_Reports"
     if not os.path.exists(reports_dir):
         return None
@@ -85,19 +85,27 @@ def load_supply_chain_intel(stock_id):
     with open(target_file, "r", encoding="utf-8") as fh:
         text = fh.read()
         
-    intel = {"core_business": "", "supply_chain": "", "customer_supplier": ""}
+    intel = {"core_business": "", "supply_chain": "", "customer_supplier": "", "financials": ""}
     
-    # 使用 Regex 正規表示式精準切割三大區塊
-    for section_name, role_name in [
-        ("## 業務簡介", "core_business"),
-        ("## 供應鏈位置", "supply_chain"),
-        ("## 主要客戶及供應商", "customer_supplier"),
-    ]:
-        section_match = re.search(
-            rf"{section_name}\n(.*?)(?=\n## |\Z)", text, re.DOTALL
-        )
-        if section_match:
-            intel[role_name] = section_match.group(1).strip()
+    # 使用 Regex 正規表示式精準切割四大區塊
+    match1 = re.search(r"## 業務簡介\n(.*?)(?=\n## 供應鏈位置)", text, re.DOTALL)
+    if match1: intel["core_business"] = match1.group(1).strip()
+        
+    match2 = re.search(r"## 供應鏈位置\n(.*?)(?=\n## 主要客戶及供應商)", text, re.DOTALL)
+    if match2: intel["supply_chain"] = match2.group(1).strip()
+        
+    match3 = re.search(r"## 主要客戶及供應商\n(.*?)(?=\n## 財務概況|\Z)", text, re.DOTALL)
+    if match3: intel["customer_supplier"] = match3.group(1).strip()
+
+    # 提取財務概況，並進行文字專業化重構
+    match4 = re.search(r"## 財務概況(.*?)\Z", text, re.DOTALL)
+    if match4: 
+        fin_text = match4.group(1).strip()
+        # 將隨便的文字替換為專業財經用語
+        fin_text = fin_text.replace("(單位: 百萬台幣, 只有 Margin 為 %)", "*(單位：新台幣百萬元 / 利潤率為 %)*")
+        fin_text = fin_text.replace("### 年度關鍵財務數據 (近 3 年)", "### 📊 近三年核心財務指標")
+        fin_text = fin_text.replace("### 季度關鍵財務數據 (近 4 季)", "### 📈 近四季核心財務指標")
+        intel["financials"] = fin_text
             
     return intel
 
@@ -603,20 +611,45 @@ if active_alert_price > 0:
         </div>
         """, unsafe_allow_html=True)
 
-# ==================== 前線戰略情報與供應鏈地圖展示 (從 GitHub Markdown 提取) ====================
+# ==================== 企業基本面與產業鏈解析 (加入專屬 UI 渲染) ====================
 if is_tw_stock:
     intel_data = load_supply_chain_intel(code)
     if intel_data and (intel_data.get('core_business') or intel_data.get('supply_chain')):
-        st.markdown("### 🗺️ 前線戰略情報與供應鏈陣地")
-        st.markdown(f"從情報總庫調閱之深度作戰資料：**{option}**")
-        tb1, tb2, tb3 = st.tabs(["🛡️ 業務護城河", "🔗 供應鏈陣地", "🤝 盟友與防線"])
+        
+        # 注入企業級專業視覺 CSS
+        st.markdown("""
+        <style>
+        /* 標籤頁與內文：放大字體、高對比 */
+        .stTabs [data-baseweb="tab-list"] button { font-size: 1.2rem; font-weight: 700; color: #64748b; }
+        .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] { color: #0f172a; border-bottom-color: #3b82f6; }
+        .stTabs [data-testid="stMarkdownContainer"] p,
+        .stTabs [data-testid="stMarkdownContainer"] li { font-size: 1.15rem !important; line-height: 1.8 !important; color: #1e293b !important; font-weight: 500; }
+        
+        /* 財務與估值表格：專業深色表頭與斑馬紋 */
+        .stTabs [data-testid="stMarkdownContainer"] table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); background-color: #ffffff; }
+        .stTabs [data-testid="stMarkdownContainer"] th { background-color: #0f172a !important; color: #ffffff !important; padding: 14px; font-size: 1.1rem !important; text-align: center; border: none; }
+        .stTabs [data-testid="stMarkdownContainer"] td { padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: center; font-size: 1.05rem !important; font-weight: 600; color: #334155; }
+        .stTabs [data-testid="stMarkdownContainer"] tr:nth-child(even) { background-color: #f8fafc; }
+        .stTabs [data-testid="stMarkdownContainer"] tr:hover td { background-color: #e2e8f0; color: #0f172a; }
+        
+        /* Markdown 標題重構 */
+        .stTabs [data-testid="stMarkdownContainer"] h3 { color: #0f172a !important; font-size: 1.35rem !important; font-weight: 800 !important; margin-top: 2rem !important; border-bottom: 3px solid #cbd5e1; padding-bottom: 0.5rem; display: inline-block; width: 100%; }
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown("### 🏛️ 企業基本面與產業鏈深度解析")
+        st.markdown(f"<div style='font-size: 1.05rem; color: #64748b; margin-bottom: 20px; font-weight: 600;'>資料來源：集團智庫 (Pilot_Reports) 深度研究報告 ｜ 標的：<span style='color: #0f172a;'>{option}</span></div>", unsafe_allow_html=True)
+        
+        tb1, tb2, tb3, tb4 = st.tabs(["🏢 核心業務概況", "🔗 產業上下游結構", "🤝 主要客戶與供應商", "💰 財務與估值數據"])
         
         with tb1:
-            st.markdown(intel_data['core_business'] if intel_data['core_business'] else "情報兵尚未回傳資料。")
+            st.markdown(intel_data['core_business'] if intel_data['core_business'] else "尚無業務數據。")
         with tb2:
-            st.markdown(intel_data['supply_chain'] if intel_data['supply_chain'] else "情報兵尚未回傳資料。")
+            st.markdown(intel_data['supply_chain'] if intel_data['supply_chain'] else "尚無供應鏈數據。")
         with tb3:
-            st.markdown(intel_data['customer_supplier'] if intel_data['customer_supplier'] else "情報兵尚未回傳資料。")
+            st.markdown(intel_data['customer_supplier'] if intel_data['customer_supplier'] else "尚無客戶供應商數據。")
+        with tb4:
+            st.markdown(intel_data['financials'] if intel_data['financials'] else "尚無財務數據。")
         st.divider()
 # =================================================================================================
 
