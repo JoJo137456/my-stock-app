@@ -808,7 +808,7 @@ if card_info:
         <div style="font-size:0.95rem; color:#334155; line-height:1.6; margin-left:32px;">
             <b>📍 數據來源：</b> {card_info['source']}<br>
             <b>📊 數據組成與定義：</b> {card_info['composition']}<br>
-            <b>🎯 監控邏輯 (Why we track this)：</b> {card_info['why_track']}
+            <b>🎯 監控邏輯：</b> {card_info['why_track']}
         </div>
     </div>
     """, unsafe_allow_html=True)
