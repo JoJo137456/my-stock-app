@@ -64,66 +64,13 @@ def fetch_github_intelligence():
 # 系統啟動時，自動呼叫空投
 fetch_github_intelligence()
 
-# ====================== 智能超連結引擎 (Smart Linkify) ======================
-@st.cache_data
-def build_report_index():
-    """掃描本地下載好的 GitHub 情報庫，建立 代碼 -> GitHub URL 的索引字典"""
-    available_reports = {}
-    reports_dir = "./Pilot_Reports"
-    if os.path.exists(reports_dir):
-        for root, dirs, files in os.walk(reports_dir):
-            for f in files:
-                if f.endswith(".md"):
-                    parts = f.split("_")
-                    if len(parts) >= 1:
-                        stock_id = parts[0]
-                        # 計算相對路徑以拼湊 GitHub 原始連結
-                        rel_path = os.path.relpath(os.path.join(root, f), reports_dir).replace("\\", "/")
-                        url = f"https://github.com/Timeverse/My-TW-Coverage/blob/master/Pilot_Reports/{rel_path}"
-                        available_reports[stock_id] = url
-    return available_reports
-
-AVAILABLE_REPORTS = build_report_index()
-
-# 建立全域實體代碼庫，將 Markdown 報告中的名稱映射到真實股號 (台美股通用)
-ENTITY_TO_CODE = {
-    "Nike": "NKE", "Adidas": "ADDYY", "Gap": "GPS", "Lululemon": "LULU", 
-    "Under Armour": "UAA", "Coca-Cola": "KO", "PepsiCo": "PEP", "Hasbro": "HAS", 
-    "群創": "3481", "遠東新": "1402", "亞泥": "1102", "宏遠": "1460", "東聯": "1710",
-    "遠百": "2903", "遠傳": "4904", "遠東銀": "2845", "裕民": "2606",
-    "新纖": "1409", "中纖": "1718", "得力": "1464", "台泥": "1101",
-    "中華電": "2412", "台灣大": "3045", "Apple": "AAPL", "Microsoft": "MSFT",
-    "Nvidia": "NVDA", "TSMC": "2330", "台積電": "2330", "鴻海": "2317"
-}
-
-def linkify_markdown(text):
-    """將文字中的公司名稱轉化為可以控制儀表板的 URL 參數超連結"""
-    if not text: return text
-    
-    # 1. 處理 Obsidian 格式 [[Company]]
-    def replace_obsidian(match):
-        entity = match.group(1)
-        code = ENTITY_TO_CODE.get(entity)
-        # 若無建立對應，嘗試判斷是否本身就是代碼
-        if not code and re.match(r'^[A-Z]{1,5}$', entity): code = entity 
-        if not code and re.match(r'^\d{4}$', entity): code = entity     
-        
-        if code:
-            # 轉換為帶有 URL query param 的超連結，點擊將刷新同一個頁面
-            return f'<a class="smart-link" href="?symbol={code}&name={entity}" target="_self">🎯 {entity}</a>'
-        # 若無法辨識且無代碼，顯示為反灰的藥丸標籤
-        return f'<span class="inactive-pill">{entity}</span>'
-        
-    text = re.sub(r'\[\[(.*?)\]\]', replace_obsidian, text)
-    
-    # 2. 處理 Name(Code) 格式，如 遠東新(1402)
-    def replace_tw(match):
-        name = match.group(1)
-        code = match.group(2)
-        return f'<a class="smart-link" href="?symbol={code}&name={name}" target="_self">🎯 {name}({code})</a>'
-        
-    text = re.sub(r'([a-zA-Z\u4e00-\u9fa5]+)\s*[\(（](\d{4})[\)）]', replace_tw, text)
-    
+# ====================== 文本淨化引擎 ======================
+def clean_obsidian_syntax(text):
+    """將 Markdown 內文的 [[Entity]] 轉換為粗體文字，保持畫面乾淨專業"""
+    if not text: 
+        return text
+    # 移除 Obsidian 雙中括號，並替換為 Markdown 粗體
+    text = re.sub(r'\[\[(.*?)\]\]', r'**\1**', text)
     return text
 
 # ====================== 前線戰略情報解析 (From Pilot_Reports) ======================
@@ -151,13 +98,13 @@ def load_supply_chain_intel(stock_id):
     
     # 使用 Regex 正規表示式精準切割四大區塊
     match1 = re.search(r"## 業務簡介\n(.*?)(?=\n## 供應鏈位置)", text, re.DOTALL)
-    if match1: intel["core_business"] = match1.group(1).strip()
+    if match1: intel["core_business"] = clean_obsidian_syntax(match1.group(1).strip())
         
     match2 = re.search(r"## 供應鏈位置\n(.*?)(?=\n## 主要客戶及供應商)", text, re.DOTALL)
-    if match2: intel["supply_chain"] = match2.group(1).strip()
+    if match2: intel["supply_chain"] = clean_obsidian_syntax(match2.group(1).strip())
         
     match3 = re.search(r"## 主要客戶及供應商\n(.*?)(?=\n## 財務概況|\Z)", text, re.DOTALL)
-    if match3: intel["customer_supplier"] = match3.group(1).strip()
+    if match3: intel["customer_supplier"] = clean_obsidian_syntax(match3.group(1).strip())
 
     # 提取財務概況，並進行文字專業化重構
     match4 = re.search(r"## 財務概況(.*?)\Z", text, re.DOTALL)
@@ -167,7 +114,7 @@ def load_supply_chain_intel(stock_id):
         fin_text = fin_text.replace("(單位: 百萬台幣, 只有 Margin 為 %)", "*(單位：新台幣百萬元 / 利潤率為 %)*")
         fin_text = fin_text.replace("### 年度關鍵財務數據 (近 3 年)", "### 📊 近三年核心財務指標")
         fin_text = fin_text.replace("### 季度關鍵財務數據 (近 4 季)", "### 📈 近四季核心財務指標")
-        intel["financials"] = fin_text
+        intel["financials"] = clean_obsidian_syntax(fin_text)
             
     return intel
 
@@ -363,43 +310,12 @@ st.markdown("""
         /* Markdown 標題重構 */
         .stTabs [data-testid="stMarkdownContainer"] h3 { color: #0f172a !important; font-size: 1.35rem !important; font-weight: 800 !important; margin-top: 2rem !important; border-bottom: 3px solid #cbd5e1; padding-bottom: 0.5rem; display: inline-block; width: 100%; }
         .stTabs [data-testid="stMarkdownContainer"] h4 { color: #0f172a !important; font-size: 1.2rem !important; font-weight: 800 !important; margin-top: 2rem !important; border-bottom: 3px solid #cbd5e1; padding-bottom: 0.5rem; display: inline-block; width: 100%; }
-
-        /* 全新打造的 Smart Linkify 按鈕樣式 */
-        a.smart-link { 
-            color: #ffffff !important; 
-            background-color: #3b82f6 !important; 
-            padding: 4px 10px; 
-            border-radius: 6px; 
-            text-decoration: none !important; 
-            font-weight: 700; 
-            font-size: 0.95rem;
-            transition: all 0.2s ease;
-            display: inline-block;
-            margin: 2px;
-            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-        }
-        a.smart-link:hover { 
-            background-color: #1d4ed8 !important; 
-            transform: translateY(-2px);
-            box-shadow: 0 4px 6px rgba(29, 78, 216, 0.3);
-        }
-        .inactive-pill {
-            background-color: #f1f5f9;
-            color: #64748b;
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-weight: 600;
-            font-size: 0.95rem;
-            display: inline-block;
-            margin: 2px;
-            border: 1px solid #e2e8f0;
-        }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-title">遠東集團 (Far Eastern Group)</div><div class="sub-title">聯合稽核總部 ｜ 戰略決策儀表板</div>', unsafe_allow_html=True)
 
-# === 3. 宏觀經濟指標定義 (完整保留所有字典) ===
+# === 3. 宏觀經濟指標定義 ===
 MACRO_IMPACT = {
     "🇹🇼 台灣加權指數": "台灣加權指數為台灣整體經濟及半導體產業景氣的綜合指標。主要與台積電等科技巨頭連動，可作為評估外資資金流向及國內資本市場活力的關鍵參考。",
     "🇺🇸 S&P 500": "S&P 500 指數涵蓋美國前 500 大企業，代表美國實體經濟的全貌。其涵蓋多樣產業，為全球長期資金配置及美股市場多空趨勢判斷的基準指標。",
@@ -418,7 +334,7 @@ MACRO_IMPACT = {
     "💱 美元兌台幣": "美元兌台幣匯率為台灣出口企業獲利的重要因素。台幣貶值可使電子代工及紡織業獲得匯兌收益，但會提高進口物價。"
 }
 
-# === 4. 產業板塊分類與同業對標 (完整保留) ===
+# === 4. 產業板塊分類與同業對標 (加入全新的智庫萃取板塊) ===
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
         "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC",
@@ -430,8 +346,17 @@ market_categories = {
         "👕 1402 遠東新": "1402", "🏗️ 1102 亞泥": "1102", "🚢 2606 裕民": "2606", "🧵 1460 宏遠": "1460",
         "🛍️ 2903 遠百": "2903", "📱 4904 遠傳": "4904", "🧪 1710 東聯": "1710", "🏦 2845 遠東銀": "2845"
     },
-    "👟 國際品牌終端 (紡織板塊對標)": {"🇺🇸 Nike": "NKE", "🇺🇸 Under Armour": "UAA", "🇺🇸 Lululemon": "LULU"},
-    "🥤 國際品牌終端 (化纖板塊對標)": {"🇺🇸 Coca-Cola": "KO", "🇺🇸 PepsiCo": "PEP"}
+    "👟 國際品牌終端 (紡織板塊對標)": {
+        "🇺🇸 Nike": "NKE", "🇺🇸 Under Armour": "UAA", "🇺🇸 Lululemon": "LULU", "🇺🇸 Adidas": "ADDYY"
+    },
+    "🥤 國際品牌終端 (化纖板塊對標)": {
+        "🇺🇸 Coca-Cola": "KO", "🇺🇸 PepsiCo": "PEP"
+    },
+    "🔗 智庫萃取：上下游關聯企業": {
+        "🇹🇼 3481 群創光電": "3481", "🇺🇸 Gap": "GPS", "🇺🇸 Hasbro (孩之寶)": "HAS", 
+        "🇹🇼 2330 台積電": "2330", "🇹🇼 2317 鴻海": "2317", 
+        "🇺🇸 Apple": "AAPL", "🇺🇸 Microsoft": "MSFT", "🇺🇸 Nvidia": "NVDA"
+    }
 }
 
 external_peers = {
@@ -562,33 +487,16 @@ def plot_intraday_line(df, alert_price=None):
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     return fig
 
-# === 6. URL Routing 與側邊控制面板 (Smart Link 攔截) ===
-params = st.query_params
-url_symbol = params.get("symbol")
-url_name = params.get("name")
-
+# === 6. 側邊控制面板 (穩健原生選單版) ===
 with st.sidebar:
     st.header("📊 市場監控指標")
     
-    # 判斷是否處於超連結跳轉狀態
-    if url_symbol:
-        st.markdown("---")
-        st.success(f"🔍 **關聯標的探索模式**\n\n目前鎖定標的：\n### {url_name} ({url_symbol})")
-        if st.button("🔙 返回原分類板塊", use_container_width=True):
-            st.query_params.clear()
-            st.rerun()
-            
-        code = url_symbol
-        is_tw_stock = code.isdigit()
-        option = f"{url_name} ({code})"
-    else:
-        # 預設控制面板
-        selected_category = st.selectbox("產業板塊", list(market_categories.keys()))
-        st.markdown("---")
-        options_dict = market_categories[selected_category]
-        option = st.radio("監控標的", list(options_dict.keys()))
-        code = options_dict[option]
-        is_tw_stock = code.isdigit()
+    selected_category = st.selectbox("產業板塊", list(market_categories.keys()))
+    st.markdown("---")
+    options_dict = market_categories[selected_category]
+    option = st.radio("監控標的", list(options_dict.keys()))
+    code = options_dict[option]
+    is_tw_stock = code.isdigit()
 
     st.markdown("---")
     
@@ -732,7 +640,7 @@ if active_alert_price > 0:
         """, unsafe_allow_html=True)
 
 # --- 宏觀經濟指標說明 ---
-if not url_symbol and selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
+if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
     exp_text = MACRO_IMPACT[option]
     html_payload = f"""
     <div style="background-color: #ffffff; padding: 20px 25px; border-radius: 8px; border-left: 5px solid #3b82f6; margin-top: 10px; margin-bottom: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
@@ -750,7 +658,7 @@ with col1:
 with col2:
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily, active_alert_price), use_container_width=True)
 
-# ==================== 企業基本面與財務分析 (標籤頁整合 + Smart Linkify) ====================
+# ==================== 企業基本面與財務分析 (標籤頁整合) ====================
 st.divider()
 st.markdown("### 🏛️ 企業基本面與財務分析中心")
 st.markdown(f"<div style='font-size: 1.05rem; color: #64748b; margin-bottom: 20px; font-weight: 600;'>分析標的：<span style='color: #0f172a;'>{option}</span></div>", unsafe_allow_html=True)
@@ -847,13 +755,13 @@ if is_tw_stock:
     ])
     
     with tb1:
-        if intel_data: st.markdown(linkify_markdown(intel_data['core_business']) if intel_data['core_business'] else "尚無業務數據。")
+        if intel_data: st.markdown(intel_data['core_business'] if intel_data['core_business'] else "尚無業務數據。")
         else: st.markdown("尚無報告資料。")
     with tb2:
-        if intel_data: st.markdown(linkify_markdown(intel_data['supply_chain']) if intel_data['supply_chain'] else "尚無供應鏈數據。")
+        if intel_data: st.markdown(intel_data['supply_chain'] if intel_data['supply_chain'] else "尚無供應鏈數據。")
         else: st.markdown("尚無報告資料。")
     with tb3:
-        if intel_data: st.markdown(linkify_markdown(intel_data['customer_supplier']) if intel_data['customer_supplier'] else "尚無客戶供應商數據。")
+        if intel_data: st.markdown(intel_data['customer_supplier'] if intel_data['customer_supplier'] else "尚無客戶供應商數據。")
         else: st.markdown("尚無報告資料。")
         
     with tb4:
@@ -863,7 +771,7 @@ if is_tw_stock:
         else:
             st.markdown("尚無基礎財務數據。")
             
-        # 2. 將「最新關鍵財務指標明細」與「歷年營運指標趨勢分析」移至此頁面
+        # 2. 財務指標明細與趨勢分析
         if has_fin_data:
             st.markdown("#### 📝 最新關鍵財務指標明細")
             st.dataframe(metrics_df, use_container_width=True, hide_index=True)
@@ -906,9 +814,9 @@ if is_tw_stock:
                 st.info("歷史資料筆數不足以繪製趨勢圖，請確認上傳之財報包含足夠的歷史期數。")
 
     with tb5:
-        # 將「綜合評分」與「雙核心矩陣」留在此頁面，達成點擊查看的目標
+        # 綜合評分與雙核心矩陣
         if has_fin_data:
-            st.markdown("#### 🏆 經營能力綜合評分比較 (點擊卡片標題探索同業)")
+            st.markdown("#### 🏆 經營能力綜合評分比較 (滿分 100 分)")
             cols = st.columns(len(latest_data))
             for i, (pid, score) in enumerate(scores.items()):
                 comp_name = peer_dict.get(pid, pid)
@@ -916,15 +824,10 @@ if is_tw_stock:
                 highlight_class = "highlight-card" if is_current else ""
                 color = "#22c55e" if score >= 60 else "#ef4444"
                 
-                # 同業對標卡片超連結化
-                target_url = f"?symbol={pid}&name={comp_name}"
-                
                 with cols[i]:
                     st.markdown(f"""
                     <div class="score-card {highlight_class}">
-                        <a href="{target_url}" target="_self" style="text-decoration: none;">
-                            <div class="score-card-title" style="color: #2563eb;">🎯 {comp_name} ({pid})</div>
-                        </a>
+                        <div class="score-card-title">{comp_name} ({pid})</div>
                         <div class="score-card-value" style="color: {color};">{score}</div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -978,7 +881,7 @@ if is_tw_stock:
             st.info("請先上傳財務或銀行同業資料以啟用完整分析功能。")
 else:
     # 針對美股等非台股公司，不顯示台灣市場的財務報表，給予乾淨介面
-    st.info("💡 目前標的為非台灣市場之跨國企業。系統已成功載入其國際市場報價與歷史走勢數據（如上方圖表所示）。受限於資料庫權限，目前暫不提供其供應鏈與在地化財務分析報告。您可以點擊左側「返回原分類板塊」繼續探索集團關聯標的。")
+    st.info("💡 目前標的為非台灣市場之跨國企業。系統已成功載入其國際市場報價與歷史走勢數據（如上方圖表所示）。受限於資料庫權限，目前暫不提供其供應鏈與在地化財務分析報告。您可以透過左側下拉選單繼續探索其他關聯標的。")
 
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
 st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統資料更新時間：{update_time} ｜ 資料庫架構：SQLite 關聯式架構</div>', unsafe_allow_html=True)
