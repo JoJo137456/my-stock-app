@@ -525,7 +525,7 @@ with st.sidebar:
             st.success("✅ 歷史資料庫已重置清空")
             st.rerun()
 
-# === 7. 報價與動態警示模組 ===
+# === 7. 報價、走勢圖與動態警示模組 (置頂) ===
 real_data = {'price': 0, 'high': '-', 'low': '-', 'open': '-', 'volume': '-'}
 if is_tw_stock:
     try:
@@ -576,7 +576,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ==================== 動態警示分析區塊 ====================
+# --- 動態警示分析區塊 ---
 active_alert_price = st.session_state['alert_levels'].get(code, 0.0)
 
 if active_alert_price > 0:
@@ -611,48 +611,7 @@ if active_alert_price > 0:
         </div>
         """, unsafe_allow_html=True)
 
-# ==================== 企業基本面與產業鏈解析 (加入專屬 UI 渲染) ====================
-if is_tw_stock:
-    intel_data = load_supply_chain_intel(code)
-    if intel_data and (intel_data.get('core_business') or intel_data.get('supply_chain')):
-        
-        # 注入企業級專業視覺 CSS
-        st.markdown("""
-        <style>
-        /* 標籤頁與內文：放大字體、高對比 */
-        .stTabs [data-baseweb="tab-list"] button { font-size: 1.2rem; font-weight: 700; color: #64748b; }
-        .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] { color: #0f172a; border-bottom-color: #3b82f6; }
-        .stTabs [data-testid="stMarkdownContainer"] p,
-        .stTabs [data-testid="stMarkdownContainer"] li { font-size: 1.15rem !important; line-height: 1.8 !important; color: #1e293b !important; font-weight: 500; }
-        
-        /* 財務與估值表格：專業深色表頭與斑馬紋 */
-        .stTabs [data-testid="stMarkdownContainer"] table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); background-color: #ffffff; }
-        .stTabs [data-testid="stMarkdownContainer"] th { background-color: #0f172a !important; color: #ffffff !important; padding: 14px; font-size: 1.1rem !important; text-align: center; border: none; }
-        .stTabs [data-testid="stMarkdownContainer"] td { padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: center; font-size: 1.05rem !important; font-weight: 600; color: #334155; }
-        .stTabs [data-testid="stMarkdownContainer"] tr:nth-child(even) { background-color: #f8fafc; }
-        .stTabs [data-testid="stMarkdownContainer"] tr:hover td { background-color: #e2e8f0; color: #0f172a; }
-        
-        /* Markdown 標題重構 */
-        .stTabs [data-testid="stMarkdownContainer"] h3 { color: #0f172a !important; font-size: 1.35rem !important; font-weight: 800 !important; margin-top: 2rem !important; border-bottom: 3px solid #cbd5e1; padding-bottom: 0.5rem; display: inline-block; width: 100%; }
-        </style>
-        """, unsafe_allow_html=True)
-
-        st.markdown("### 🏛️ 企業基本面與產業鏈深度解析")
-        st.markdown(f"<div style='font-size: 1.05rem; color: #64748b; margin-bottom: 20px; font-weight: 600;'>資料來源：集團智庫 (Pilot_Reports) 深度研究報告 ｜ 標的：<span style='color: #0f172a;'>{option}</span></div>", unsafe_allow_html=True)
-        
-        tb1, tb2, tb3, tb4 = st.tabs(["🏢 核心業務概況", "🔗 產業上下游結構", "🤝 主要客戶與供應商", "💰 財務與估值數據"])
-        
-        with tb1:
-            st.markdown(intel_data['core_business'] if intel_data['core_business'] else "尚無業務數據。")
-        with tb2:
-            st.markdown(intel_data['supply_chain'] if intel_data['supply_chain'] else "尚無供應鏈數據。")
-        with tb3:
-            st.markdown(intel_data['customer_supplier'] if intel_data['customer_supplier'] else "尚無客戶供應商數據。")
-        with tb4:
-            st.markdown(intel_data['financials'] if intel_data['financials'] else "尚無財務數據。")
-        st.divider()
-# =================================================================================================
-
+# --- 宏觀經濟指標說明 ---
 if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
     exp_text = MACRO_IMPACT[option]
     html_payload = f"""
@@ -664,39 +623,58 @@ if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option i
     """
     st.markdown(html_payload.replace('\n', ''), unsafe_allow_html=True)
 
+# --- 股價圖表置頂 ---
 col1, col2 = st.columns([1, 1])
-active_alert_price = st.session_state['alert_levels'].get(code, 0.0)
-
 with col1:
     if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra, active_alert_price), use_container_width=True)
 with col2:
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily, active_alert_price), use_container_width=True)
 
-# === 8. 財務健檢與同業對標分析 ===
+# ==================== 企業基本面與財務分析 (標籤頁整合) ====================
 if is_tw_stock:
     st.divider()
+    intel_data = load_supply_chain_intel(code)
     fin_df = st.session_state.get('fin_data', None)
     
-    if fin_df is not None and not fin_df.empty:
+    # 注入企業級專業視覺 CSS
+    st.markdown("""
+    <style>
+    /* 標籤頁與內文：放大字體、高對比 */
+    .stTabs [data-baseweb="tab-list"] button { font-size: 1.2rem; font-weight: 700; color: #64748b; }
+    .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] { color: #0f172a; border-bottom-color: #3b82f6; }
+    .stTabs [data-testid="stMarkdownContainer"] p,
+    .stTabs [data-testid="stMarkdownContainer"] li { font-size: 1.15rem !important; line-height: 1.8 !important; color: #1e293b !important; font-weight: 500; }
+    
+    /* 財務與估值表格：專業深色表頭與斑馬紋 */
+    .stTabs [data-testid="stMarkdownContainer"] table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); background-color: #ffffff; }
+    .stTabs [data-testid="stMarkdownContainer"] th { background-color: #0f172a !important; color: #ffffff !important; padding: 14px; font-size: 1.1rem !important; text-align: center; border: none; }
+    .stTabs [data-testid="stMarkdownContainer"] td { padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: center; font-size: 1.05rem !important; font-weight: 600; color: #334155; }
+    .stTabs [data-testid="stMarkdownContainer"] tr:nth-child(even) { background-color: #f8fafc; }
+    .stTabs [data-testid="stMarkdownContainer"] tr:hover td { background-color: #e2e8f0; color: #0f172a; }
+    
+    /* Markdown 標題重構 */
+    .stTabs [data-testid="stMarkdownContainer"] h3, 
+    .stTabs [data-testid="stMarkdownContainer"] h4 { color: #0f172a !important; font-weight: 800 !important; margin-top: 2rem !important; border-bottom: 3px solid #cbd5e1; padding-bottom: 0.5rem; display: inline-block; width: 100%; }
+    .stTabs [data-testid="stMarkdownContainer"] h3 { font-size: 1.35rem !important; }
+    .stTabs [data-testid="stMarkdownContainer"] h4 { font-size: 1.2rem !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("### 🏛️ 企業基本面與財務分析中心")
+    st.markdown(f"<div style='font-size: 1.05rem; color: #64748b; margin-bottom: 20px; font-weight: 600;'>分析標的：<span style='color: #0f172a;'>{option}</span></div>", unsafe_allow_html=True)
+    
+    # --- 預先計算財務健檢與同業對標數據 ---
+    has_fin_data = fin_df is not None and not fin_df.empty
+    if has_fin_data:
         peer_codes = external_peers.get(str(code), [])
         all_ids = [str(code)] + peer_codes
         peer_dict = {pid: company_name_dict.get(pid, pid) for pid in all_ids}
 
         latest_data = {}
-        data_date_str = "最新期數"
         for pid in all_ids:
             c_df = fin_df[fin_df['stock_id'] == pid].sort_values('date', ascending=False)
             if not c_df.empty:
                 latest_data[pid] = c_df.iloc[0]
-
-        if str(code) in latest_data:
-            latest_date_val = latest_data[str(code)].get('date')
-            if pd.notna(latest_date_val):
-                data_date_str = latest_date_val.strftime('%Y-%m')
-
-        st.markdown(f"## 📊 財務指標健檢與同業對標分析 <span style='font-size: 1rem; color: #64748b; font-weight: 500;'>（資料期數：{data_date_str}）</span>", unsafe_allow_html=True)
-        current_company_name = peer_dict.get(str(code), f"公司 {code}")
-        st.markdown(f"### 🔍 當前分析主體：**{current_company_name} ({code})**")
 
         is_bank = (str(code) in ['2845'] or str(code) in external_peers.get('2845', []))
         
@@ -735,6 +713,7 @@ if is_tw_stock:
             vals = [latest_data[pid].get(key) for pid in latest_data if pd.notna(latest_data[pid].get(key))]
             industry_avg[key] = np.mean(vals) if vals else np.nan
 
+        # 計算綜合評分
         scores = {}
         for pid, data in latest_data.items():
             score = 0
@@ -750,25 +729,8 @@ if is_tw_stock:
                         score += 10
             final_score = int((score / (valid_metrics_count * 10)) * 100) if valid_metrics_count > 0 else 0
             scores[pid] = final_score
-
-        st.markdown("#### 🏆 經營能力綜合評分比較 (滿分 100 分)")
-        cols = st.columns(len(latest_data))
-        for i, (pid, score) in enumerate(scores.items()):
-            comp_name = peer_dict.get(pid, pid)
-            is_current = (pid == str(code))
-            highlight_class = "highlight-card" if is_current else ""
-            color = "#22c55e" if score >= 60 else "#ef4444"
-            with cols[i]:
-                st.markdown(f"""
-                <div class="score-card {highlight_class}">
-                    <div class="score-card-title">{comp_name} ({pid})</div>
-                    <div class="score-card-value" style="color: {color};">{score}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        st.markdown("#### 📝 最新關鍵財務指標明細")
+            
+        # 準備財務指標明細表格資料
         table_data = {"指標名稱": [info['name'] for info in indicators_dict.values()]}
         for pid in all_ids:
             if pid in latest_data:
@@ -779,91 +741,140 @@ if is_tw_stock:
                     for k in indicators_dict.keys()
                 ]
         metrics_df = pd.DataFrame(table_data)
-        st.dataframe(metrics_df, use_container_width=True, hide_index=True)
 
-        st.markdown("#### 🎯 營運效率雙核心矩陣")
+    # --- 渲染標籤頁 ---
+    tb1, tb2, tb3, tb4, tb5 = st.tabs([
+        "🏢 核心業務概況", 
+        "🔗 產業上下游結構", 
+        "🤝 主要客戶與供應商", 
+        "💰 財務與估值數據", 
+        "📊 同業對標與健檢"
+    ])
+    
+    with tb1:
+        if intel_data: st.markdown(intel_data['core_business'] if intel_data['core_business'] else "尚無業務數據。")
+        else: st.markdown("尚無報告資料。")
+    with tb2:
+        if intel_data: st.markdown(intel_data['supply_chain'] if intel_data['supply_chain'] else "尚無供應鏈數據。")
+        else: st.markdown("尚無報告資料。")
+    with tb3:
+        if intel_data: st.markdown(intel_data['customer_supplier'] if intel_data['customer_supplier'] else "尚無客戶供應商數據。")
+        else: st.markdown("尚無報告資料。")
         
-        if is_bank:
-            x_metric = 'uncollected_interest_ratio'
-            y_metric = 'npl_ratio'
-            x_title = "利息未收現比率 (%) ➔ 較低者佳"
-            y_title = "催收款比率 (%) ➔ 較低者佳"
-            quadrant_caption = "左下角象限代表「利息收現狀況佳」且「資產品質優良 (催收款少)」，為最佳營運狀態。"
-            hover_x_name = "利息未收現比率"
-            hover_y_name = "催收款比率"
+    with tb4:
+        # 1. Pilot Reports 財務概況
+        if intel_data and intel_data.get('financials'):
+            st.markdown(intel_data['financials'])
         else:
-            x_metric = 'inv_turnover_times'
-            y_metric = 'ar_turnover_times'
-            x_title = "存貨週轉率 (次) ➔ 較高者佳"
-            y_title = "應收帳款週轉次數 (次) ➔ 較高者佳"
-            quadrant_caption = "右上角象限代表「存貨去化效率高」且「帳款回收週期短」，為最佳營運狀態。"
-            hover_x_name = "存貨週轉率"
-            hover_y_name = "應收帳款週轉"
+            st.markdown("尚無基礎財務數據。")
             
-        fig_xy = go.Figure()
-        for pid in all_ids:
-            if pid in latest_data:
-                data = latest_data[pid]
-                x_val = data.get(x_metric, np.nan)
-                y_val = data.get(y_metric, np.nan)
-                if pd.notna(x_val) and pd.notna(y_val):
-                    is_target = (pid == str(code))
-                    fig_xy.add_trace(go.Scatter(
-                        x=[x_val], y=[y_val],
-                        mode='markers+text',
-                        name=peer_dict[pid],
-                        text=[peer_dict[pid]],
-                        textposition="top center",
-                        textfont=dict(size=14, color="#1e293b" if not is_target else "#ef4444", weight="bold" if is_target else "normal"),
-                        marker=dict(size=24 if is_target else 18, color='#ef4444' if is_target else '#94a3b8', line=dict(width=2, color='white'), opacity=0.9),
-                        hovertemplate=f"<b>{peer_dict[pid]}</b><br>{hover_x_name}: %{{x:.2f}}<br>{hover_y_name}: %{{y:.2f}}<extra></extra>"
-                    ))
-        
-        fig_xy.update_layout(height=500, plot_bgcolor='#f8fafc', paper_bgcolor='#ffffff', margin=dict(l=40,r=40,t=40,b=40),
-                              xaxis=dict(title=x_title, gridcolor="white", zerolinecolor="#cbd5e1", zerolinewidth=2),
-                              yaxis=dict(title=y_title, gridcolor="white", zerolinecolor="#cbd5e1", zerolinewidth=2),
-                              showlegend=False)
-        st.plotly_chart(fig_xy, use_container_width=True)
-        st.caption(quadrant_caption)
+        # 2. 將「最新關鍵財務指標明細」與「歷年營運指標趨勢分析」移至此頁面
+        if has_fin_data:
+            st.markdown("#### 📝 最新關鍵財務指標明細")
+            st.dataframe(metrics_df, use_container_width=True, hide_index=True)
 
-        st.markdown("#### 📈 歷年營運指標趨勢分析")
-        trend_metric = st.selectbox("請選擇欲深入分析之指標", options=list(indicators_dict.keys()), format_func=lambda x: indicators_dict[x]['name'])
+            st.markdown("#### 📈 歷年營運指標趨勢分析")
+            trend_metric = st.selectbox("請選擇欲深入分析之指標", options=list(indicators_dict.keys()), format_func=lambda x: indicators_dict[x]['name'])
 
-        fenc_df = fin_df[fin_df['stock_id'] == str(code)].sort_values('date', ascending=True).dropna(subset=['date', trend_metric])
-        fenc_df['pct_change'] = fenc_df[trend_metric].pct_change() * 100
+            current_company_name = peer_dict.get(str(code), f"公司 {code}")
+            fenc_df = fin_df[fin_df['stock_id'] == str(code)].sort_values('date', ascending=True).dropna(subset=['date', trend_metric])
+            fenc_df['pct_change'] = fenc_df[trend_metric].pct_change() * 100
 
-        peer_df = fin_df[fin_df['stock_id'].isin(peer_codes)].dropna(subset=['date', trend_metric])
-        peer_avg_df = peer_df.groupby('date')[trend_metric].mean().reset_index().rename(columns={trend_metric: 'peer_avg'})
+            peer_df = fin_df[fin_df['stock_id'].isin(peer_codes)].dropna(subset=['date', trend_metric])
+            peer_avg_df = peer_df.groupby('date')[trend_metric].mean().reset_index().rename(columns={trend_metric: 'peer_avg'})
 
-        merged_df = pd.merge(fenc_df[['date', trend_metric, 'pct_change']], peer_avg_df, on='date', how='inner').tail(8)
+            merged_df = pd.merge(fenc_df[['date', trend_metric, 'pct_change']], peer_avg_df, on='date', how='inner').tail(8)
 
-        if not merged_df.empty:
-            x_labels = merged_df['date'].dt.strftime('%Y-%m')
-            text_annotations = []
-            for _, row in merged_df.iterrows():
-                val = row[trend_metric]
-                pct = row['pct_change']
-                if pd.isna(pct):
-                    text_annotations.append(f"{val:.2f}")
-                elif pct > 0:
-                    text_annotations.append(f"{val:.2f}<br>▲ {pct:.1f}%")
-                elif pct < 0:
-                    text_annotations.append(f"{val:.2f}<br>▼ {abs(pct):.1f}%")
-                else:
-                    text_annotations.append(f"{val:.2f}<br>持平")
+            if not merged_df.empty:
+                x_labels = merged_df['date'].dt.strftime('%Y-%m')
+                text_annotations = []
+                for _, row in merged_df.iterrows():
+                    val = row[trend_metric]
+                    pct = row['pct_change']
+                    if pd.isna(pct):
+                        text_annotations.append(f"{val:.2f}")
+                    elif pct > 0:
+                        text_annotations.append(f"{val:.2f}<br>▲ {pct:.1f}%")
+                    elif pct < 0:
+                        text_annotations.append(f"{val:.2f}<br>▼ {abs(pct):.1f}%")
+                    else:
+                        text_annotations.append(f"{val:.2f}<br>持平")
 
-            fig_trend = go.Figure()
-            fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df[trend_metric], name=current_company_name, marker_color='#ef4444', text=text_annotations, textposition='outside'))
-            fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df['peer_avg'], name='同業平均', marker_color='#cbd5e1', text=[f"{v:.2f}" for v in merged_df['peer_avg']], textposition='outside'))
-            fig_trend.update_layout(barmode='group', height=500, plot_bgcolor='#ffffff', paper_bgcolor='#ffffff',
-                                    xaxis=dict(title="時間期數"), yaxis=dict(title=indicators_dict[trend_metric]['name']),
-                                    legend=dict(orientation="h", y=1.05, x=0.5))
-            st.plotly_chart(fig_trend, use_container_width=True)
+                fig_trend = go.Figure()
+                fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df[trend_metric], name=current_company_name, marker_color='#ef4444', text=text_annotations, textposition='outside'))
+                fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df['peer_avg'], name='同業平均', marker_color='#cbd5e1', text=[f"{v:.2f}" for v in merged_df['peer_avg']], textposition='outside'))
+                fig_trend.update_layout(barmode='group', height=500, plot_bgcolor='#ffffff', paper_bgcolor='#ffffff',
+                                        xaxis=dict(title="時間期數"), yaxis=dict(title=indicators_dict[trend_metric]['name']),
+                                        legend=dict(orientation="h", y=1.05, x=0.5))
+                st.plotly_chart(fig_trend, use_container_width=True)
+            else:
+                st.info("歷史資料筆數不足以繪製趨勢圖，請確認上傳之財報包含足夠的歷史期數。")
+
+    with tb5:
+        # 將「綜合評分」與「雙核心矩陣」留在此頁面，達成點擊查看的目標
+        if has_fin_data:
+            st.markdown("#### 🏆 經營能力綜合評分比較 (滿分 100 分)")
+            cols = st.columns(len(latest_data))
+            for i, (pid, score) in enumerate(scores.items()):
+                comp_name = peer_dict.get(pid, pid)
+                is_current = (pid == str(code))
+                highlight_class = "highlight-card" if is_current else ""
+                color = "#22c55e" if score >= 60 else "#ef4444"
+                with cols[i]:
+                    st.markdown(f"""
+                    <div class="score-card {highlight_class}">
+                        <div class="score-card-title">{comp_name} ({pid})</div>
+                        <div class="score-card-value" style="color: {color};">{score}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("#### 🎯 營運效率雙核心矩陣")
+            
+            if is_bank:
+                x_metric = 'uncollected_interest_ratio'
+                y_metric = 'npl_ratio'
+                x_title = "利息未收現比率 (%) ➔ 較低者佳"
+                y_title = "催收款比率 (%) ➔ 較低者佳"
+                quadrant_caption = "左下角象限代表「利息收現狀況佳」且「資產品質優良 (催收款少)」，為最佳營運狀態。"
+                hover_x_name = "利息未收現比率"
+                hover_y_name = "催收款比率"
+            else:
+                x_metric = 'inv_turnover_times'
+                y_metric = 'ar_turnover_times'
+                x_title = "存貨週轉率 (次) ➔ 較高者佳"
+                y_title = "應收帳款週轉次數 (次) ➔ 較高者佳"
+                quadrant_caption = "右上角象限代表「存貨去化效率高」且「帳款回收週期短」，為最佳營運狀態。"
+                hover_x_name = "存貨週轉率"
+                hover_y_name = "應收帳款週轉"
+                
+            fig_xy = go.Figure()
+            for pid in all_ids:
+                if pid in latest_data:
+                    data = latest_data[pid]
+                    x_val = data.get(x_metric, np.nan)
+                    y_val = data.get(y_metric, np.nan)
+                    if pd.notna(x_val) and pd.notna(y_val):
+                        is_target = (pid == str(code))
+                        fig_xy.add_trace(go.Scatter(
+                            x=[x_val], y=[y_val],
+                            mode='markers+text',
+                            name=peer_dict[pid],
+                            text=[peer_dict[pid]],
+                            textposition="top center",
+                            textfont=dict(size=14, color="#1e293b" if not is_target else "#ef4444", weight="bold" if is_target else "normal"),
+                            marker=dict(size=24 if is_target else 18, color='#ef4444' if is_target else '#94a3b8', line=dict(width=2, color='white'), opacity=0.9),
+                            hovertemplate=f"<b>{peer_dict[pid]}</b><br>{hover_x_name}: %{{x:.2f}}<br>{hover_y_name}: %{{y:.2f}}<extra></extra>"
+                        ))
+            
+            fig_xy.update_layout(height=500, plot_bgcolor='#f8fafc', paper_bgcolor='#ffffff', margin=dict(l=40,r=40,t=40,b=40),
+                                  xaxis=dict(title=x_title, gridcolor="white", zerolinecolor="#cbd5e1", zerolinewidth=2),
+                                  yaxis=dict(title=y_title, gridcolor="white", zerolinecolor="#cbd5e1", zerolinewidth=2),
+                                  showlegend=False)
+            st.plotly_chart(fig_xy, use_container_width=True)
+            st.caption(quadrant_caption)
         else:
-            st.info("歷史資料筆數不足以繪製趨勢圖，請確認上傳之財報包含足夠的歷史期數。")
-
-    else:
-        st.info("請先上傳財務或銀行同業資料以啟用完整分析功能。")
+            st.info("請先上傳財務或銀行同業資料以啟用完整分析功能。")
 
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
 st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統資料更新時間：{update_time} ｜ 資料庫架構：SQLite 關聯式架構</div>', unsafe_allow_html=True)
