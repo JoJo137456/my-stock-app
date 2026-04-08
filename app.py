@@ -64,13 +64,46 @@ def fetch_github_intelligence():
 # 系統啟動時，自動呼叫空投
 fetch_github_intelligence()
 
-# ====================== 文本淨化引擎 ======================
-def clean_obsidian_syntax(text):
-    """將 Markdown 內文的 [[Entity]] 轉換為粗體文字，保持畫面乾淨專業"""
-    if not text: 
-        return text
-    # 移除 Obsidian 雙中括號，並替換為 Markdown 粗體
-    text = re.sub(r'\[\[(.*?)\]\]', r'**\1**', text)
+# ====================== 智能超連結引擎 (Smart Linkify) ======================
+# 建立全域實體代碼庫，將 Markdown 報告中的名稱映射到真實股號 (台美股通用)
+ENTITY_TO_CODE = {
+    "Nike": "NKE", "Adidas": "ADDYY", "Gap": "GPS", "Lululemon": "LULU", 
+    "Under Armour": "UAA", "Coca-Cola": "KO", "PepsiCo": "PEP", "Hasbro": "HAS", 
+    "群創": "3481", "群創光電": "3481", "遠東新": "1402", "亞泥": "1102", "宏遠": "1460", "東聯": "1710",
+    "遠百": "2903", "遠傳": "4904", "遠東銀": "2845", "裕民": "2606",
+    "新纖": "1409", "中纖": "1718", "得力": "1464", "台泥": "1101",
+    "中華電": "2412", "台灣大": "3045", "Apple": "AAPL", "Microsoft": "MSFT",
+    "Nvidia": "NVDA", "TSMC": "2330", "台積電": "2330", "鴻海": "2317"
+}
+
+def linkify_markdown(text):
+    """將文字中的公司名稱轉化為可以控制儀表板的 URL 參數超連結"""
+    if not text: return text
+    
+    # 1. 處理 Obsidian 格式 [[Company]]
+    def replace_obsidian(match):
+        entity = match.group(1)
+        code = ENTITY_TO_CODE.get(entity)
+        # 若無建立對應，嘗試判斷是否本身就是代碼
+        if not code and re.match(r'^[A-Z]{1,5}$', entity): code = entity 
+        if not code and re.match(r'^\d{4}$', entity): code = entity     
+        
+        if code:
+            # 轉換為帶有 URL query param 的超連結，點擊將刷新同一個頁面並修改側邊欄狀態
+            return f'<a class="smart-link" href="?symbol={code}&name={entity}" target="_self">🔗 {entity}</a>'
+        # 若無法辨識且無代碼，顯示為一般強調文字
+        return f'<span class="inactive-pill">{entity}</span>'
+        
+    text = re.sub(r'\[\[(.*?)\]\]', replace_obsidian, text)
+    
+    # 2. 處理 Name(Code) 格式，如 遠東新(1402)
+    def replace_tw(match):
+        name = match.group(1)
+        code = match.group(2)
+        return f'<a class="smart-link" href="?symbol={code}&name={name}" target="_self">🔗 {name}({code})</a>'
+        
+    text = re.sub(r'([a-zA-Z\u4e00-\u9fa5]+)\s*[\(（](\d{4})[\)）]', replace_tw, text)
+    
     return text
 
 # ====================== 前線戰略情報解析 (From Pilot_Reports) ======================
@@ -96,15 +129,15 @@ def load_supply_chain_intel(stock_id):
         
     intel = {"core_business": "", "supply_chain": "", "customer_supplier": "", "financials": ""}
     
-    # 使用 Regex 正規表示式精準切割四大區塊
+    # 使用 Regex 正規表示式精準切割四大區塊，並直接通過 linkify 引擎轉換超連結
     match1 = re.search(r"## 業務簡介\n(.*?)(?=\n## 供應鏈位置)", text, re.DOTALL)
-    if match1: intel["core_business"] = clean_obsidian_syntax(match1.group(1).strip())
+    if match1: intel["core_business"] = linkify_markdown(match1.group(1).strip())
         
     match2 = re.search(r"## 供應鏈位置\n(.*?)(?=\n## 主要客戶及供應商)", text, re.DOTALL)
-    if match2: intel["supply_chain"] = clean_obsidian_syntax(match2.group(1).strip())
+    if match2: intel["supply_chain"] = linkify_markdown(match2.group(1).strip())
         
     match3 = re.search(r"## 主要客戶及供應商\n(.*?)(?=\n## 財務概況|\Z)", text, re.DOTALL)
-    if match3: intel["customer_supplier"] = clean_obsidian_syntax(match3.group(1).strip())
+    if match3: intel["customer_supplier"] = linkify_markdown(match3.group(1).strip())
 
     # 提取財務概況，並進行文字專業化重構
     match4 = re.search(r"## 財務概況(.*?)\Z", text, re.DOTALL)
@@ -114,7 +147,7 @@ def load_supply_chain_intel(stock_id):
         fin_text = fin_text.replace("(單位: 百萬台幣, 只有 Margin 為 %)", "*(單位：新台幣百萬元 / 利潤率為 %)*")
         fin_text = fin_text.replace("### 年度關鍵財務數據 (近 3 年)", "### 📊 近三年核心財務指標")
         fin_text = fin_text.replace("### 季度關鍵財務數據 (近 4 季)", "### 📈 近四季核心財務指標")
-        intel["financials"] = clean_obsidian_syntax(fin_text)
+        intel["financials"] = linkify_markdown(fin_text)
             
     return intel
 
@@ -310,6 +343,37 @@ st.markdown("""
         /* Markdown 標題重構 */
         .stTabs [data-testid="stMarkdownContainer"] h3 { color: #0f172a !important; font-size: 1.35rem !important; font-weight: 800 !important; margin-top: 2rem !important; border-bottom: 3px solid #cbd5e1; padding-bottom: 0.5rem; display: inline-block; width: 100%; }
         .stTabs [data-testid="stMarkdownContainer"] h4 { color: #0f172a !important; font-size: 1.2rem !important; font-weight: 800 !important; margin-top: 2rem !important; border-bottom: 3px solid #cbd5e1; padding-bottom: 0.5rem; display: inline-block; width: 100%; }
+
+        /* 全新打造的 Smart Linkify 按鈕樣式 */
+        a.smart-link { 
+            color: #ffffff !important; 
+            background-color: #2563eb !important; 
+            padding: 4px 10px; 
+            border-radius: 6px; 
+            text-decoration: none !important; 
+            font-weight: 700; 
+            font-size: 0.95rem;
+            transition: all 0.2s ease;
+            display: inline-block;
+            margin: 2px;
+            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+        }
+        a.smart-link:hover { 
+            background-color: #1e40af !important; 
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(30, 64, 175, 0.3);
+        }
+        .inactive-pill {
+            background-color: #f1f5f9;
+            color: #475569;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            display: inline-block;
+            margin: 2px;
+            border: 1px solid #cbd5e1;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -487,16 +551,33 @@ def plot_intraday_line(df, alert_price=None):
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     return fig
 
-# === 6. 側邊控制面板 (穩健原生選單版) ===
+# === 6. URL Routing 與側邊控制面板 (Smart Link 攔截) ===
+params = st.query_params
+url_symbol = params.get("symbol")
+url_name = params.get("name")
+
 with st.sidebar:
     st.header("📊 市場監控指標")
     
-    selected_category = st.selectbox("產業板塊", list(market_categories.keys()))
-    st.markdown("---")
-    options_dict = market_categories[selected_category]
-    option = st.radio("監控標的", list(options_dict.keys()))
-    code = options_dict[option]
-    is_tw_stock = code.isdigit()
+    # 判斷是否處於超連結跳轉狀態
+    if url_symbol:
+        st.markdown("---")
+        st.success(f"🔍 **關聯標的探索模式**\n\n目前鎖定標的：\n### {url_name} ({url_symbol})")
+        if st.button("🔙 返回原分類板塊", use_container_width=True):
+            st.query_params.clear()
+            st.rerun()
+            
+        code = url_symbol
+        is_tw_stock = code.isdigit()
+        option = f"{url_name} ({code})"
+    else:
+        # 預設控制面板
+        selected_category = st.selectbox("產業板塊", list(market_categories.keys()))
+        st.markdown("---")
+        options_dict = market_categories[selected_category]
+        option = st.radio("監控標的", list(options_dict.keys()))
+        code = options_dict[option]
+        is_tw_stock = code.isdigit()
 
     st.markdown("---")
     
@@ -640,7 +721,7 @@ if active_alert_price > 0:
         """, unsafe_allow_html=True)
 
 # --- 宏觀經濟指標說明 ---
-if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
+if not url_symbol and selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
     exp_text = MACRO_IMPACT[option]
     html_payload = f"""
     <div style="background-color: #ffffff; padding: 20px 25px; border-radius: 8px; border-left: 5px solid #3b82f6; margin-top: 10px; margin-bottom: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
@@ -760,19 +841,19 @@ if is_tw_stock:
     ])
     
     with tb1:
-        if intel_data: st.markdown(intel_data['core_business'] if intel_data['core_business'] else "尚無業務數據。")
+        if intel_data: st.markdown(intel_data['core_business'] if intel_data['core_business'] else "尚無業務數據。", unsafe_allow_html=True)
         else: st.markdown("尚無報告資料。")
     with tb2:
-        if intel_data: st.markdown(intel_data['supply_chain'] if intel_data['supply_chain'] else "尚無供應鏈數據。")
+        if intel_data: st.markdown(intel_data['supply_chain'] if intel_data['supply_chain'] else "尚無供應鏈數據。", unsafe_allow_html=True)
         else: st.markdown("尚無報告資料。")
     with tb3:
-        if intel_data: st.markdown(intel_data['customer_supplier'] if intel_data['customer_supplier'] else "尚無客戶供應商數據。")
+        if intel_data: st.markdown(intel_data['customer_supplier'] if intel_data['customer_supplier'] else "尚無客戶供應商數據。", unsafe_allow_html=True)
         else: st.markdown("尚無報告資料。")
         
     with tb4:
         # 1. Pilot Reports 財務概況
         if intel_data and intel_data.get('financials'):
-            st.markdown(intel_data['financials'])
+            st.markdown(intel_data['financials'], unsafe_allow_html=True)
         else:
             st.markdown("尚無基礎財務數據。")
             
