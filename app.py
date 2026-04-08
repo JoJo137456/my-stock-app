@@ -75,7 +75,7 @@ if st.query_params.get("auth") == "granted":
 if 'alert_levels' not in st.session_state:
     st.session_state['alert_levels'] = {}
 
-# 建立歷史導航軌跡庫
+# 建立歷史導航軌跡庫 (解決上一頁問題)
 if "history_stack" not in st.session_state:
     st.session_state.history_stack = []
 
@@ -87,7 +87,82 @@ current_state = {"symbol": current_symbol, "name": current_name}
 if not st.session_state.history_stack or st.session_state.history_stack[-1] != current_state:
     st.session_state.history_stack.append(current_state)
 
-# ====================== 智能超連結與數據註解引擎 ======================
+
+# ====================== 戰略智庫數據溯源字典 ======================
+INTELLIGENCE_CARDS = {
+    "PTA": {
+        "source": "鄭州商品交易所 (CZCE) / 國際大宗商品期貨報價",
+        "composition": "純對苯二甲酸 (Purified Terephthalic Acid) 期貨連續合約",
+        "why_track": "PTA 是聚酯纖維及 PET 寶特瓶的最核心上游原料。追蹤此報價能提前預判遠東新 (1402) 等化纖大廠的「成本壓力」與「利差空間 (Spread)」。"
+    },
+    "MEG": {
+        "source": "大連商品交易所 (DCE) / 國際大宗商品期貨報價",
+        "composition": "乙二醇 (Monoethylene Glycol) 期貨連續合約",
+        "why_track": "製造聚酯纖維的第二大關鍵原料。其價格波動直接受國際原油連動，是評估化纖產業鏈毛利率的關鍵先行指標。"
+    },
+    "rPET": {
+        "source": "國際環保材料交易平台 / 集團內部採購現貨數據",
+        "composition": "回收聚酯酯粒 (Recycled PET) 市場現貨參考價",
+        "why_track": "在全球淨零碳排與品牌商強制採用環保材質的法規下，rPET 具備高綠色溢價 (Green Premium)。這是集團未來的核心成長動能。"
+    },
+    "Nike": {
+        "source": "NYSE 紐約證券交易所 (代號: NKE)",
+        "composition": "Nike, Inc. 企業普通股報價",
+        "why_track": "Nike 為全球最大運動服飾品牌，亦為集團重要下游客戶。追蹤其股價與財報能直接預判下游終端消費市場的拉貨動能。"
+    },
+    "Adidas": {
+        "source": "OTC Markets (代號: ADDYY)",
+        "composition": "Adidas AG 企業美國存託憑證",
+        "why_track": "全球第二大運動品牌。追蹤其去庫存狀況與營收指引，有助於交叉比對運動盤的整體訂單能見度。"
+    },
+    "Gap": {
+        "source": "NYSE 紐約證券交易所 (代號: GPS)",
+        "composition": "Gap Inc. 企業普通股報價",
+        "why_track": "美國知名跨國平價服飾零售商，追蹤以評估北美休閒與快時尚消費終端景氣。"
+    },
+    "Lululemon": {
+        "source": "Nasdaq 納斯達克交易所 (代號: LULU)",
+        "composition": "Lululemon Athletica Inc. 普通股報價",
+        "why_track": "全球高端瑜伽與機能服飾指標，直接反映高毛利機能布料的需求熱度。"
+    },
+    "Under Armour": {
+        "source": "NYSE 紐約證券交易所 (代號: UAA)",
+        "composition": "Under Armour, Inc. 普通股報價",
+        "why_track": "北美重要運動品牌客戶，觀察其動態以評估機能服飾市場競爭與需求。"
+    },
+    "Coca-Cola": {
+        "source": "NYSE 紐約證券交易所 (代號: KO)",
+        "composition": "The Coca-Cola Company 普通股報價",
+        "why_track": "全球最大飲料商，食品級 PET 與 rPET 瓶用酯粒的終端核心消耗者。"
+    },
+    "PepsiCo": {
+        "source": "Nasdaq 納斯達克交易所 (代號: PEP)",
+        "composition": "PepsiCo, Inc. 普通股報價",
+        "why_track": "全球食品與飲料巨頭，同為包裝材料 (PET/rPET) 的關鍵終端指標。"
+    },
+    "Hasbro": {
+        "source": "Nasdaq 納斯達克交易所 (代號: HAS)",
+        "composition": "Hasbro, Inc. 普通股報價",
+        "why_track": "全球知名玩具製造巨頭，其塑膠料件與透明包裝需求亦為石化下游應用的觀測節點。"
+    },
+    "群創": {
+        "source": "台灣證券交易所 (代號: 3481)",
+        "composition": "群創光電普通股報價",
+        "why_track": "面板大廠。光電顯示器產業的景氣變化，關係到集團內光學膜與電子材料的拉貨動能。"
+    },
+    "Kingston": {
+        "source": "半導體產業智庫 / 未上市市場估值",
+        "composition": "金士頓科技 (Kingston Technology) 產業動態",
+        "why_track": "全球最大獨立記憶體產品製造商，用於評估電子材料包裝 (如 A-PET 片材) 的下游需求。"
+    },
+    "IKEA": {
+        "source": "北歐零售產業智庫 / 未上市市場動態",
+        "composition": "宜家家居 (IKEA) 營運與採購動態",
+        "why_track": "全球最大跨國家具零售商，近年大量導入環保與再生材料，為觀測綠色材料應用的指標客戶。"
+    }
+}
+
+# ====================== 智能超連結引擎 ======================
 ENTITY_TO_CODE = {
     "Nike": "NKE", "Adidas": "ADDYY", "Gap": "GPS", "Lululemon": "LULU", 
     "Under Armour": "UAA", "Coca-Cola": "KO", "PepsiCo": "PEP", "Hasbro": "HAS", 
@@ -95,59 +170,29 @@ ENTITY_TO_CODE = {
     "遠百": "2903", "遠傳": "4904", "遠傳電信": "4904", "遠東銀": "2845", "裕民": "2606",
     "新纖": "1409", "中纖": "1718", "得力": "1464", "台泥": "1101",
     "中華電": "2412", "台灣大": "3045", "Apple": "AAPL", "Microsoft": "MSFT",
-    "Nvidia": "NVDA", "TSMC": "2330", "台積電": "2330", "鴻海": "2317"
-}
-
-# 建立產業智庫字典：來源與定義
-KNOWLEDGE_BASE = {
-    "PTA": {"source": "全球石化資訊庫", "def": "純對苯二甲酸，聚酯纖維及PET瓶重要原料"},
-    "MEG": {"source": "全球石化資訊庫", "def": "乙二醇，用作抗凍劑及製造聚酯纖維的原料"},
-    "rPET": {"source": "ESG永續報告", "def": "回收聚酯酯粒，符合減碳趨勢的再生材料"},
-    "Nike": {"source": "2025品牌年報", "def": "全球最大運動鞋與服飾製造品牌"},
-    "Adidas": {"source": "2025品牌年報", "def": "歐洲最大、全球第二大運動用品製造商"},
-    "Gap": {"source": "零售產業智庫", "def": "美國知名跨國平價服飾零售商"},
-    "Lululemon": {"source": "品牌財務報表", "def": "加拿大知名高端瑜伽與機能服飾品牌"},
-    "Under Armour": {"source": "品牌財務報表", "def": "美國高端運動機能性服飾品牌"},
-    "Coca-Cola": {"source": "FMCG產業智庫", "def": "全球最大非酒精飲料製造商"},
-    "PepsiCo": {"source": "FMCG產業智庫", "def": "跨國食品、零食與飲料綜合企業"},
-    "Hasbro": {"source": "娛樂產業智庫", "def": "全球知名跨國玩具與棋盤遊戲公司"},
-    "群創": {"source": "TW-Coverage 智庫", "def": "台灣前三大 TFT-LCD 液晶面板製造商"},
-    "群創光電": {"source": "TW-Coverage 智庫", "def": "台灣前三大 TFT-LCD 液晶面板製造商"},
-    "Kingston": {"source": "半導體產業庫", "def": "全球最大的獨立記憶體產品製造商"},
-    "IKEA": {"source": "零售產業智庫", "def": "全球最大的跨國家具及家居用品零售商"},
-    "Pioneer": {"source": "車用電子庫", "def": "日本知名跨國影音與車用電子製造商"},
-    "BMW": {"source": "汽車產業庫", "def": "德國豪華汽車與摩托車製造品牌"},
-    "GM": {"source": "汽車產業庫", "def": "通用汽車，美國跨國汽車製造巨頭"},
-    "Tesla": {"source": "汽車產業庫", "def": "全球領先的電動車與潔淨能源巨頭"},
-    "SpaceX": {"source": "航太產業庫", "def": "美國太空探索與低軌衛星通訊公司"}
+    "Nvidia": "NVDA", "TSMC": "2330", "台積電": "2330", "鴻海": "2317",
+    "PTA": "PTA", "MEG": "MEG", "rPET": "rPET"
 }
 
 def linkify_markdown(text):
-    """將文字中的公司名稱轉化為 Streamlit 原生 Markdown 連結，並附加上來源與定義註解"""
-    if not text: 
-        return text
+    """將文字中的公司名稱轉化為 Streamlit 原生 Markdown 連結，提供乾淨無縫的跳轉體驗"""
+    if not text: return text
     
-    # 自動抓取目前的登入狀態，如果已登入，跳轉時就把通行證(auth=granted)加上去
     auth_param = "&auth=granted" if st.session_state.get("password_correct") else ""
     
     # 1. 處理 Obsidian 格式 [[Company]]
     def replace_obsidian(match):
         entity = match.group(1)
         code = ENTITY_TO_CODE.get(entity)
-        # 若無建立對應，嘗試判斷是否本身就是代碼
         if not code and re.match(r'^[A-Z]{1,5}$', entity): code = entity 
         if not code and re.match(r'^\d{4}$', entity): code = entity     
         
-        # 抓取知識庫定義，若無則給予預設值
-        info = KNOWLEDGE_BASE.get(entity, {"source": "遠東集團產業智庫", "def": "供應鏈關聯節點 / 產業術語"})
-        annotation_html = f"<br><span style='font-size:0.85em; color:#64748b; padding-left:14px; border-left:2px solid #cbd5e1; margin-left:6px;'>└ <b>數據來源:</b> {info['source']} ｜ <b>數據定義:</b> {info['def']}</span>"
-        
         if code:
-            # 轉換為 Markdown 原生超連結，Streamlit 會自動攔截做 SPA 軟跳轉
-            return f"[🔗 {entity}](?symbol={code}&name={entity}{auth_param}){annotation_html}"
+            # 純淨版超連結，取消所有 inline 註解，保持畫面整潔
+            return f"[🔗 {entity}](?symbol={code}&name={entity}{auth_param})"
         
-        # 若不是公司(如 rPET, MEG)，直接回傳純文字粗體並加上註解，不加任何按鈕框框
-        return f"**{entity}**{annotation_html}"
+        # 若不是公司，直接回傳純文字粗體
+        return f"**{entity}**"
         
     text = re.sub(r'\[\[(.*?)\]\]', replace_obsidian, text)
     
@@ -155,9 +200,7 @@ def linkify_markdown(text):
     def replace_tw(match):
         name = match.group(1)
         code = match.group(2)
-        info = KNOWLEDGE_BASE.get(name, {"source": "遠東集團產業智庫", "def": "台灣上市櫃關聯企業"})
-        annotation_html = f"<br><span style='font-size:0.85em; color:#64748b; padding-left:14px; border-left:2px solid #cbd5e1; margin-left:6px;'>└ <b>數據來源:</b> {info['source']} ｜ <b>數據定義:</b> {info['def']}</span>"
-        return f"[🔗 {name}({code})](?symbol={code}&name={name}{auth_param}){annotation_html}"
+        return f"[🔗 {name}({code})](?symbol={code}&name={name}{auth_param})"
         
     text = re.sub(r'([a-zA-Z\u4e00-\u9fa5]+)\s*[\(（](\d{4})[\)）]', replace_tw, text)
     
@@ -165,13 +208,11 @@ def linkify_markdown(text):
 
 # ====================== 前線戰略情報解析 ======================
 def load_supply_chain_intel(stock_id):
-    """將前線戰場的 Markdown 情報調回指揮中心，並進行專業化文字清洗與超連結化"""
     reports_dir = "./Pilot_Reports"
     if not os.path.exists(reports_dir):
         return None
     
     target_file = None
-    # 掃描軍械庫，自動跨資料夾尋找對應代碼的情報檔
     for root, dirs, files in os.walk(reports_dir):
         for f in files:
             if f.startswith(f"{stock_id}_") and f.endswith(".md"):
@@ -186,24 +227,18 @@ def load_supply_chain_intel(stock_id):
         
     intel = {"core_business": "", "supply_chain": "", "customer_supplier": "", "financials": ""}
     
-    # 使用 Regex 正規表示式精準切割四大區塊，並直接通過 linkify 引擎轉換超連結與註解
     match1 = re.search(r"## 業務簡介\n(.*?)(?=\n## 供應鏈位置)", text, re.DOTALL)
-    if match1: 
-        intel["core_business"] = linkify_markdown(match1.group(1).strip())
+    if match1: intel["core_business"] = linkify_markdown(match1.group(1).strip())
         
     match2 = re.search(r"## 供應鏈位置\n(.*?)(?=\n## 主要客戶及供應商)", text, re.DOTALL)
-    if match2: 
-        intel["supply_chain"] = linkify_markdown(match2.group(1).strip())
+    if match2: intel["supply_chain"] = linkify_markdown(match2.group(1).strip())
         
     match3 = re.search(r"## 主要客戶及供應商\n(.*?)(?=\n## 財務概況|\Z)", text, re.DOTALL)
-    if match3: 
-        intel["customer_supplier"] = linkify_markdown(match3.group(1).strip())
+    if match3: intel["customer_supplier"] = linkify_markdown(match3.group(1).strip())
 
-    # 提取財務概況，並進行文字專業化重構
     match4 = re.search(r"## 財務概況(.*?)\Z", text, re.DOTALL)
     if match4: 
         fin_text = match4.group(1).strip()
-        # 將隨便的文字替換為專業財經用語
         fin_text = fin_text.replace("(單位: 百萬台幣, 只有 Margin 為 %)", "*(單位：新台幣百萬元 / 利潤率為 %)*")
         fin_text = fin_text.replace("### 年度關鍵財務數據 (近 3 年)", "### 📊 近三年核心財務指標")
         fin_text = fin_text.replace("### 季度關鍵財務數據 (近 4 季)", "### 📈 近四季核心財務指標")
@@ -326,7 +361,6 @@ def parse_fin_excel_files(uploaded_files):
 
 # === 登入安全驗證介面 ===
 def check_password():
-    # 檢查網址列是否帶有授權通行證
     if st.query_params.get("auth") == "granted":
         st.session_state["password_correct"] = True
 
@@ -362,7 +396,6 @@ def check_password():
         if st.button("Secure Login ──", type="primary", use_container_width=True):
             if pwd == "AUDIT@01":
                 st.session_state["password_correct"] = True
-                # 登入成功後，立刻寫入 URL 通行證
                 st.query_params["auth"] = "granted"
                 st.rerun()
             elif pwd != "":
@@ -388,20 +421,24 @@ st.markdown("""
         [data-testid="stFileUploadDropzone"] > div::after { content: "📤 點擊或拖曳上傳財報/銀行同業數據 (支援 xlsx, csv)"; display: block; font-weight: 600; color: #475569; font-size: 15px; margin-top: 10px; }
         [data-testid="stFileUploadDropzone"] small { display: none !important; }
         
+        /* 標籤頁與內文：放大字體、高對比 */
         .stTabs [data-baseweb="tab-list"] button { font-size: 1.2rem; font-weight: 700; color: #64748b; }
         .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] { color: #0f172a; border-bottom-color: #3b82f6; }
-        .stTabs [data-testid="stMarkdownContainer"] p, .stTabs [data-testid="stMarkdownContainer"] li { font-size: 1.15rem !important; line-height: 1.8 !important; color: #1e293b !important; font-weight: 500; }
+        .stTabs [data-testid="stMarkdownContainer"] p,
+        .stTabs [data-testid="stMarkdownContainer"] li { font-size: 1.15rem !important; line-height: 1.8 !important; color: #1e293b !important; font-weight: 500; }
         
+        /* 財務與估值表格：專業深色表頭與斑馬紋 */
         .stTabs [data-testid="stMarkdownContainer"] table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); background-color: #ffffff; }
         .stTabs [data-testid="stMarkdownContainer"] th { background-color: #0f172a !important; color: #ffffff !important; padding: 14px; font-size: 1.1rem !important; text-align: center; border: none; }
         .stTabs [data-testid="stMarkdownContainer"] td { padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: center; font-size: 1.05rem !important; font-weight: 600; color: #334155; }
         .stTabs [data-testid="stMarkdownContainer"] tr:nth-child(even) { background-color: #f8fafc; }
         .stTabs [data-testid="stMarkdownContainer"] tr:hover td { background-color: #e2e8f0; color: #0f172a; }
         
+        /* Markdown 標題重構 */
         .stTabs [data-testid="stMarkdownContainer"] h3 { color: #0f172a !important; font-size: 1.35rem !important; font-weight: 800 !important; margin-top: 2rem !important; border-bottom: 3px solid #cbd5e1; padding-bottom: 0.5rem; display: inline-block; width: 100%; }
         .stTabs [data-testid="stMarkdownContainer"] h4 { color: #0f172a !important; font-size: 1.2rem !important; font-weight: 800 !important; margin-top: 2rem !important; border-bottom: 3px solid #cbd5e1; padding-bottom: 0.5rem; display: inline-block; width: 100%; }
 
-        /* 針對 Markdown 中的 a 標籤實施美化，保留 SPA 軟跳轉特性 */
+        /* 全新打造的 Smart Linkify 按鈕樣式 */
         .stTabs [data-testid="stMarkdownContainer"] a { 
             color: #ffffff !important; 
             background-color: #2563eb !important; 
@@ -444,7 +481,7 @@ MACRO_IMPACT = {
     "💱 美元兌台幣": "美元兌台幣匯率為台灣出口企業獲利的重要因素。台幣貶值可使電子代工及紡織業獲得匯兌收益，但會提高進口物價。"
 }
 
-# === 4. 產業板塊分類與同業對標 (加入全新的智庫萃取板塊) ===
+# === 4. 產業板塊分類與同業對標 ===
 market_categories = {
     "📈 總體經濟與大盤 (宏觀指標)": {
         "🇹🇼 台灣加權指數": "^TWII", "🇺🇸 S&P 500": "^GSPC", "🇺🇸 Dow Jones": "^DJI", "🇺🇸 Nasdaq": "^IXIC",
@@ -597,7 +634,7 @@ def plot_intraday_line(df, alert_price=None):
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     return fig
 
-# === 6. URL Routing 與側邊控制面板 (History Stack 升級版) ===
+# === 6. URL Routing 與側邊控制面板 ===
 params = st.query_params
 url_symbol = params.get("symbol", "")
 url_name = params.get("name", "")
@@ -609,8 +646,9 @@ with st.sidebar:
     if url_symbol:
         st.markdown("---")
         st.success(f"🔍 **關聯標的探索模式**\n\n目前鎖定標的：\n### {url_name} ({url_symbol})")
+        
+        # 完美的返回上一頁邏輯
         if st.button("🔙 回到上一頁", use_container_width=True):
-            # 歷史堆疊回退邏輯
             if len(st.session_state.history_stack) > 1:
                 st.session_state.history_stack.pop() # 移除當前頁面
                 prev_state = st.session_state.history_stack[-1] # 取得上一頁狀態
@@ -749,6 +787,31 @@ st.markdown(f"""
     </div>
 </div>
 """, unsafe_allow_html=True)
+
+# --- 戰略智庫數據溯源 (動態顯示區塊) ---
+display_name = url_name if url_symbol else option.split(' ')[-1]
+card_info = None
+
+# 精確比對：如果有吻合的名稱，就拉出對應的情報
+for key, info in INTELLIGENCE_CARDS.items():
+    if key in display_name or key in option:
+        card_info = info
+        break
+
+if card_info:
+    st.markdown(f"""
+    <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 25px;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+            <span style="font-size:1.2rem;">💡</span>
+            <span style="font-size:1.1rem; font-weight:700; color:#0f172a;">戰略智庫數據溯源：{display_name}</span>
+        </div>
+        <div style="font-size:0.95rem; color:#334155; line-height:1.6; margin-left:32px;">
+            <b>📍 數據來源：</b> {card_info['source']}<br>
+            <b>📊 數據組成與定義：</b> {card_info['composition']}<br>
+            <b>🎯 監控邏輯 (Why we track this)：</b> {card_info['why_track']}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # --- 動態警示分析區塊 ---
 active_alert_price = st.session_state['alert_levels'].get(code, 0.0)
