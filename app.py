@@ -28,11 +28,8 @@ requests.Session.request = patched_request
 def fetch_github_intelligence():
     """
     開局自動去 GitHub 把原作者的整套情報庫抓下來。
-    使用 @st.cache_resource 確保每次伺服器啟動只會抓取一次。
     """
     target_dir = "./Pilot_Reports"
-    
-    # 戰場偵測：如果彈藥庫已經建置完畢，就直接跳過
     if os.path.exists(target_dir):
         return
         
@@ -40,14 +37,10 @@ def fetch_github_intelligence():
     zip_path = "master.zip"
     
     try:
-        # 1. 呼叫軌道空投
         urllib.request.urlretrieve(zip_url, zip_path)
-        
-        # 2. 拆解空投包
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall("./temp_intel")
             
-        # 3. 提取核心軍火
         source_dir = "./temp_intel/My-TW-Coverage-master/Pilot_Reports"
         if os.path.exists(source_dir):
             shutil.move(source_dir, target_dir)
@@ -55,24 +48,72 @@ def fetch_github_intelligence():
     except Exception as e:
         print(f"情報庫下載失敗: {e}")
     finally:
-        # 4. 清理戰場
         if os.path.exists(zip_path):
             os.remove(zip_path)
         if os.path.exists("./temp_intel"):
             shutil.rmtree("./temp_intel", ignore_errors=True)
 
-# 系統啟動時，自動呼叫空投
 fetch_github_intelligence()
 
-# ====================== 前線戰略情報解析 (From Pilot_Reports) ======================
-def load_supply_chain_intel(stock_id):
-    """將前線戰場的 Markdown 情報調回指揮中心，並進行專業化文字清洗"""
+# ====================== 智能超連結引擎 (Smart Linkify) ======================
+@st.cache_data
+def build_report_index():
+    """掃描本地下載好的 GitHub 情報庫，建立 代碼 -> GitHub URL 的索引字典"""
+    available_reports = {}
     reports_dir = "./Pilot_Reports"
-    if not os.path.exists(reports_dir):
-        return None
+    if os.path.exists(reports_dir):
+        for root, dirs, files in os.walk(reports_dir):
+            for f in files:
+                if f.endswith(".md"):
+                    parts = f.split("_")
+                    if len(parts) >= 1:
+                        stock_id = parts[0]
+                        # 計算相對路徑以拼湊 GitHub 原始連結
+                        rel_path = os.path.relpath(os.path.join(root, f), reports_dir).replace("\\", "/")
+                        url = f"https://github.com/Timeverse/My-TW-Coverage/blob/master/Pilot_Reports/{rel_path}"
+                        available_reports[stock_id] = url
+    return available_reports
+
+AVAILABLE_REPORTS = build_report_index()
+
+def linkify_markdown(text, available_reports):
+    """將文字中的公司名稱與代號替換為 Markdown 超連結"""
+    if not text: return text
+    
+    # 常見的財務或商業英文縮寫（避免誤判為美股代碼）
+    exclude_list = {'EPS', 'YOY', 'ROE', 'ROA', 'EBITDA', 'QOQ', 'MOM', 'CAGR', 'ASP', 'GDP', 'CPI', 'ESG', 'CEO', 'CFO', 'CTO'}
+
+    # 1. 替換台灣股票： 匹配格式如 遠東新(1402) 或 台積電 (2330)
+    def replace_tw(match):
+        name = match.group(1)
+        code = match.group(2)
+        if code in available_reports:
+            url = available_reports[code]
+        else:
+            url = f"https://tw.stock.yahoo.com/quote/{code}"
+        return f"[{name}({code})]({url})"
+        
+    text = re.sub(r'([a-zA-Z\u4e00-\u9fa5]+)\s*[\(（](\d{4})[\)）]', replace_tw, text)
+    
+    # 2. 替換美國股票： 匹配格式如 Nike(NKE) 或 Apple (AAPL)
+    def replace_us(match):
+        name = match.group(1)
+        code = match.group(2).upper()
+        if code in exclude_list:
+            return match.group(0) # 保留原狀，不轉成超連結
+        url = f"https://finance.yahoo.com/quote/{code}"
+        return f"[{name}({code})]({url})"
+        
+    text = re.sub(r'([a-zA-Z\u4e00-\u9fa5]+)\s*[\(（]([A-Z\.]{2,6})[\)）]', replace_us, text)
+    
+    return text
+
+# ====================== 前線戰略情報解析 ======================
+def load_supply_chain_intel(stock_id):
+    reports_dir = "./Pilot_Reports"
+    if not os.path.exists(reports_dir): return None
     
     target_file = None
-    # 掃描軍械庫，自動跨資料夾尋找對應代碼的情報檔
     for root, dirs, files in os.walk(reports_dir):
         for f in files:
             if f.startswith(f"{stock_id}_") and f.endswith(".md"):
@@ -82,12 +123,10 @@ def load_supply_chain_intel(stock_id):
         
     if not target_file: return None
     
-    with open(target_file, "r", encoding="utf-8") as fh:
-        text = fh.read()
+    with open(target_file, "r", encoding="utf-8") as fh: text = fh.read()
         
     intel = {"core_business": "", "supply_chain": "", "customer_supplier": "", "financials": ""}
     
-    # 使用 Regex 正規表示式精準切割四大區塊
     match1 = re.search(r"## 業務簡介\n(.*?)(?=\n## 供應鏈位置)", text, re.DOTALL)
     if match1: intel["core_business"] = match1.group(1).strip()
         
@@ -97,11 +136,9 @@ def load_supply_chain_intel(stock_id):
     match3 = re.search(r"## 主要客戶及供應商\n(.*?)(?=\n## 財務概況|\Z)", text, re.DOTALL)
     if match3: intel["customer_supplier"] = match3.group(1).strip()
 
-    # 提取財務概況，並進行文字專業化重構
     match4 = re.search(r"## 財務概況(.*?)\Z", text, re.DOTALL)
     if match4: 
         fin_text = match4.group(1).strip()
-        # 將隨便的文字替換為專業財經用語
         fin_text = fin_text.replace("(單位: 百萬台幣, 只有 Margin 為 %)", "*(單位：新台幣百萬元 / 利潤率為 %)*")
         fin_text = fin_text.replace("### 年度關鍵財務數據 (近 3 年)", "### 📊 近三年核心財務指標")
         fin_text = fin_text.replace("### 季度關鍵財務數據 (近 4 季)", "### 📈 近四季核心財務指標")
@@ -114,8 +151,7 @@ DATA_DIR = "./data"
 DB_PATH = os.path.join(DATA_DIR, "fenc_audit_intelligence.db")
 
 def ensure_data_dir():
-    if not os.path.exists(DATA_DIR):
-        os.makedirs(DATA_DIR)
+    if not os.path.exists(DATA_DIR): os.makedirs(DATA_DIR)
 
 def load_saved_fin_data():
     if os.path.exists(DB_PATH):
@@ -123,13 +159,10 @@ def load_saved_fin_data():
             conn = sqlite3.connect(DB_PATH)
             df = pd.read_sql('SELECT * FROM financial_data', conn)
             conn.close()
-            if 'date' in df.columns:
-                df['date'] = pd.to_datetime(df['date'])
-            if 'stock_id' in df.columns:
-                df['stock_id'] = df['stock_id'].astype(str).str.zfill(4)
+            if 'date' in df.columns: df['date'] = pd.to_datetime(df['date'])
+            if 'stock_id' in df.columns: df['stock_id'] = df['stock_id'].astype(str).str.zfill(4)
             return df
-        except Exception:
-            return None
+        except: return None
     return None
 
 def save_fin_data(df):
@@ -139,30 +172,26 @@ def save_fin_data(df):
         df.to_sql('financial_data', conn, if_exists='replace', index=False)
         conn.close()
         return True
-    except Exception:
-        return False
+    except: return False
 
 def clear_saved_fin_data():
     if os.path.exists(DB_PATH):
         try:
             os.remove(DB_PATH)
             return True
-        except:
-            return False
+        except: return False
     return False
 
 # ====================== 財務資料 解析引擎 ======================
 @st.cache_data
 def parse_fin_excel_files(uploaded_files):
-    if not uploaded_files:
-        return None
+    if not uploaded_files: return None
     all_dfs = []
     for uploaded_file in uploaded_files:
         try:
             if uploaded_file.name.lower().endswith('.csv'):
-                try:
-                    df = pd.read_csv(uploaded_file, encoding='utf-8')
-                except UnicodeDecodeError:
+                try: df = pd.read_csv(uploaded_file, encoding='utf-8')
+                except:
                     uploaded_file.seek(0)
                     df = pd.read_csv(uploaded_file, encoding='big5-hkscs')
                 dfs = {'Sheet1': df}
@@ -192,7 +221,6 @@ def parse_fin_excel_files(uploaded_files):
                     df['stock_id'] = df['company_name'].astype(str).str.extract(r'(\d{4})')
                 if 'stock_id' in df.columns:
                     df['stock_id'] = df['stock_id'].astype(str).str.zfill(4)
-                
                 if 'date' in df.columns:
                     df['date'] = pd.to_datetime(df['date'], errors='coerce')
                 
@@ -204,21 +232,19 @@ def parse_fin_excel_files(uploaded_files):
                     'deposit_market_share', 'loan_market_share'
                 ]
                 for col in numeric_cols:
-                    if col in df.columns:
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                    if col in df.columns: df[col] = pd.to_numeric(df[col], errors='coerce')
                 
                 if 'inv_turnover_times' in df.columns:
                     df['inv_days'] = (365 / df['inv_turnover_times']).round(1)
                 
                 all_dfs.append(df)
         except Exception as e:
-            st.warning(f"檔案解析異常：{uploaded_file.name}，系統回報錯誤碼：{str(e)}")
+            st.warning(f"檔案解析異常：{uploaded_file.name}，錯誤：{str(e)}")
             
     if all_dfs:
         combined = pd.concat(all_dfs, ignore_index=True)
         sort_cols = [col for col in ['stock_id', 'date'] if col in combined.columns]
-        if sort_cols:
-            combined = combined.sort_values(sort_cols, ascending=[True] * len(sort_cols)).reset_index(drop=True)
+        if sort_cols: combined = combined.sort_values(sort_cols, ascending=[True] * len(sort_cols)).reset_index(drop=True)
         return combined
     return None
 
@@ -226,15 +252,11 @@ def parse_fin_excel_files(uploaded_files):
 st.set_page_config(page_title="FENC Audit Department | Executive Dashboard", layout="wide", initial_sidebar_state="expanded")
 tw_tz = pytz.timezone('Asia/Taipei')
 
-if 'alert_levels' not in st.session_state:
-    st.session_state['alert_levels'] = {}
+if 'alert_levels' not in st.session_state: st.session_state['alert_levels'] = {}
 
-# === 登入安全驗證介面 ===
 def check_password():
-    if "password_correct" not in st.session_state:
-        st.session_state["password_correct"] = False
-    if st.session_state["password_correct"]:
-        return True
+    if "password_correct" not in st.session_state: st.session_state["password_correct"] = False
+    if st.session_state["password_correct"]: return True
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;800&family=Noto+Sans+TC:wght@300;400;500;700;800&display=swap');
@@ -266,8 +288,7 @@ def check_password():
                 st.error("認證失敗：授權憑證無效")
     return False
 
-if not check_password():
-    st.stop()
+if not check_password(): st.stop()
 
 # === 2. 核心 UI 樣式配置 ===
 st.markdown("""
@@ -275,21 +296,19 @@ st.markdown("""
         html, body, [class*="css"] { font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif !important; }
         .main-title { font-size: 2.2rem; font-weight: 800; color: #1e293b; text-align: center; margin: 1rem 0; letter-spacing: 1px;}
         .sub-title { font-size: 1rem; color: #64748b; text-align: center; margin-bottom: 2rem; font-weight: 500;}
-        .score-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; text-align: center; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);}
-        .score-card-title { font-size: 14px; color: #64748b; font-weight: 600; margin-bottom: 5px;}
+        .score-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; text-align: center; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); transition: transform 0.2s;}
+        .score-card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        .score-card-title { font-size: 14px; font-weight: 600; margin-bottom: 5px;}
         .score-card-value { font-size: 36px; font-weight: 800; color: #0f172a;}
         .highlight-card { border: 2px solid #3b82f6; background: #f8fafc;}
         
         [data-testid="stFileUploadDropzone"] > div > span { display: none !important; }
-        [data-testid="stFileUploadDropzone"] > div::after {
-            content: "📤 點擊或拖曳上傳財報/銀行同業數據 (支援 xlsx, csv)";
-            display: block;
-            font-weight: 600;
-            color: #475569;
-            font-size: 15px;
-            margin-top: 10px;
-        }
+        [data-testid="stFileUploadDropzone"] > div::after { content: "📤 點擊或拖曳上傳財報/銀行同業數據 (支援 xlsx, csv)"; display: block; font-weight: 600; color: #475569; font-size: 15px; margin-top: 10px; }
         [data-testid="stFileUploadDropzone"] small { display: none !important; }
+        
+        /* 讓 Markdown 中的超連結更明顯專業 */
+        .stTabs [data-testid="stMarkdownContainer"] a { color: #2563eb; text-decoration: none; font-weight: 700; border-bottom: 1px dashed #2563eb; transition: all 0.2s;}
+        .stTabs [data-testid="stMarkdownContainer"] a:hover { color: #1e40af; border-bottom: 1px solid #1e40af; background-color: #eff6ff;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -367,16 +386,12 @@ def fetch_history_yf(stock_code, is_tw=False):
         data_list = []
         for idx, row in hist.iterrows():
             data_list.append({
-                'date': idx.strftime('%Y-%m-%d'), 
-                'volume': float(row['Volume']), 
-                'open': float(row['Open']), 
-                'high': float(row['High']), 
-                'low': float(row['Low']), 
-                'close': float(row['Close'])
+                'date': idx.strftime('%Y-%m-%d'), 'volume': float(row['Volume']), 
+                'open': float(row['Open']), 'high': float(row['High']), 
+                'low': float(row['Low']), 'close': float(row['Close'])
             })
         return data_list
-    except:
-        return []
+    except: return []
 
 @st.cache_data(ttl=300)
 def get_intraday_chart_data(stock_code, is_us_source=False):
@@ -385,8 +400,7 @@ def get_intraday_chart_data(stock_code, is_us_source=False):
         df = ticker.history(period="1d", interval="1m")
         if df.empty:
             df = ticker.history(period="5d", interval="5m")
-            if not df.empty:
-                df = df[df.index.date == df.index[-1].date()]
+            if not df.empty: df = df[df.index.date == df.index[-1].date()]
         return df if not df.empty else None
     except: return None
 
@@ -397,62 +411,28 @@ def plot_daily_k(df, alert_price=None):
     df = df.tail(120)
     
     fig = go.Figure(data=[go.Candlestick(
-        x=df.index, 
-        open=df['open'], high=df['high'], low=df['low'], close=df['close'],
+        x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'],
         increasing_line_color='#ef4444', increasing_fillcolor='#ef4444',
-        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e',
-        name="日K"
+        decreasing_line_color='#22c55e', decreasing_fillcolor='#22c55e', name="日K"
     )])
-    
     if alert_price and alert_price > 0:
-        fig.add_hline(
-            y=alert_price, 
-            line_dash="dash", 
-            line_color="#dc2626", 
-            line_width=2,
-            annotation_text=f"設定警示價位: {alert_price}", 
-            annotation_position="top left",
-            annotation_font=dict(color="#dc2626", size=12, weight="bold")
-        )
-
-    fig.update_layout(
-        title="<b>📊 歷史價格走勢 (近半年)</b>", 
-        xaxis_rangeslider_visible=False, 
-        height=380, 
-        margin=dict(l=10, r=10, t=40, b=10), 
-        paper_bgcolor='#ffffff', 
-        plot_bgcolor='#ffffff'
-    )
-    fig.update_xaxes(
-        showgrid=True, gridwidth=1, gridcolor='#f1f5f9',
-        rangebreaks=[dict(bounds=["sat", "mon"])]
-    )
+        fig.add_hline(y=alert_price, line_dash="dash", line_color="#dc2626", line_width=2, annotation_text=f"設定警示價位: {alert_price}", annotation_position="top left", annotation_font=dict(color="#dc2626", size=12, weight="bold"))
+    fig.update_layout(title="<b>📊 歷史價格走勢 (近半年)</b>", xaxis_rangeslider_visible=False, height=380, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='#ffffff', plot_bgcolor='#ffffff')
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9', rangebreaks=[dict(bounds=["sat", "mon"])])
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     return fig
 
 def plot_intraday_line(df, alert_price=None):
     if df is None or df.empty: return None
     y_min, y_max = df['Close'].min(), df['Close'].max()
-    
     if alert_price and alert_price > 0:
         y_min = min(y_min, alert_price)
         y_max = max(y_max, alert_price)
-        
     padding = (y_max - y_min) * 0.1 if y_max != y_min else y_max * 0.01
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', line=dict(color='#0f172a', width=2.5), fill='tozeroy', fillcolor='rgba(15, 23, 42, 0.05)', name='報價'))
-    
     if alert_price and alert_price > 0:
-        fig.add_hline(
-            y=alert_price, 
-            line_dash="dash", 
-            line_color="#dc2626", 
-            line_width=2,
-            annotation_text=f"設定警示價位: {alert_price}", 
-            annotation_position="top left",
-            annotation_font=dict(color="#dc2626", size=12, weight="bold")
-        )
-
+        fig.add_hline(y=alert_price, line_dash="dash", line_color="#dc2626", line_width=2, annotation_text=f"設定警示價位: {alert_price}", annotation_position="top left", annotation_font=dict(color="#dc2626", size=12, weight="bold"))
     fig.update_layout(title="<b>⚡ 當日分時走勢</b>", height=380, margin=dict(l=10, r=10, t=40, b=10), hovermode="x unified", paper_bgcolor='#ffffff', plot_bgcolor='#ffffff', yaxis=dict(range=[y_min - padding, y_max + padding]))
     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f1f5f9')
@@ -461,8 +441,6 @@ def plot_intraday_line(df, alert_price=None):
 # === 6. 側邊控制面板 ===
 with st.sidebar:
     st.header("📊 市場監控指標")
-    
-    # 1. 選擇產業板塊與標的 
     selected_category = st.selectbox("產業板塊", list(market_categories.keys()))
     st.markdown("---")
     options_dict = market_categories[selected_category]
@@ -471,18 +449,9 @@ with st.sidebar:
     is_tw_stock = code.isdigit()
 
     st.markdown("---")
-    
-    # 2. 價格觸發警示設定 
     st.subheader("⚠️ 價格觸發警示設定")
     current_alert_val = st.session_state['alert_levels'].get(code, 0.0)
-    
-    new_alert_price = st.number_input(
-        f"設定【{option.split(' ')[-1]}】警示價位", 
-        min_value=0.0, 
-        value=float(current_alert_val), 
-        step=1.0,
-        help="輸入目標價位後點擊啟用，系統將於走勢圖上標示紅線，並依據即時報價提供動態分析建議。"
-    )
+    new_alert_price = st.number_input(f"設定【{option.split(' ')[-1]}】警示價位", min_value=0.0, value=float(current_alert_val), step=1.0)
     
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
@@ -497,10 +466,7 @@ with st.sidebar:
             st.rerun()
 
     st.markdown("---")
-    
-    # 3. 財務數據庫同步
     st.subheader("📤 財務數據資料庫同步")
-    
     uploaded_files = st.file_uploader("上傳財報或同業數據", type=["xlsx", "xls", "csv"], accept_multiple_files=True, label_visibility="collapsed")
     
     if uploaded_files:
@@ -508,16 +474,14 @@ with st.sidebar:
             fin_df = parse_fin_excel_files(uploaded_files)
             if fin_df is not None and not fin_df.empty:
                 st.session_state['fin_data'] = fin_df
-                if save_fin_data(fin_df):
-                    st.success("✅ 財務數據已成功建檔並寫入中央資料庫 (SQLite)")
-                else:
-                    st.error("❌ 寫入資料庫失敗，請確認檔案讀寫權限")
+                if save_fin_data(fin_df): st.success("✅ 財務數據已成功建檔")
+                else: st.error("❌ 寫入資料庫失敗")
     else:
         if 'fin_data' not in st.session_state:
             saved = load_saved_fin_data()
             if saved is not None and not saved.empty:
                 st.session_state['fin_data'] = saved
-                st.success("✅ 已自動載入中央資料庫之歷史數據")
+                st.success("✅ 已自動載入中央資料庫")
                 
     if st.button("🗑️ 清空歷史資料庫"):
         if clear_saved_fin_data():
@@ -576,94 +540,55 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 動態警示分析區塊 ---
 active_alert_price = st.session_state['alert_levels'].get(code, 0.0)
-
 if active_alert_price > 0:
     distance_pct = abs(current_price - active_alert_price) / active_alert_price * 100
-    
     if current_price <= active_alert_price:
         st.markdown(f"""
-        <div style="background-color: #fef2f2; border-left: 6px solid #dc2626; padding: 20px; border-radius: 8px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.1);">
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-                <span style="font-size: 1.4rem;">⚠️</span>
-                <h3 style="margin: 0; color: #991b1b; font-size: 1.15rem; font-weight: 700;">系統自動警示：【{option}】已跌破設定之支撐價位 ({active_alert_price:,.2f})</h3>
-            </div>
-            <div style="color: #7f1d1d; font-size: 0.95rem; line-height: 1.7; margin-left: 36px;">
-                <b>📉 技術面弱勢與趨勢反轉：</b>最新報價（{current_price:,.2f}）已跌破預設之關鍵水位，目前折價乖離率達 {distance_pct:.2f}%。此現象通常暗示短期技術型態已遭到破壞，原先的支撐區間轉為上檔壓力，市場結構進入弱勢整理或空頭格局。<br>
-                <b>🌊 停損賣壓與流動性風險：</b>跌破重要心理與技術關卡，極易觸發程式交易及量化基金的停損機制（Stop-Loss Cascade）。建議密切監測籌碼動向，評估外資或法人機構是否有連續調節之跡象。<br>
-                <b>🛡️ 風險控管與資產配置建議：</b>整體市場之風險溢酬（ERP）面臨上升壓力。建議決策層啟動流動性壓力測試，適度降低高 Beta 值資產比重，並提高防禦性資產部位，以控管系統性風險蔓延。
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        <div style="background-color: #fef2f2; border-left: 6px solid #dc2626; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+            <h3 style="margin: 0 0 12px 0; color: #991b1b; font-size: 1.15rem;">⚠️ 系統自動警示：跌破支撐價位 ({active_alert_price:,.2f})</h3>
+            <div style="color: #7f1d1d; font-size: 0.95rem; line-height: 1.7;"><b>📉 技術面弱勢與趨勢反轉：</b>目前折價乖離率達 {distance_pct:.2f}%。建議啟動風險控管。</div>
+        </div>""", unsafe_allow_html=True)
     else:
         st.markdown(f"""
-        <div style="background-color: #f0fdf4; border-left: 6px solid #16a34a; padding: 20px; border-radius: 8px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.1);">
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-                <span style="font-size: 1.4rem;">📈</span>
-                <h3 style="margin: 0; color: #166534; font-size: 1.15rem; font-weight: 700;">系統動態提示：【{option}】維持於目標價位之上 ({active_alert_price:,.2f})</h3>
-            </div>
-            <div style="color: #14532d; font-size: 0.95rem; line-height: 1.7; margin-left: 36px;">
-                <b>📊 趨勢確認與支撐確立：</b>最新報價（{current_price:,.2f}）高於設定之監控水位，溢價乖離率為 {distance_pct:.2f}%。顯示該價位具備實質支撐力道，市場買盤動能穩健，技術面維持偏多格局。<br>
-                <b>🔥 籌碼穩定與估值推升：</b>價格維持於關鍵水位之上，有助於穩固市場信心，降低恐慌性拋售機率。若伴隨成交量溫和放大，將有利於進一步推升資產估值。<br>
-                <b>⚖️ 操作策略與配置建議：</b>目前標的處於相對強勢或穩健區間。建議可維持現有部位，並可將原先設定之警示價位作為移動停利（Trailing Stop）之參考基準，以利在參與潛在上漲空間的同時鎖定既有獲利。
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        <div style="background-color: #f0fdf4; border-left: 6px solid #16a34a; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+            <h3 style="margin: 0 0 12px 0; color: #166534; font-size: 1.15rem;">📈 系統動態提示：維持於目標價位之上 ({active_alert_price:,.2f})</h3>
+            <div style="color: #14532d; font-size: 0.95rem; line-height: 1.7;"><b>📊 趨勢確認與支撐確立：</b>溢價乖離率為 {distance_pct:.2f}%。技術面維持偏多格局。</div>
+        </div>""", unsafe_allow_html=True)
 
-# --- 宏觀經濟指標說明 ---
 if selected_category == "📈 總體經濟與大盤 (宏觀指標)" and option in MACRO_IMPACT:
-    exp_text = MACRO_IMPACT[option]
-    html_payload = f"""
-    <div style="background-color: #ffffff; padding: 20px 25px; border-radius: 8px; border-left: 5px solid #3b82f6; margin-top: 10px; margin-bottom: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
-        <div style="font-size: 16px; color: #1e293b; line-height: 1.8; font-weight: 500; text-align: justify;">
-            {exp_text}
-        </div>
-    </div>
-    """
-    st.markdown(html_payload.replace('\n', ''), unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="background-color: #ffffff; padding: 20px; border-radius: 8px; border-left: 5px solid #3b82f6; margin-bottom: 30px; font-weight: 500;">
+        {MACRO_IMPACT[option]}
+    </div>""", unsafe_allow_html=True)
 
-# --- 股價圖表置頂 ---
 col1, col2 = st.columns([1, 1])
 with col1:
     if df_intra is not None and not df_intra.empty: st.plotly_chart(plot_intraday_line(df_intra, active_alert_price), use_container_width=True)
 with col2:
     if not df_daily.empty: st.plotly_chart(plot_daily_k(df_daily, active_alert_price), use_container_width=True)
 
-# ==================== 企業基本面與財務分析 (標籤頁整合) ====================
+# ==================== 企業基本面與財務分析 (結合 Smart Linkify) ====================
 if is_tw_stock:
     st.divider()
     intel_data = load_supply_chain_intel(code)
     fin_df = st.session_state.get('fin_data', None)
     
-    # 注入企業級專業視覺 CSS
     st.markdown("""
     <style>
-    /* 標籤頁與內文：放大字體、高對比 */
     .stTabs [data-baseweb="tab-list"] button { font-size: 1.2rem; font-weight: 700; color: #64748b; }
     .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] { color: #0f172a; border-bottom-color: #3b82f6; }
-    .stTabs [data-testid="stMarkdownContainer"] p,
-    .stTabs [data-testid="stMarkdownContainer"] li { font-size: 1.15rem !important; line-height: 1.8 !important; color: #1e293b !important; font-weight: 500; }
-    
-    /* 財務與估值表格：專業深色表頭與斑馬紋 */
-    .stTabs [data-testid="stMarkdownContainer"] table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); background-color: #ffffff; }
-    .stTabs [data-testid="stMarkdownContainer"] th { background-color: #0f172a !important; color: #ffffff !important; padding: 14px; font-size: 1.1rem !important; text-align: center; border: none; }
+    .stTabs [data-testid="stMarkdownContainer"] p, .stTabs [data-testid="stMarkdownContainer"] li { font-size: 1.15rem !important; line-height: 1.8 !important; font-weight: 500; }
+    .stTabs [data-testid="stMarkdownContainer"] table { width: 100%; border-collapse: collapse; margin: 15px 0 25px 0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); background-color: #ffffff; }
+    .stTabs [data-testid="stMarkdownContainer"] th { background-color: #0f172a !important; color: #ffffff !important; padding: 14px; font-size: 1.1rem !important; text-align: center; }
     .stTabs [data-testid="stMarkdownContainer"] td { padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: center; font-size: 1.05rem !important; font-weight: 600; color: #334155; }
-    .stTabs [data-testid="stMarkdownContainer"] tr:nth-child(even) { background-color: #f8fafc; }
-    .stTabs [data-testid="stMarkdownContainer"] tr:hover td { background-color: #e2e8f0; color: #0f172a; }
-    
-    /* Markdown 標題重構 */
-    .stTabs [data-testid="stMarkdownContainer"] h3, 
-    .stTabs [data-testid="stMarkdownContainer"] h4 { color: #0f172a !important; font-weight: 800 !important; margin-top: 2rem !important; border-bottom: 3px solid #cbd5e1; padding-bottom: 0.5rem; display: inline-block; width: 100%; }
-    .stTabs [data-testid="stMarkdownContainer"] h3 { font-size: 1.35rem !important; }
-    .stTabs [data-testid="stMarkdownContainer"] h4 { font-size: 1.2rem !important; }
+    .stTabs [data-testid="stMarkdownContainer"] h3 { color: #0f172a !important; font-size: 1.35rem !important; font-weight: 800 !important; margin-top: 2rem !important; border-bottom: 3px solid #cbd5e1; padding-bottom: 0.5rem; }
     </style>
     """, unsafe_allow_html=True)
 
     st.markdown("### 🏛️ 企業基本面與財務分析中心")
     st.markdown(f"<div style='font-size: 1.05rem; color: #64748b; margin-bottom: 20px; font-weight: 600;'>分析標的：<span style='color: #0f172a;'>{option}</span></div>", unsafe_allow_html=True)
     
-    # --- 預先計算財務健檢與同業對標數據 ---
     has_fin_data = fin_df is not None and not fin_df.empty
     if has_fin_data:
         peer_codes = external_peers.get(str(code), [])
@@ -673,8 +598,7 @@ if is_tw_stock:
         latest_data = {}
         for pid in all_ids:
             c_df = fin_df[fin_df['stock_id'] == pid].sort_values('date', ascending=False)
-            if not c_df.empty:
-                latest_data[pid] = c_df.iloc[0]
+            if not c_df.empty: latest_data[pid] = c_df.iloc[0]
 
         is_bank = (str(code) in ['2845'] or str(code) in external_peers.get('2845', []))
         
@@ -685,90 +609,53 @@ if is_tw_stock:
                 'uncollected_interest_ratio': {'name': '利息未收現比率', 'better': 'lower'},
                 'npl_ratio': {'name': '催收款比率', 'better': 'lower'}
             }
-            optional_bank_metrics = {
-                'asset_market_share': {'name': '資產市占率', 'better': 'higher'},
-                'equity_market_share': {'name': '淨值市占率', 'better': 'higher'},
-                'deposit_market_share': {'name': '存款市占率', 'better': 'higher'},
-                'loan_market_share': {'name': '放款市占率', 'better': 'higher'}
-            }
+            optional_bank_metrics = {'asset_market_share': {'name': '資產市占率', 'better': 'higher'}, 'equity_market_share': {'name': '淨值市占率', 'better': 'higher'}, 'deposit_market_share': {'name': '存款市占率', 'better': 'higher'}, 'loan_market_share': {'name': '放款市占率', 'better': 'higher'}}
             for k, v in optional_bank_metrics.items():
-                if k in fin_df.columns and not fin_df[k].isna().all():
-                    indicators_dict[k] = v
+                if k in fin_df.columns and not fin_df[k].isna().all(): indicators_dict[k] = v
         else:
             indicators_dict = {
-                'inv_ar_to_equity': {'name': '存貨及應收帳款/淨值', 'better': 'lower'},
-                'ar_turnover_times': {'name': '應收帳款週轉次數', 'better': 'higher'},
-                'total_assets_turnover': {'name': '總資產週轉次數', 'better': 'higher'},
-                'ar_days': {'name': '平均收帳天數', 'better': 'lower'},
-                'inv_turnover_times': {'name': '存貨週轉率', 'better': 'higher'},
-                'inv_days': {'name': '平均售貨天數', 'better': 'lower'},
-                'fixed_assets_turnover': {'name': '固定資產週轉次數', 'better': 'higher'},
-                'equity_turnover': {'name': '淨值週轉率', 'better': 'higher'},
-                'ap_days': {'name': '應付帳款付現天數', 'better': 'lower'},
-                'net_operating_cycle': {'name': '淨營業週期', 'better': 'lower'}
+                'inv_ar_to_equity': {'name': '存貨及應收帳款/淨值', 'better': 'lower'}, 'ar_turnover_times': {'name': '應收帳款週轉次數', 'better': 'higher'},
+                'total_assets_turnover': {'name': '總資產週轉次數', 'better': 'higher'}, 'ar_days': {'name': '平均收帳天數', 'better': 'lower'},
+                'inv_turnover_times': {'name': '存貨週轉率', 'better': 'higher'}, 'inv_days': {'name': '平均售貨天數', 'better': 'lower'},
+                'fixed_assets_turnover': {'name': '固定資產週轉次數', 'better': 'higher'}, 'equity_turnover': {'name': '淨值週轉率', 'better': 'higher'},
+                'ap_days': {'name': '應付帳款付現天數', 'better': 'lower'}, 'net_operating_cycle': {'name': '淨營業週期', 'better': 'lower'}
             }
 
-        industry_avg = {}
-        for key in indicators_dict.keys():
-            vals = [latest_data[pid].get(key) for pid in latest_data if pd.notna(latest_data[pid].get(key))]
-            industry_avg[key] = np.mean(vals) if vals else np.nan
+        industry_avg = {key: np.mean([latest_data[pid].get(key) for pid in latest_data if pd.notna(latest_data[pid].get(key))]) for key in indicators_dict.keys()}
 
-        # 計算綜合評分
         scores = {}
         for pid, data in latest_data.items():
-            score = 0
-            valid_metrics_count = 0
+            score = 0; valid_metrics_count = 0
             for key, info in indicators_dict.items():
-                val = data.get(key)
-                avg = industry_avg.get(key)
+                val = data.get(key); avg = industry_avg.get(key)
                 if pd.notna(val) and pd.notna(avg):
                     valid_metrics_count += 1
-                    if info['better'] == 'higher' and val >= avg:
-                        score += 10
-                    elif info['better'] == 'lower' and val <= avg:
-                        score += 10
-            final_score = int((score / (valid_metrics_count * 10)) * 100) if valid_metrics_count > 0 else 0
-            scores[pid] = final_score
+                    if (info['better'] == 'higher' and val >= avg) or (info['better'] == 'lower' and val <= avg): score += 10
+            scores[pid] = int((score / (valid_metrics_count * 10)) * 100) if valid_metrics_count > 0 else 0
             
-        # 準備財務指標明細表格資料
         table_data = {"指標名稱": [info['name'] for info in indicators_dict.values()]}
         for pid in all_ids:
             if pid in latest_data:
                 c_data = latest_data[pid]
-                col_name = f"{peer_dict[pid]} ({pid})"
-                table_data[col_name] = [
-                    round(c_data.get(k, np.nan), 2) if pd.notna(c_data.get(k)) else "-"
-                    for k in indicators_dict.keys()
-                ]
+                table_data[f"{peer_dict[pid]} ({pid})"] = [round(c_data.get(k, np.nan), 2) if pd.notna(c_data.get(k)) else "-" for k in indicators_dict.keys()]
         metrics_df = pd.DataFrame(table_data)
 
-    # --- 渲染標籤頁 ---
-    tb1, tb2, tb3, tb4, tb5 = st.tabs([
-        "🏢 核心業務概況", 
-        "🔗 產業上下游結構", 
-        "🤝 主要客戶與供應商", 
-        "💰 財務與估值數據", 
-        "📊 同業對標與健檢"
-    ])
+    tb1, tb2, tb3, tb4, tb5 = st.tabs(["🏢 核心業務概況", "🔗 產業上下游結構", "🤝 主要客戶與供應商", "💰 財務與估值數據", "📊 同業對標與健檢"])
     
     with tb1:
-        if intel_data: st.markdown(intel_data['core_business'] if intel_data['core_business'] else "尚無業務數據。")
+        if intel_data: st.markdown(linkify_markdown(intel_data['core_business'], AVAILABLE_REPORTS) if intel_data['core_business'] else "尚無業務數據。")
         else: st.markdown("尚無報告資料。")
     with tb2:
-        if intel_data: st.markdown(intel_data['supply_chain'] if intel_data['supply_chain'] else "尚無供應鏈數據。")
+        if intel_data: st.markdown(linkify_markdown(intel_data['supply_chain'], AVAILABLE_REPORTS) if intel_data['supply_chain'] else "尚無供應鏈數據。")
         else: st.markdown("尚無報告資料。")
     with tb3:
-        if intel_data: st.markdown(intel_data['customer_supplier'] if intel_data['customer_supplier'] else "尚無客戶供應商數據。")
+        if intel_data: st.markdown(linkify_markdown(intel_data['customer_supplier'], AVAILABLE_REPORTS) if intel_data['customer_supplier'] else "尚無客戶供應商數據。")
         else: st.markdown("尚無報告資料。")
         
     with tb4:
-        # 1. Pilot Reports 財務概況
-        if intel_data and intel_data.get('financials'):
-            st.markdown(intel_data['financials'])
-        else:
-            st.markdown("尚無基礎財務數據。")
+        if intel_data and intel_data.get('financials'): st.markdown(intel_data['financials'])
+        else: st.markdown("尚無基礎財務數據。")
             
-        # 2. 將「最新關鍵財務指標明細」與「歷年營運指標趨勢分析」移至此頁面
         if has_fin_data:
             st.markdown("#### 📝 最新關鍵財務指標明細")
             st.dataframe(metrics_df, use_container_width=True, hide_index=True)
@@ -791,39 +678,38 @@ if is_tw_stock:
                 for _, row in merged_df.iterrows():
                     val = row[trend_metric]
                     pct = row['pct_change']
-                    if pd.isna(pct):
-                        text_annotations.append(f"{val:.2f}")
-                    elif pct > 0:
-                        text_annotations.append(f"{val:.2f}<br>▲ {pct:.1f}%")
-                    elif pct < 0:
-                        text_annotations.append(f"{val:.2f}<br>▼ {abs(pct):.1f}%")
-                    else:
-                        text_annotations.append(f"{val:.2f}<br>持平")
+                    if pd.isna(pct): text_annotations.append(f"{val:.2f}")
+                    elif pct > 0: text_annotations.append(f"{val:.2f}<br>▲ {pct:.1f}%")
+                    elif pct < 0: text_annotations.append(f"{val:.2f}<br>▼ {abs(pct):.1f}%")
+                    else: text_annotations.append(f"{val:.2f}<br>持平")
 
                 fig_trend = go.Figure()
                 fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df[trend_metric], name=current_company_name, marker_color='#ef4444', text=text_annotations, textposition='outside'))
                 fig_trend.add_trace(go.Bar(x=x_labels, y=merged_df['peer_avg'], name='同業平均', marker_color='#cbd5e1', text=[f"{v:.2f}" for v in merged_df['peer_avg']], textposition='outside'))
-                fig_trend.update_layout(barmode='group', height=500, plot_bgcolor='#ffffff', paper_bgcolor='#ffffff',
-                                        xaxis=dict(title="時間期數"), yaxis=dict(title=indicators_dict[trend_metric]['name']),
-                                        legend=dict(orientation="h", y=1.05, x=0.5))
+                fig_trend.update_layout(barmode='group', height=500, plot_bgcolor='#ffffff', paper_bgcolor='#ffffff', xaxis=dict(title="時間期數"), yaxis=dict(title=indicators_dict[trend_metric]['name']), legend=dict(orientation="h", y=1.05, x=0.5))
                 st.plotly_chart(fig_trend, use_container_width=True)
             else:
-                st.info("歷史資料筆數不足以繪製趨勢圖，請確認上傳之財報包含足夠的歷史期數。")
+                st.info("歷史資料筆數不足以繪製趨勢圖。")
 
     with tb5:
-        # 將「綜合評分」與「雙核心矩陣」留在此頁面，達成點擊查看的目標
         if has_fin_data:
-            st.markdown("#### 🏆 經營能力綜合評分比較 (滿分 100 分)")
+            st.markdown("#### 🏆 經營能力綜合評分比較 (點擊卡片標題探索同業)")
             cols = st.columns(len(latest_data))
             for i, (pid, score) in enumerate(scores.items()):
                 comp_name = peer_dict.get(pid, pid)
                 is_current = (pid == str(code))
                 highlight_class = "highlight-card" if is_current else ""
                 color = "#22c55e" if score >= 60 else "#ef4444"
+                
+                # 在此插入智能連結
+                target_url = AVAILABLE_REPORTS.get(pid, f"https://tw.stock.yahoo.com/quote/{pid}")
+                
                 with cols[i]:
                     st.markdown(f"""
                     <div class="score-card {highlight_class}">
-                        <div class="score-card-title">{comp_name} ({pid})</div>
+                        <a href="{target_url}" target="_blank" style="text-decoration: none; color: inherit;">
+                            <div class="score-card-title" style="color: #2563eb;">{comp_name} ({pid}) 🔗</div>
+                        </a>
                         <div class="score-card-value" style="color: {color};">{score}</div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -831,48 +717,21 @@ if is_tw_stock:
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown("#### 🎯 營運效率雙核心矩陣")
             
-            if is_bank:
-                x_metric = 'uncollected_interest_ratio'
-                y_metric = 'npl_ratio'
-                x_title = "利息未收現比率 (%) ➔ 較低者佳"
-                y_title = "催收款比率 (%) ➔ 較低者佳"
-                quadrant_caption = "左下角象限代表「利息收現狀況佳」且「資產品質優良 (催收款少)」，為最佳營運狀態。"
-                hover_x_name = "利息未收現比率"
-                hover_y_name = "催收款比率"
-            else:
-                x_metric = 'inv_turnover_times'
-                y_metric = 'ar_turnover_times'
-                x_title = "存貨週轉率 (次) ➔ 較高者佳"
-                y_title = "應收帳款週轉次數 (次) ➔ 較高者佳"
-                quadrant_caption = "右上角象限代表「存貨去化效率高」且「帳款回收週期短」，為最佳營運狀態。"
-                hover_x_name = "存貨週轉率"
-                hover_y_name = "應收帳款週轉"
-                
+            x_metric, y_metric = ('uncollected_interest_ratio', 'npl_ratio') if is_bank else ('inv_turnover_times', 'ar_turnover_times')
+            x_title = "利息未收現比率 (%) ➔ 較低者佳" if is_bank else "存貨週轉率 (次) ➔ 較高者佳"
+            y_title = "催收款比率 (%) ➔ 較低者佳" if is_bank else "應收帳款週轉次數 (次) ➔ 較高者佳"
+            
             fig_xy = go.Figure()
             for pid in all_ids:
                 if pid in latest_data:
-                    data = latest_data[pid]
-                    x_val = data.get(x_metric, np.nan)
-                    y_val = data.get(y_metric, np.nan)
+                    data = latest_data[pid]; x_val = data.get(x_metric, np.nan); y_val = data.get(y_metric, np.nan)
                     if pd.notna(x_val) and pd.notna(y_val):
                         is_target = (pid == str(code))
-                        fig_xy.add_trace(go.Scatter(
-                            x=[x_val], y=[y_val],
-                            mode='markers+text',
-                            name=peer_dict[pid],
-                            text=[peer_dict[pid]],
-                            textposition="top center",
+                        fig_xy.add_trace(go.Scatter(x=[x_val], y=[y_val], mode='markers+text', name=peer_dict[pid], text=[peer_dict[pid]], textposition="top center",
                             textfont=dict(size=14, color="#1e293b" if not is_target else "#ef4444", weight="bold" if is_target else "normal"),
-                            marker=dict(size=24 if is_target else 18, color='#ef4444' if is_target else '#94a3b8', line=dict(width=2, color='white'), opacity=0.9),
-                            hovertemplate=f"<b>{peer_dict[pid]}</b><br>{hover_x_name}: %{{x:.2f}}<br>{hover_y_name}: %{{y:.2f}}<extra></extra>"
-                        ))
-            
-            fig_xy.update_layout(height=500, plot_bgcolor='#f8fafc', paper_bgcolor='#ffffff', margin=dict(l=40,r=40,t=40,b=40),
-                                  xaxis=dict(title=x_title, gridcolor="white", zerolinecolor="#cbd5e1", zerolinewidth=2),
-                                  yaxis=dict(title=y_title, gridcolor="white", zerolinecolor="#cbd5e1", zerolinewidth=2),
-                                  showlegend=False)
+                            marker=dict(size=24 if is_target else 18, color='#ef4444' if is_target else '#94a3b8', line=dict(width=2, color='white'), opacity=0.9)))
+            fig_xy.update_layout(height=500, plot_bgcolor='#f8fafc', paper_bgcolor='#ffffff', margin=dict(l=40,r=40,t=40,b=40), xaxis=dict(title=x_title, gridcolor="white", zerolinecolor="#cbd5e1"), yaxis=dict(title=y_title, gridcolor="white", zerolinecolor="#cbd5e1"), showlegend=False)
             st.plotly_chart(fig_xy, use_container_width=True)
-            st.caption(quadrant_caption)
         else:
             st.info("請先上傳財務或銀行同業資料以啟用完整分析功能。")
 
