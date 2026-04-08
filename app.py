@@ -64,20 +64,20 @@ def fetch_github_intelligence():
 # 系統啟動時，自動呼叫空投
 fetch_github_intelligence()
 
-# ====================== 智能超連結引擎 (Smart Linkify - 通行證升級版) ======================
+# ====================== 智能超連結引擎 (Smart Linkify - SPA 軟跳轉升級版) ======================
 # 建立全域實體代碼庫，將 Markdown 報告中的名稱映射到真實股號 (台美股通用)
 ENTITY_TO_CODE = {
     "Nike": "NKE", "Adidas": "ADDYY", "Gap": "GPS", "Lululemon": "LULU", 
     "Under Armour": "UAA", "Coca-Cola": "KO", "PepsiCo": "PEP", "Hasbro": "HAS", 
     "群創": "3481", "群創光電": "3481", "遠東新": "1402", "亞泥": "1102", "宏遠": "1460", "東聯": "1710",
-    "遠百": "2903", "遠傳": "4904", "遠東銀": "2845", "裕民": "2606",
+    "遠百": "2903", "遠傳": "4904", "遠傳電信": "4904", "遠東銀": "2845", "裕民": "2606",
     "新纖": "1409", "中纖": "1718", "得力": "1464", "台泥": "1101",
     "中華電": "2412", "台灣大": "3045", "Apple": "AAPL", "Microsoft": "MSFT",
     "Nvidia": "NVDA", "TSMC": "2330", "台積電": "2330", "鴻海": "2317"
 }
 
 def linkify_markdown(text):
-    """將文字中的公司名稱轉化為可以控制儀表板的 URL 參數超連結，並自動攜帶授權憑證"""
+    """將文字中的公司名稱轉化為 Streamlit 原生 Markdown 連結，觸發無縫軟跳轉"""
     if not text: return text
     
     # 自動抓取目前的登入狀態，如果已登入，跳轉時就把通行證(auth=granted)加上去
@@ -92,10 +92,11 @@ def linkify_markdown(text):
         if not code and re.match(r'^\d{4}$', entity): code = entity     
         
         if code:
-            # 轉換為帶有 URL query param 與授權標記的超連結
-            return f'<a class="smart-link" href="?symbol={code}&name={entity}{auth_param}" target="_self">🔗 {entity}</a>'
-        # 若無法辨識且無代碼，顯示為一般強調文字
-        return f'<span class="inactive-pill">{entity}</span>'
+            # 轉換為 Markdown 原生超連結，Streamlit 會自動攔截做 SPA 軟跳轉
+            return f"[🔗 {entity}](?symbol={code}&name={entity}{auth_param})"
+        
+        # 若不是公司(如 rPET, MEG, 遠東集團)，直接回傳純文字，不加任何灰色框框
+        return entity
         
     text = re.sub(r'\[\[(.*?)\]\]', replace_obsidian, text)
     
@@ -103,7 +104,7 @@ def linkify_markdown(text):
     def replace_tw(match):
         name = match.group(1)
         code = match.group(2)
-        return f'<a class="smart-link" href="?symbol={code}&name={name}{auth_param}" target="_self">🔗 {name}({code})</a>'
+        return f"[🔗 {name}({code})](?symbol={code}&name={name}{auth_param})"
         
     text = re.sub(r'([a-zA-Z\u4e00-\u9fa5]+)\s*[\(（](\d{4})[\)）]', replace_tw, text)
     
@@ -359,8 +360,8 @@ st.markdown("""
         .stTabs [data-testid="stMarkdownContainer"] h3 { color: #0f172a !important; font-size: 1.35rem !important; font-weight: 800 !important; margin-top: 2rem !important; border-bottom: 3px solid #cbd5e1; padding-bottom: 0.5rem; display: inline-block; width: 100%; }
         .stTabs [data-testid="stMarkdownContainer"] h4 { color: #0f172a !important; font-size: 1.2rem !important; font-weight: 800 !important; margin-top: 2rem !important; border-bottom: 3px solid #cbd5e1; padding-bottom: 0.5rem; display: inline-block; width: 100%; }
 
-        /* 全新打造的 Smart Linkify 按鈕樣式 */
-        a.smart-link { 
+        /* 全新打造的 Smart Linkify 按鈕樣式 (針對 Markdown a 標籤攔截) */
+        .stTabs [data-testid="stMarkdownContainer"] a { 
             color: #ffffff !important; 
             background-color: #2563eb !important; 
             padding: 4px 10px; 
@@ -373,21 +374,10 @@ st.markdown("""
             margin: 2px;
             box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
         }
-        a.smart-link:hover { 
+        .stTabs [data-testid="stMarkdownContainer"] a:hover { 
             background-color: #1e40af !important; 
             transform: translateY(-2px);
             box-shadow: 0 4px 6px rgba(30, 64, 175, 0.3);
-        }
-        .inactive-pill {
-            background-color: #f1f5f9;
-            color: #475569;
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-weight: 600;
-            font-size: 0.95rem;
-            display: inline-block;
-            margin: 2px;
-            border: 1px solid #cbd5e1;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -932,14 +922,13 @@ if is_tw_stock:
                     highlight_class = "highlight-card" if is_current else ""
                     color = "#22c55e" if score >= 60 else "#ef4444"
                     
-                    # 評分卡片也加上授權憑證確保不被登出
+                    # 評分卡片也改為軟跳轉的 Markdown 連結
                     auth_param = "&auth=granted" if st.session_state.get("password_correct") else ""
-                    target_url = f"?symbol={pid}&name={comp_name}{auth_param}"
                     
                     with cols[i]:
                         st.markdown(f"""
                         <div class="score-card {highlight_class}">
-                            <a href="{target_url}" target="_self" style="text-decoration: none;">
+                            <a href="?symbol={pid}&name={comp_name}{auth_param}" target="_self" style="text-decoration: none;">
                                 <div class="score-card-title" style="color: #2563eb;">🔗 {comp_name} ({pid})</div>
                             </a>
                             <div class="score-card-value" style="color: {color};">{score}</div>
