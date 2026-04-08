@@ -64,7 +64,7 @@ def fetch_github_intelligence():
 # 系統啟動時，自動呼叫空投
 fetch_github_intelligence()
 
-# ====================== 智能超連結引擎 (Smart Linkify) ======================
+# ====================== 智能超連結引擎 (Smart Linkify - 通行證升級版) ======================
 # 建立全域實體代碼庫，將 Markdown 報告中的名稱映射到真實股號 (台美股通用)
 ENTITY_TO_CODE = {
     "Nike": "NKE", "Adidas": "ADDYY", "Gap": "GPS", "Lululemon": "LULU", 
@@ -77,8 +77,11 @@ ENTITY_TO_CODE = {
 }
 
 def linkify_markdown(text):
-    """將文字中的公司名稱轉化為可以控制儀表板的 URL 參數超連結"""
+    """將文字中的公司名稱轉化為可以控制儀表板的 URL 參數超連結，並自動攜帶授權憑證"""
     if not text: return text
+    
+    # 自動抓取目前的登入狀態，如果已登入，跳轉時就把通行證(auth=granted)加上去
+    auth_param = "&auth=granted" if st.session_state.get("password_correct") else ""
     
     # 1. 處理 Obsidian 格式 [[Company]]
     def replace_obsidian(match):
@@ -89,8 +92,8 @@ def linkify_markdown(text):
         if not code and re.match(r'^\d{4}$', entity): code = entity     
         
         if code:
-            # 轉換為帶有 URL query param 的超連結，點擊將刷新同一個頁面並修改側邊欄狀態
-            return f'<a class="smart-link" href="?symbol={code}&name={entity}" target="_self">🔗 {entity}</a>'
+            # 轉換為帶有 URL query param 與授權標記的超連結
+            return f'<a class="smart-link" href="?symbol={code}&name={entity}{auth_param}" target="_self">🔗 {entity}</a>'
         # 若無法辨識且無代碼，顯示為一般強調文字
         return f'<span class="inactive-pill">{entity}</span>'
         
@@ -100,7 +103,7 @@ def linkify_markdown(text):
     def replace_tw(match):
         name = match.group(1)
         code = match.group(2)
-        return f'<a class="smart-link" href="?symbol={code}&name={name}" target="_self">🔗 {name}({code})</a>'
+        return f'<a class="smart-link" href="?symbol={code}&name={name}{auth_param}" target="_self">🔗 {name}({code})</a>'
         
     text = re.sub(r'([a-zA-Z\u4e00-\u9fa5]+)\s*[\(（](\d{4})[\)）]', replace_tw, text)
     
@@ -108,7 +111,7 @@ def linkify_markdown(text):
 
 # ====================== 前線戰略情報解析 (From Pilot_Reports) ======================
 def load_supply_chain_intel(stock_id):
-    """將前線戰場的 Markdown 情報調回指揮中心，並進行專業化文字清洗"""
+    """將前線戰場的 Markdown 情報調回指揮中心，並進行專業化文字清洗與超連結化"""
     reports_dir = "./Pilot_Reports"
     if not os.path.exists(reports_dir):
         return None
@@ -268,15 +271,25 @@ def parse_fin_excel_files(uploaded_files):
 st.set_page_config(page_title="FENC Audit Department | Executive Dashboard", layout="wide", initial_sidebar_state="expanded")
 tw_tz = pytz.timezone('Asia/Taipei')
 
+# 確保 URL 狀態優先於初始加載
+if st.query_params.get("auth") == "granted":
+    st.session_state["password_correct"] = True
+
 if 'alert_levels' not in st.session_state:
     st.session_state['alert_levels'] = {}
 
 # === 登入安全驗證介面 ===
 def check_password():
+    # 檢查網址列是否帶有授權通行證 (解決點擊超連結被強登出的問題)
+    if st.query_params.get("auth") == "granted":
+        st.session_state["password_correct"] = True
+
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
+        
     if st.session_state["password_correct"]:
         return True
+        
     st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;800&family=Noto+Sans+TC:wght@300;400;500;700;800&display=swap');
@@ -303,6 +316,8 @@ def check_password():
         if st.button("Secure Login ──", type="primary", use_container_width=True):
             if pwd == "AUDIT@01":
                 st.session_state["password_correct"] = True
+                # 登入成功後，立刻寫入 URL 通行證
+                st.query_params["auth"] = "granted"
                 st.rerun()
             elif pwd != "":
                 st.error("認證失敗：授權憑證無效")
@@ -565,6 +580,9 @@ with st.sidebar:
         st.success(f"🔍 **關聯標的探索模式**\n\n目前鎖定標的：\n### {url_name} ({url_symbol})")
         if st.button("🔙 返回原分類板塊", use_container_width=True):
             st.query_params.clear()
+            # 返回時保留登入狀態
+            if st.session_state.get("password_correct"):
+                st.query_params["auth"] = "granted"
             st.rerun()
             
         code = url_symbol
@@ -906,7 +924,7 @@ if is_tw_stock:
         # 綜合評分與雙核心矩陣
         if has_fin_data:
             if len(latest_data) > 0:
-                st.markdown("#### 🏆 經營能力綜合評分比較 (滿分 100 分)")
+                st.markdown("#### 🏆 經營能力綜合評分比較 (點擊卡片標題探索同業)")
                 cols = st.columns(len(latest_data))
                 for i, (pid, score) in enumerate(scores.items()):
                     comp_name = peer_dict.get(pid, pid)
@@ -914,10 +932,16 @@ if is_tw_stock:
                     highlight_class = "highlight-card" if is_current else ""
                     color = "#22c55e" if score >= 60 else "#ef4444"
                     
+                    # 評分卡片也加上授權憑證確保不被登出
+                    auth_param = "&auth=granted" if st.session_state.get("password_correct") else ""
+                    target_url = f"?symbol={pid}&name={comp_name}{auth_param}"
+                    
                     with cols[i]:
                         st.markdown(f"""
                         <div class="score-card {highlight_class}">
-                            <div class="score-card-title">{comp_name} ({pid})</div>
+                            <a href="{target_url}" target="_self" style="text-decoration: none;">
+                                <div class="score-card-title" style="color: #2563eb;">🔗 {comp_name} ({pid})</div>
+                            </a>
                             <div class="score-card-value" style="color: {color};">{score}</div>
                         </div>
                         """, unsafe_allow_html=True)
@@ -971,7 +995,7 @@ if is_tw_stock:
                 st.info("💡 系統資料庫中未偵測到此標的 (或其同業) 的歷史財務數據，無法產生對標矩陣。請透過左側面板上傳最新數據。")
 else:
     # 針對美股等非台股公司，不顯示台灣市場的財務報表，給予乾淨介面
-    st.info("💡 目前標的為非台灣市場之跨國企業。系統已成功載入其國際市場報價與歷史走勢數據（如上方圖表所示）。受限於資料庫權限，目前暫不提供其供應鏈與在地化財務分析報告。您可以透過左側下拉選單繼續探索其他關聯標的。")
+    st.info("💡 目前標的為非台灣市場之跨國企業。系統已成功載入其國際市場報價與歷史走勢數據（如上方圖表所示）。受限於資料庫權限，目前暫不提供其供應鏈與在地化財務分析報告。您可以透過左側「返回原分類板塊」繼續探索其他關聯標的。")
 
 update_time = datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
 st.markdown(f'<div style="text-align:center; color:#94a3b8; font-size:0.8rem; margin-top:3rem;">系統資料更新時間：{update_time} ｜ 資料庫架構：SQLite 關聯式架構</div>', unsafe_allow_html=True)
