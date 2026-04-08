@@ -776,12 +776,20 @@ if not df_daily.empty:
 change = current_price - prev_close
 pct = (change / prev_close) * 100 if prev_close != 0 else 0
 
+# 新增：動態判斷前綴（台股顯示 NT$，大盤指數與運價指標不顯示貨幣，其餘顯示 US$）
+if is_tw_stock:
+    currency_prefix = "NT$ "
+elif code.startswith('^') or code in ['BDRY', 'DX-Y.NYB']:
+    currency_prefix = ""
+else:
+    currency_prefix = "US$ "
+
 st.markdown(f"""
 <div style="background-color: #ffffff; padding: 25px; border-radius: 8px; margin-bottom: 25px; border-left: 6px solid {'#ef4444' if change >= 0 else '#22c55e'}; box-shadow: 0 2px 5px rgba(0,0,0,0.03);">
     <h2 style="margin:0; color:#475569; font-size: 1.25rem; font-weight: 800;">{option}</h2>
     <div style="display: flex; align-items: baseline; gap: 15px; margin-top: 8px;">
         <span style="font-size: 3.2rem; font-weight: 800; color: #0f172a; letter-spacing: -1px;">
-            {"NT$" if is_tw_stock else "US$"} {current_price:,.2f}
+            {currency_prefix}{current_price:,.2f}
         </span>
         <span style="font-size: 1.5rem; font-weight: 700; color: {'#ef4444' if change >= 0 else '#22c55e'};">{change:+.2f} ({pct:+.2f}%)</span>
     </div>
@@ -1028,7 +1036,7 @@ if is_tw_stock:
                 else:
                     st.info("歷史資料筆數不足以繪製趨勢圖，請確認上傳之財報包含足夠的歷史期數。")
             else:
-                st.info("💡 目前資料庫尚未包含此標的的財務對標數據。")
+                st.info("💡 目前資料庫尚未包含此標的財務對標數據。")
 
     with tb5:
         # 綜合評分與雙核心矩陣
